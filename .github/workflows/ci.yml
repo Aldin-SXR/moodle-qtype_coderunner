@@ -1,20 +1,5 @@
 name: Moodle plugin CI
-
-on:
-  push:
-    paths-ignore:
-      - 'docs/**'
-      - '*.md'
-      - 'README*'
-      - 'LICENSE'
-      - '.gitignore'
-  pull_request:
-    paths-ignore:
-      - 'docs/**'
-      - '*.md'
-      - 'README*'
-      - 'LICENSE'
-      - '.gitignore'
+on: [push, pull_request]
 
 jobs:
   test:
