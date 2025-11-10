@@ -78,7 +78,6 @@ int main() {
     <templateparamsevald></templateparamsevald>
     <twigall>0</twigall>
     <uiplugin>ace</uiplugin>
-    <uiparameters></uiparameters>
     <attachments>0</attachments>
     <attachmentsrequired>0</attachmentsrequired>
     <maxfilesize>0</maxfilesize>
@@ -1463,6 +1462,474 @@ print(SEPARATOR)
     </testcases>
   </question>
 
+<!-- question: mysql  -->
+  <question type="coderunner">
+    <name>
+      <text>BUILT_IN_PROTOTYPE_mysql</text>
+    </name>
+    <questiontext format="html">
+      <text>Built-in prototypes are documented in the language strings.</text>
+    </questiontext>
+    <generalfeedback format="html">
+      <text></text>
+    </generalfeedback>
+    <defaultgrade>1.0000000</defaultgrade>
+    <penalty>0.0000000</penalty>
+    <hidden>0</hidden>
+    <idnumber></idnumber>
+    <coderunnertype>mysql</coderunnertype>
+    <prototypetype>1</prototypetype>
+    <allornothing>1</allornothing>
+    <penaltyregime>10, 20, ...</penaltyregime>
+    <precheck>0</precheck>
+    <hidecheck>0</hidecheck>
+    <showsource>0</showsource>
+    <answerboxlines>18</answerboxlines>
+    <answerboxcolumns>100</answerboxcolumns>
+    <answerpreload></answerpreload>
+    <globalextra></globalextra>
+    <useace>1</useace>
+    <resultcolumns></resultcolumns>
+    <template><![CDATA[import mysql.connector
+import sys
+
+# Get MySQL connection parameters from template parameters
+# These should be configured per question or globally
+mysql_config = {
+    'host': '{{ QUESTION.parameters.mysql_host | default("localhost") }}',
+    'user': '{{ QUESTION.parameters.mysql_user | default("coderunner") }}',
+    'password': '{{ QUESTION.parameters.mysql_password | default("") }}',
+    'database': '{{ QUESTION.parameters.mysql_database | default("test") }}',
+    'port': {{ QUESTION.parameters.mysql_port | default(3306) }}
+}
+
+# Get student's answer
+student_answer = """{{ STUDENT_ANSWER | e('py') }}""".rstrip()
+
+# Ensure query ends with semicolon
+if not student_answer.endswith(';'):
+    student_answer = student_answer + ';'
+
+SEPARATOR = "#<ab@17943918#@>#"
+
+def execute_sql_statements(connection, sql_string):
+    """
+    Execute SQL statements and fully consume all results.
+    Creates a fresh cursor for clean state management.
+    """
+    cursor = connection.cursor(buffered=True)
+    try:
+        for statement in sql_string.split(';'):
+            statement = statement.strip()
+            if statement:
+                cursor.execute(statement)
+                # Consume all results to avoid "Unread result found" errors
+                if cursor.description:
+                    cursor.fetchall()
+                # Clear any pending results
+                while cursor.nextset():
+                    pass
+        cursor.close()
+    except Exception as e:
+        cursor.close()
+        raise e
+
+def execute_and_display(connection, sql_string):
+    """
+    Execute SQL and display results in a formatted table.
+    Returns formatted output for display.
+    """
+    cursor = connection.cursor(buffered=True)
+    output = []
+    try:
+        for statement in sql_string.split(';'):
+            statement = statement.strip()
+            if statement:
+                cursor.execute(statement)
+
+                if cursor.description:
+                    # Query returned results - format as a nice table
+                    headers = [desc[0] for desc in cursor.description]
+                    rows = cursor.fetchall()
+
+                    # Convert all values to strings for width calculation
+                    str_rows = []
+                    for row in rows:
+                        str_rows.append([str(value) if value is not None else 'NULL' for value in row])
+
+                    # Calculate column widths (minimum 4, maximum of header and data)
+                    col_widths = []
+                    for i, header in enumerate(headers):
+                        max_width = len(header)
+                        for str_row in str_rows:
+                            if i < len(str_row):
+                                max_width = max(max_width, len(str_row[i]))
+                        col_widths.append(max_width)
+
+                    # Format header row
+                    header_line = ' | '.join(header.ljust(col_widths[i]) for i, header in enumerate(headers))
+                    output.append(header_line)
+
+                    # Add separator line
+                    separator = '-+-'.join('-' * width for width in col_widths)
+                    output.append(separator)
+
+                    # Format data rows
+                    for str_row in str_rows:
+                        row_line = ' | '.join(str_row[i].ljust(col_widths[i]) for i in range(len(str_row)))
+                        output.append(row_line)
+                else:
+                    # Non-SELECT query
+                    output.append(f"Query OK, {cursor.rowcount} row(s) affected")
+
+                # Clear any pending results
+                while cursor.nextset():
+                    pass
+
+        cursor.close()
+        return '\n'.join(output) if output else ''
+    except Exception as e:
+        cursor.close()
+        raise e
+
+try:
+    # Connect to MySQL database
+    connection = mysql.connector.connect(**mysql_config)
+
+    {% for TEST in TESTCASES %}
+    # Get test-specific code and extra setup
+    testcode = """{{ TEST.testcode | e('py') }}"""
+    extra = """{{ TEST.extra | e('py') }}"""
+
+    # Execute extra setup SQL if provided (CREATE TABLE, INSERT, etc.)
+    if extra.strip():
+        execute_sql_statements(connection, extra)
+        connection.commit()
+
+    # Execute student's answer (consume but don't display)
+    execute_sql_statements(connection, student_answer)
+    connection.commit()
+
+    # Execute test code and display results (this is what we want to verify)
+    if testcode.strip():
+        result = execute_and_display(connection, testcode)
+        if result:
+            print(result)
+
+    # Rollback any changes for next test (fresh state)
+    connection.rollback()
+
+    {% if not loop.last %}
+    print(SEPARATOR)
+    {% endif %}
+    {% endfor %}
+
+    connection.close()
+
+except mysql.connector.Error as err:
+    print(f"MySQL Error: {err}", file=sys.stderr)
+    sys.exit(1)
+except Exception as e:
+    print(f"Error: {e}", file=sys.stderr)
+    sys.exit(1)]]></template>
+    <iscombinatortemplate>1</iscombinatortemplate>
+    <allowmultiplestdins>0</allowmultiplestdins>
+    <answer></answer>
+    <validateonsave>0</validateonsave>
+    <testsplitterre><![CDATA[|#<ab@17943918#@>#\n|ms]]></testsplitterre>
+    <language>python3</language>
+    <acelang>sql</acelang>
+    <sandbox></sandbox>
+    <grader>EqualityGrader</grader>
+    <cputimelimitsecs></cputimelimitsecs>
+    <memlimitmb>500</memlimitmb>
+    <sandboxparams></sandboxparams>
+    <templateparams><![CDATA[{
+    "mysql_host": "localhost",
+    "mysql_user": "coderunner",
+    "mysql_password": "",
+    "mysql_database": "test",
+    "mysql_port": 3306
+}]]></templateparams>
+    <hoisttemplateparams>0</hoisttemplateparams>
+    <extractcodefromjson>1</extractcodefromjson>
+    <templateparamslang>twig</templateparamslang>
+    <templateparamsevalpertry>0</templateparamsevalpertry>
+    <templateparamsevald></templateparamsevald>
+    <twigall>0</twigall>
+    <uiplugin>ace</uiplugin>
+    <uiparameters></uiparameters>
+    <attachments>0</attachments>
+    <attachmentsrequired>0</attachmentsrequired>
+    <maxfilesize>0</maxfilesize>
+    <filenamesregex></filenamesregex>
+    <filenamesexplain></filenamesexplain>
+    <displayfeedback>0</displayfeedback>
+    <giveupallowed>0</giveupallowed>
+    <prototypeextra></prototypeextra>
+    <testcases>
+    </testcases>
+  </question>
+
+<!-- question: mongodb  -->
+  <question type="coderunner">
+    <name>
+      <text>BUILT_IN_PROTOTYPE_mongodb</text>
+    </name>
+    <questiontext format="html">
+      <text>Built-in prototypes are documented in the language strings.</text>
+    </questiontext>
+    <generalfeedback format="html">
+      <text></text>
+    </generalfeedback>
+    <defaultgrade>1.0000000</defaultgrade>
+    <penalty>0.0000000</penalty>
+    <hidden>0</hidden>
+    <idnumber></idnumber>
+    <coderunnertype>mongodb</coderunnertype>
+    <prototypetype>1</prototypetype>
+    <allornothing>1</allornothing>
+    <penaltyregime>10, 20, ...</penaltyregime>
+    <precheck>0</precheck>
+    <hidecheck>0</hidecheck>
+    <showsource>0</showsource>
+    <answerboxlines>18</answerboxlines>
+    <answerboxcolumns>100</answerboxcolumns>
+    <answerpreload></answerpreload>
+    <globalextra></globalextra>
+    <useace>1</useace>
+    <resultcolumns></resultcolumns>
+    <template><![CDATA[import pymongo
+from pymongo import MongoClient
+from bson import ObjectId
+import sys
+import json
+from datetime import datetime
+
+# Get MongoDB connection parameters from template parameters
+mongodb_config = {
+    'host': '{{ QUESTION.parameters.mongodb_host | default("localhost") }}',
+    'port': {{ QUESTION.parameters.mongodb_port | default(27017) }},
+    'username': '{{ QUESTION.parameters.mongodb_user | default("") }}',
+    'password': '{{ QUESTION.parameters.mongodb_password | default("") }}',
+    'authSource': '{{ QUESTION.parameters.mongodb_auth_db | default("admin") }}'
+}
+
+database_name = '{{ QUESTION.parameters.mongodb_database | default("test") }}'
+collection_name = '{{ QUESTION.parameters.mongodb_collection | default("testcollection") }}'
+
+# Get student's answer as a string (like MySQL does)
+student_answer = """{{ STUDENT_ANSWER | e('py') }}""".strip()
+
+SEPARATOR = "#<ab@17943918#@>#"
+MAX_LIST_ITEMS = 5        # Limit lengthy array displays for readability
+MAX_DISPLAY_DOCS = 10     # Limit number of documents shown per test
+MAX_OUTPUT_LENGTH = 7000  # Keep total output below Moodle snipping threshold
+
+# Provide backwards-compatible Collection.count() for PyMongo 4+
+try:
+    from pymongo.collection import Collection as _Collection
+except ImportError:
+    _Collection = None
+
+if _Collection is not None and not hasattr(_Collection, 'count'):
+    def _legacy_count(self, filter=None, **kwargs):
+        if filter is None:
+            filter = {}
+        return self.count_documents(filter, **kwargs)
+    _Collection.count = _legacy_count
+
+def serialize_structure(value, indent=0, max_list_items=MAX_LIST_ITEMS):
+    """Recursively serialize MongoDB documents to pretty JSON-like text."""
+    indent_str = ' ' * indent
+    next_indent = indent + 2
+    next_indent_str = ' ' * next_indent
+
+    if isinstance(value, dict):
+        if not value:
+            return '{}'
+        items = []
+        keys = sorted(value.keys())
+        for key in keys:
+            serialized = serialize_structure(value[key], next_indent, max_list_items)
+            items.append(f'{next_indent_str}"{key}": {serialized}')
+        return '{\n' + ',\n'.join(items) + f'\n{indent_str}' + '}'
+
+    if isinstance(value, list):
+        if not value:
+            return '[]'
+        truncated = len(value) > max_list_items
+        elements = value[:max_list_items]
+        items = [serialize_structure(item, next_indent, max_list_items) for item in elements]
+        rendered = [f'{next_indent_str}{item}' for item in items]
+        if truncated:
+            remaining = len(value) - max_list_items
+            rendered.append(f'{next_indent_str}"... ({remaining} more items)"')
+        return '[\n' + ',\n'.join(rendered) + f'\n{indent_str}' + ']'
+
+    if isinstance(value, ObjectId):
+        return f'"{str(value)}"'
+
+    if isinstance(value, datetime):
+        return f'"{value.isoformat()}"'
+
+    if isinstance(value, str):
+        return json.dumps(value)
+
+    return json.dumps(value)
+
+def format_documents(results, max_docs=MAX_DISPLAY_DOCS):
+    """Build a readable JSON-formatted string representation of documents."""
+    if not results:
+        return "[]"
+
+    display_results = results[:max_docs]
+    serialized_docs = []
+    for idx, doc in enumerate(display_results, start=1):
+        serialized = serialize_structure(doc)
+        serialized_docs.append(f"{serialized}")
+
+    output = '\n\n'.join(serialized_docs)
+    if len(results) > max_docs:
+        output += f"\n\n... ({len(results) - max_docs} more documents not shown)"
+
+    if len(output) <= MAX_OUTPUT_LENGTH:
+        return output
+
+    truncated = output[:MAX_OUTPUT_LENGTH]
+    truncated += f"\n... (output truncated to stay within display limits, {len(output) - MAX_OUTPUT_LENGTH} chars omitted)"
+    return truncated
+
+def execute_mongodb_query(db, collection, code):
+    """Execute MongoDB query string and return results (like MySQL cursor.execute)."""
+    namespace = {
+        'db': db,
+        'collection': collection,
+        'ObjectId': ObjectId,
+        'datetime': datetime,
+        'pymongo': pymongo
+    }
+    try:
+        result = eval(code, namespace)
+        return result
+    except Exception as e:
+        raise Exception(f"MongoDB query error: {e}")
+
+try:
+    # Connect to MongoDB
+    if mongodb_config['username']:
+        client = MongoClient(
+            host=mongodb_config['host'],
+            port=mongodb_config['port'],
+            username=mongodb_config['username'],
+            password=mongodb_config['password'],
+            authSource=mongodb_config['authSource']
+        )
+    else:
+        client = MongoClient(
+            host=mongodb_config['host'],
+            port=mongodb_config['port']
+        )
+
+    # Get database and collection
+    db = client[database_name]
+    collection = db[collection_name]
+
+{% for TEST in TESTCASES %}
+    testcode = """{{ TEST.testcode | e('py') }}"""
+    extra = """{{ TEST.extra | e('py') }}"""
+
+    # Execute extra setup code if provided
+    if extra.strip():
+        exec(extra, {'db': db, 'collection': collection, 'ObjectId': ObjectId, 'datetime': datetime})
+
+    # Execute student's answer (the query)
+    result = execute_mongodb_query(db, collection, student_answer)
+
+    # Execute test code to get expected result (if provided)
+    if testcode.strip():
+        execute_mongodb_query(db, collection, testcode)
+
+    # Display the result
+    if result is not None:
+        if isinstance(result, pymongo.cursor.Cursor):
+            docs = list(result)
+            print(format_documents(docs))
+        elif isinstance(result, list):
+            print(format_documents(result))
+        elif isinstance(result, dict):
+            print(format_documents([result]))
+        elif isinstance(result, (pymongo.results.InsertOneResult,
+                                 pymongo.results.InsertManyResult,
+                                 pymongo.results.UpdateResult,
+                                 pymongo.results.DeleteResult)):
+            if hasattr(result, 'inserted_id'):
+                print(f"Inserted document with _id: {result.inserted_id}")
+            elif hasattr(result, 'inserted_ids'):
+                print(f"Inserted {len(result.inserted_ids)} documents")
+            elif hasattr(result, 'modified_count'):
+                print(f"Modified {result.modified_count} document(s), Matched {result.matched_count}")
+            elif hasattr(result, 'deleted_count'):
+                print(f"Deleted {result.deleted_count} document(s)")
+        elif isinstance(result, int):
+            print(f"Count: {result}")
+        else:
+            print(str(result))
+
+{% if not loop.last %}
+    print(SEPARATOR)
+{% endif %}
+{% endfor %}
+
+    client.close()
+
+except pymongo.errors.PyMongoError as err:
+    print(f"MongoDB Error: {err}", file=sys.stderr)
+    sys.exit(1)
+except Exception as e:
+    print(f"Error: {e}", file=sys.stderr)
+    sys.exit(1)]]></template>
+    <iscombinatortemplate>1</iscombinatortemplate>
+    <allowmultiplestdins>0</allowmultiplestdins>
+    <answer></answer>
+    <validateonsave>0</validateonsave>
+    <testsplitterre><![CDATA[|#<ab@17943918#@>#\n|ms]]></testsplitterre>
+    <language>python3</language>
+    <acelang>mongodb</acelang>
+    <sandbox></sandbox>
+    <grader>EqualityGrader</grader>
+    <cputimelimitsecs></cputimelimitsecs>
+    <memlimitmb>500</memlimitmb>
+    <sandboxparams></sandboxparams>
+    <templateparams><![CDATA[{
+    "mongodb_host": "localhost",
+    "mongodb_port": 27017,
+    "mongodb_user": "",
+    "mongodb_password": "",
+    "mongodb_auth_db": "admin",
+    "mongodb_database": "test",
+    "mongodb_collection": "testcollection"
+}]]></templateparams>
+    <hoisttemplateparams>0</hoisttemplateparams>
+    <extractcodefromjson>1</extractcodefromjson>
+    <templateparamslang>twig</templateparamslang>
+    <templateparamsevalpertry>0</templateparamsevalpertry>
+    <templateparamsevald></templateparamsevald>
+    <twigall>0</twigall>
+    <uiplugin>ace</uiplugin>
+    <uiparameters></uiparameters>
+    <attachments>0</attachments>
+    <attachmentsrequired>0</attachmentsrequired>
+    <maxfilesize>0</maxfilesize>
+    <filenamesregex></filenamesregex>
+    <filenamesexplain></filenamesexplain>
+    <displayfeedback>0</displayfeedback>
+    <giveupallowed>0</giveupallowed>
+    <prototypeextra></prototypeextra>
+    <testcases>
+    </testcases>
+  </question>
+
 <!-- question: 32468  -->
   <question type="coderunner">
     <name>
@@ -1561,6 +2028,1741 @@ print(SEPARATOR)
     <twigall>0</twigall>
     <uiplugin>graph</uiplugin>
     <uiparameters><![CDATA[{"isdirected": false, "isfsm": false}]]></uiparameters>
+    <attachments>0</attachments>
+    <attachmentsrequired>0</attachmentsrequired>
+    <maxfilesize>0</maxfilesize>
+    <filenamesregex></filenamesregex>
+    <filenamesexplain></filenamesexplain>
+    <displayfeedback>0</displayfeedback>
+    <giveupallowed>0</giveupallowed>
+    <prototypeextra></prototypeextra>
+    <testcases>
+    </testcases>
+  </question>
+
+<!-- question: neo4j  -->
+  <question type="coderunner">
+    <name>
+      <text>BUILT_IN_PROTOTYPE_neo4j</text>
+    </name>
+    <questiontext format="html">
+      <text>Built-in prototypes are documented in the language strings.</text>
+    </questiontext>
+    <generalfeedback format="html">
+      <text></text>
+    </generalfeedback>
+    <defaultgrade>1.0000000</defaultgrade>
+    <penalty>0.0000000</penalty>
+    <hidden>0</hidden>
+    <idnumber></idnumber>
+    <coderunnertype>neo4j</coderunnertype>
+    <prototypetype>1</prototypetype>
+    <allornothing>1</allornothing>
+    <penaltyregime>10, 20, ...</penaltyregime>
+    <precheck>0</precheck>
+    <hidecheck>0</hidecheck>
+    <showsource>0</showsource>
+    <answerboxlines>18</answerboxlines>
+    <answerboxcolumns>100</answerboxcolumns>
+    <answerpreload></answerpreload>
+    <globalextra></globalextra>
+    <useace>1</useace>
+    <resultcolumns></resultcolumns>
+    <template><![CDATA[import json
+import sys
+from datetime import datetime, date, time
+from neo4j import GraphDatabase
+from neo4j.exceptions import Neo4jError
+from neo4j.graph import Node, Relationship, Path
+
+neo4j_config = {
+    'protocol': '{{ QUESTION.parameters.neo4j_protocol | default("neo4j+s") }}',
+    'host': '{{ QUESTION.parameters.neo4j_host | default("localhost") }}',
+    'port': {{ QUESTION.parameters.neo4j_port | default(7687) }},
+    'user': '{{ QUESTION.parameters.neo4j_user | default("neo4j") }}',
+    'password': '{{ QUESTION.parameters.neo4j_password | default("") }}',
+    'database': '{{ QUESTION.parameters.neo4j_database | default("neo4j") }}'
+}
+
+uri = f"{neo4j_config['protocol']}://{neo4j_config['host']}:{neo4j_config['port']}"
+student_answer = """{{ STUDENT_ANSWER | e('py') }}""".strip()
+
+SEPARATOR = "#<ab@17943918#@>#"
+MAX_LIST_ITEMS = 5
+MAX_DISPLAY_RECORDS = 3
+MAX_OUTPUT_LENGTH = 7000
+
+def split_statements(cypher_code):
+    """Split Cypher code on statement terminators (;) while preserving order."""
+    if not cypher_code.strip():
+        return []
+    statements = []
+    buffer = []
+    for line in cypher_code.splitlines():
+        buffer.append(line)
+        if line.rstrip().endswith(';'):
+            statement = '\n'.join(buffer).rstrip().rstrip(';').strip()
+            if statement:
+                statements.append(statement)
+            buffer = []
+    if buffer:
+        statement = '\n'.join(buffer).strip()
+        if statement:
+            statements.append(statement)
+    if not statements:
+        statements.append(cypher_code.strip())
+    return statements
+
+def truncate_sequence(seq):
+    """Return a serialised list with optional truncation marker."""
+    if not isinstance(seq, (list, tuple, set)):
+        return seq
+    values = list(seq)
+    truncated = len(values) > MAX_LIST_ITEMS
+    subset = values[:MAX_LIST_ITEMS]
+    rendered = [serialize_value(item) for item in subset]
+    if truncated:
+        rendered.append(f"... ({len(values) - MAX_LIST_ITEMS} more items)")
+    return rendered
+
+def format_relationship_cypher(rel):
+    """Format a relationship in Cypher syntax: [:TYPE {props}]"""
+    parts = [f"[:{rel.type}"]
+    if len(rel) > 0:  # Has properties
+        props = {k: serialize_value(v) for k, v in rel.items()}
+        props_json = json.dumps(props, ensure_ascii=False)
+        parts.append(f" {props_json}")
+    parts.append("]")
+    return "".join(parts)
+
+class Neo4jEncoder(json.JSONEncoder):
+    """Custom JSON encoder for Neo4j types."""
+    def default(self, obj):
+        if isinstance(obj, Node):
+            return {
+                "_type": "node",
+                "id": obj.id,
+                "labels": list(obj.labels),
+                "properties": dict(obj)
+            }
+        elif isinstance(obj, Relationship):
+            props = dict(obj)
+            if props:
+                return f"[:{obj.type} {json.dumps(props, ensure_ascii=False)}]"
+            else:
+                return f"[:{obj.type}]"
+        elif isinstance(obj, Path):
+            return {
+                "_type": "path",
+                "nodes": list(obj.nodes),
+                "relationships": list(obj.relationships)
+            }
+        elif isinstance(obj, (datetime, date, time)):
+            return obj.isoformat()
+        return super().default(obj)
+
+def serialize_value(value):
+    """Convert Neo4j driver values into JSON-serialisable structures."""
+    if isinstance(value, Node):
+        return {
+            "_type": "node",
+            "id": value.id,
+            "labels": list(value.labels),
+            "properties": {k: serialize_value(v) for k, v in value.items()}
+        }
+    if isinstance(value, Relationship):
+        # Format relationships in readable Cypher syntax
+        props = {k: serialize_value(v) for k, v in value.items()}
+        if props:
+            return f"[:{value.type} {json.dumps(props, ensure_ascii=False, cls=Neo4jEncoder)}]"
+        else:
+            return f"[:{value.type}]"
+    if isinstance(value, Path):
+        return {
+            "_type": "path",
+            "nodes": truncate_sequence(list(value.nodes)),
+            "relationships": truncate_sequence(list(value.relationships))
+        }
+    if isinstance(value, (list, tuple, set)):
+        return truncate_sequence(value)
+    if isinstance(value, dict):
+        return {k: serialize_value(v) for k, v in value.items()}
+    if isinstance(value, (datetime, date, time)):
+        return value.isoformat()
+    return value
+
+def serialize_records(records):
+    """Convert a list of record dictionaries to a formatted string."""
+    if not records:
+        return "[]"
+    display_records = records[:MAX_DISPLAY_RECORDS]
+    sections = []
+    for idx, record in enumerate(display_records, start=1):
+        converted = {key: serialize_value(val) for key, val in record.items()}
+        sections.append(f"Record {idx}:\n{json.dumps(converted, indent=2, ensure_ascii=False, cls=Neo4jEncoder)}")
+    if len(records) > MAX_DISPLAY_RECORDS:
+        sections.append(f"... ({len(records) - MAX_DISPLAY_RECORDS} more records not shown)")
+    return '\n'.join(sections)
+
+def format_query_output(statement, result):
+    """Render the result of a Cypher execution."""
+    records = result.data()
+    summary = result.consume()
+    output_parts = [f"Cypher: {statement.strip()}"]
+    if records:
+        output_parts.append(serialize_records(records))
+    else:
+        counters = summary.counters
+        counter_labels = [
+            ('nodes_created', 'nodes created'),
+            ('nodes_deleted', 'nodes deleted'),
+            ('relationships_created', 'relationships created'),
+            ('relationships_deleted', 'relationships deleted'),
+            ('properties_set', 'properties set'),
+            ('labels_added', 'labels added'),
+            ('labels_removed', 'labels removed'),
+            ('indexes_added', 'indexes added'),
+            ('indexes_removed', 'indexes removed'),
+            ('constraints_added', 'constraints added'),
+            ('constraints_removed', 'constraints removed'),
+        ]
+        stats = []
+        for attr, label in counter_labels:
+            value = getattr(counters, attr, 0)
+            if value:
+                stats.append(f"{label}: {value}")
+        if getattr(counters, 'contains_updates', False) and not stats:
+            stats.append("database updated")
+        output_parts.append(' | '.join(stats) if stats else "No records returned.")
+    text = '\n'.join(part for part in output_parts if part)
+    return clamp_output(text)
+
+def clamp_output(text):
+    """Limit output length to avoid Moodle truncation."""
+    if len(text) <= MAX_OUTPUT_LENGTH:
+        return text
+    return f"{text[:MAX_OUTPUT_LENGTH]}\n... (output truncated to stay within display limits, {len(text) - MAX_OUTPUT_LENGTH} chars omitted)"
+
+def execute_cypher_block(tx, cypher_code, collect_output=False):
+    """Execute one or more Cypher statements within a transaction."""
+    outputs = []
+    for statement in split_statements(cypher_code):
+        if not statement.strip():
+            continue
+        result = tx.run(statement)
+        if collect_output:
+            outputs.append(format_query_output(statement, result))
+        else:
+            result.consume()
+    combined = '\n\n'.join(filter(None, outputs))
+    return clamp_output(combined) if collect_output else combined
+
+driver_kwargs = {}
+if neo4j_config['user']:
+    driver_kwargs['auth'] = (neo4j_config['user'], neo4j_config['password'])
+session_kwargs = {}
+if neo4j_config['database']:
+    session_kwargs['database'] = neo4j_config['database']
+
+try:
+    driver = GraphDatabase.driver(uri, **driver_kwargs)
+    try:
+        with driver.session(**session_kwargs) as session:
+{% for TEST in TESTCASES %}
+            testcode = """{{ TEST.testcode | e('py') }}"""
+            extra = """{{ TEST.extra | e('py') }}"""
+
+            tx = session.begin_transaction()
+            try:
+                if extra.strip():
+                    execute_cypher_block(tx, extra)
+
+                # If testcode is provided, run student answer silently (for validation questions)
+                # If testcode is empty, collect student answer output (for query questions)
+                if testcode.strip():
+                    # Validation mode: run student answer silently, then show testcode output
+                    if student_answer:
+                        execute_cypher_block(tx, student_answer)
+                    output = execute_cypher_block(tx, testcode, collect_output=True)
+                    if output:
+                        print(output)
+                else:
+                    # Query mode: show student answer output
+                    if student_answer:
+                        output = execute_cypher_block(tx, student_answer, collect_output=True)
+                        if output:
+                            print(output)
+            finally:
+                try:
+                    tx.rollback()
+                except Exception:
+                    pass
+
+{% if not loop.last %}
+            print(SEPARATOR)
+{% endif %}
+{% endfor %}
+    finally:
+        driver.close()
+
+except Neo4jError as err:
+    print(f"Neo4j Error: {err}", file=sys.stderr)
+    sys.exit(1)
+except Exception as e:
+    print(f"Error: {e}", file=sys.stderr)
+    sys.exit(1)]]></template>
+    <iscombinatortemplate>1</iscombinatortemplate>
+    <allowmultiplestdins>0</allowmultiplestdins>
+    <answer></answer>
+    <validateonsave>0</validateonsave>
+    <testsplitterre><![CDATA[|#<ab@17943918#@>#\n|ms]]></testsplitterre>
+    <language>python3</language>
+    <acelang>cypher</acelang>
+    <sandbox></sandbox>
+    <grader>EqualityGrader</grader>
+    <cputimelimitsecs></cputimelimitsecs>
+    <memlimitmb>500</memlimitmb>
+    <sandboxparams></sandboxparams>
+    <templateparams><![CDATA[{
+    "neo4j_protocol": "neo4j+s",
+    "neo4j_host": "localhost",
+    "neo4j_port": 7687,
+    "neo4j_user": "neo4j",
+    "neo4j_password": "",
+    "neo4j_database": "neo4j"
+}]]></templateparams>
+    <hoisttemplateparams>0</hoisttemplateparams>
+    <extractcodefromjson>1</extractcodefromjson>
+    <templateparamslang>twig</templateparamslang>
+    <templateparamsevalpertry>0</templateparamsevalpertry>
+    <templateparamsevald></templateparamsevald>
+    <twigall>0</twigall>
+    <uiplugin>ace</uiplugin>
+    <uiparameters></uiparameters>
+    <attachments>0</attachments>
+    <attachmentsrequired>0</attachmentsrequired>
+    <maxfilesize>0</maxfilesize>
+    <filenamesregex></filenamesregex>
+    <filenamesexplain></filenamesexplain>
+    <displayfeedback>0</displayfeedback>
+    <giveupallowed>0</giveupallowed>
+    <prototypeextra></prototypeextra>
+    <testcases>
+    </testcases>
+  </question>
+
+<!-- question: solidity  -->
+  <question type="coderunner">
+    <name>
+      <text>BUILT_IN_PROTOTYPE_solidity</text>
+    </name>
+    <questiontext format="html">
+      <text>Built-in prototypes are documented in the language strings.</text>
+    </questiontext>
+    <generalfeedback format="html">
+      <text></text>
+    </generalfeedback>
+    <defaultgrade>1.0000000</defaultgrade>
+    <penalty>0.0000000</penalty>
+    <hidden>0</hidden>
+    <idnumber></idnumber>
+    <coderunnertype>solidity</coderunnertype>
+    <prototypetype>1</prototypetype>
+    <allornothing>1</allornothing>
+    <penaltyregime>33.3, 66.7, ...</penaltyregime>
+    <precheck>0</precheck>
+    <hidecheck>0</hidecheck>
+    <showsource>0</showsource>
+    <answerboxlines>18</answerboxlines>
+    <answerboxcolumns>100</answerboxcolumns>
+    <answerpreload></answerpreload>
+    <globalextra></globalextra>
+    <useace>1</useace>
+    <resultcolumns></resultcolumns>
+    <template><![CDATA[import subprocess
+import os
+import json
+import sys
+import shutil
+import tempfile
+
+temp_dir = tempfile.mkdtemp()
+os.chdir(temp_dir)
+
+try:
+    os.makedirs('src', exist_ok=True)
+    os.makedirs('test', exist_ok=True)
+    os.makedirs('lib', exist_ok=True)
+
+    forge_std_paths = [
+        '/usr/local/lib/forge-std',
+        '/opt/foundry/lib/forge-std',
+        '/usr/lib/forge-std',
+        os.path.expanduser('~/.foundry/lib/forge-std')
+    ]
+
+    forge_std_found = False
+    for forge_std_path in forge_std_paths:
+        if os.path.exists(forge_std_path):
+            try:
+                os.symlink(forge_std_path, 'lib/forge-std')
+                forge_std_found = True
+                break
+            except (OSError, PermissionError):
+                try:
+                    shutil.copytree(forge_std_path, 'lib/forge-std', symlinks=True)
+                    forge_std_found = True
+                    break
+                except (OSError, PermissionError):
+                    pass
+
+    if not forge_std_found:
+        checked_paths = ', '.join(forge_std_paths)
+        print(f"***Error: forge-std library not found on Jobe server.\nChecked paths: {checked_paths}\nPlease contact your instructor to install forge-std.")
+        sys.exit(1)
+
+    with open('foundry.toml', 'w') as f:
+        f.write("""[profile.default]
+src = "src"
+out = "out"
+libs = ["lib"]
+solc_version = "0.8.19"
+optimizer = false
+""")
+
+    with open('src/StudentContract.sol', 'w') as f:
+        f.write("""{{ STUDENT_ANSWER | e('py') }}""")
+
+    test_code_map = {}
+    test_content = """// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.0;
+
+import "forge-std/Test.sol";
+import "../src/StudentContract.sol";
+
+contract StudentContractTest is Test {
+{% for TEST in TESTCASES %}
+{{ TEST.testcode }}
+{% endfor %}
+}
+"""
+
+    with open('test/StudentContract.t.sol', 'w') as f:
+        f.write(test_content)
+
+{% for TEST in TESTCASES %}
+    test_func_code = """{{ TEST.testcode | e('py') }}"""
+    if 'function ' in test_func_code:
+        func_name = test_func_code.split('function ')[1].split('(')[0].strip()
+        test_code_map[func_name] = test_func_code
+{% endfor %}
+
+    env = os.environ.copy()
+    env['HOME'] = temp_dir
+    env['FOUNDRY_CACHE_PATH'] = os.path.join(temp_dir, 'cache')
+    env['FOUNDRY_CONFIG'] = os.path.join(temp_dir, 'foundry.toml')
+    env['NO_COLOR'] = '1'
+    env['RAYON_NUM_THREADS'] = '1'
+    env['RUST_MIN_STACK'] = '8388608'
+
+    os.makedirs(os.path.join(temp_dir, 'cache'), exist_ok=True)
+    os.makedirs(os.path.join(temp_dir, 'out'), exist_ok=True)
+
+    result = subprocess.run(
+        ['forge', 'test', '--json', '-vv', '--jobs', '1'],
+        capture_output=True,
+        text=True,
+        timeout=10,
+        env=env,
+        cwd=temp_dir
+    )
+
+    testresults = [["Test", "Expected", "Got"]]
+    passed = 0
+    total = 0
+
+    if result.returncode != 0 and ('Error' in result.stderr or 'error' in result.stderr):
+        if 'Compiler' in result.stderr or 'solc' in result.stderr or 'Solidity' in result.stderr:
+            error_lines = result.stderr.split('\n')
+            clean_error = '\n'.join([line for line in error_lines if line.strip() and not line.startswith('Compiling')])
+            print(clean_error)
+            sys.exit(1)
+
+    lines = (result.stdout + result.stderr).split('\n')
+    for line in lines:
+        if not line.strip():
+            continue
+        try:
+            data = json.loads(line)
+            if isinstance(data, dict):
+                for key, value in data.items():
+                    if isinstance(value, dict) and 'test_results' in value:
+                        test_results = value['test_results']
+
+                        for test_func_name, test_info in test_results.items():
+                            test_name = test_func_name.replace('()', '')
+                            status = test_info.get('status', 'unknown')
+                            total += 1
+                            test_passed = (status == 'Success' or status == 'success')
+
+                            if test_passed:
+                                passed += 1
+
+                            test_code = test_code_map.get(test_name, test_name)
+
+                            if test_passed:
+                                expected = "All assertions pass"
+                                got = "All assertions pass"
+                            else:
+                                reason = test_info.get('reason', '')
+                                logs = test_info.get('logs', [])
+
+                                assertion_details = None
+                                for log in logs:
+                                    log_str = str(log)
+                                    if 'Error: a ==' in log_str or 'Error: a !=' in log_str:
+                                        assertion_details = log_str
+                                        break
+
+                                if reason:
+                                    reason = str(reason).replace('\x1b[0m', '').replace('\x1b[31m', '').strip()
+
+                                if assertion_details:
+                                    expected = "Assertion to pass"
+                                    got = f"Assertion failed: {assertion_details}"
+                                elif reason:
+                                    if 'assertion failed' in reason.lower() or 'assert' in reason.lower():
+                                        if ':' in reason:
+                                            parts = reason.split(':', 1)
+                                            expected = "Assertion to pass"
+                                            got = f"Assertion failed: {parts[1].strip() if len(parts) > 1 else reason}"
+                                        else:
+                                            expected = "Assertion to pass"
+                                            got = f"Assertion failed: {reason}"
+                                    elif 'revert' in reason.lower():
+                                        expected = "Transaction to succeed"
+                                        got = f"Transaction reverted: {reason}"
+                                    elif 'panic' in reason.lower():
+                                        expected = "No panic"
+                                        got = f"Panic occurred: {reason}"
+                                    else:
+                                        expected = "Test to pass"
+                                        got = f"Test failed: {reason}"
+                                else:
+                                    expected = "Test to pass"
+                                    got = "Test failed with no error message"
+
+                            testresults.append([test_code, expected, got])
+        except (json.JSONDecodeError, KeyError, TypeError):
+            continue
+
+    if total > 0:
+        fraction = passed / total
+        output = {
+            "fraction": fraction,
+            "testresults": testresults
+        }
+        print(json.dumps(output))
+    else:
+        combined_output = (result.stdout or "") + "\n" + (result.stderr or "")
+        print(f"***Error: No test results found.\n\nForge output:\n{combined_output.strip() or 'No output'}\n\nExit code: {result.returncode}")
+        sys.exit(1)
+
+finally:
+    os.chdir('/')
+    shutil.rmtree(temp_dir, ignore_errors=True)
+]]></template>
+    <iscombinatortemplate>1</iscombinatortemplate>
+    <allowmultiplestdins>0</allowmultiplestdins>
+    <answer></answer>
+    <validateonsave>0</validateonsave>
+    <testsplitterre><![CDATA[|#<ab@17943918#@>#\n|ms]]></testsplitterre>
+    <language>python3</language>
+    <acelang>solidity</acelang>
+    <sandbox></sandbox>
+    <grader>TemplateGrader</grader>
+    <cputimelimitsecs>10</cputimelimitsecs>
+    <memlimitmb>2048</memlimitmb>
+    <sandboxparams></sandboxparams>
+    <templateparams></templateparams>
+    <hoisttemplateparams>0</hoisttemplateparams>
+    <extractcodefromjson>1</extractcodefromjson>
+    <templateparamslang>twig</templateparamslang>
+    <templateparamsevalpertry>0</templateparamsevalpertry>
+    <templateparamsevald></templateparamsevald>
+    <twigall>0</twigall>
+    <uiplugin>ace</uiplugin>
+    <uiparameters></uiparameters>
+    <attachments>0</attachments>
+    <attachmentsrequired>0</attachmentsrequired>
+    <maxfilesize>0</maxfilesize>
+    <filenamesregex></filenamesregex>
+    <filenamesexplain></filenamesexplain>
+    <displayfeedback>0</displayfeedback>
+    <giveupallowed>0</giveupallowed>
+    <prototypeextra></prototypeextra>
+    <testcases>
+    </testcases>
+  </question>
+
+<!-- question: multifile_html  -->
+  <question type="coderunner">
+    <name>
+      <text>BUILT_IN_PROTOTYPE_multifile_html</text>
+    </name>
+    <questiontext format="html">
+      <text>Prototype for multi-file HTML/CSS/JavaScript questions using Monaco editor with file tree.</text>
+    </questiontext>
+    <generalfeedback format="html">
+      <text></text>
+    </generalfeedback>
+    <defaultgrade>1.0000000</defaultgrade>
+    <penalty>0.0000000</penalty>
+    <hidden>0</hidden>
+    <idnumber></idnumber>
+    <coderunnertype>multifile_html</coderunnertype>
+    <prototypetype>1</prototypetype>
+    <allornothing>1</allornothing>
+    <penaltyregime>10, 20, ...</penaltyregime>
+    <precheck>0</precheck>
+    <hidecheck>0</hidecheck>
+    <showsource>0</showsource>
+    <answerboxlines>20</answerboxlines>
+    <answerboxcolumns>100</answerboxcolumns>
+    <answerpreload><![CDATA[{
+  "files": [
+    {
+      "path": "index.html",
+      "content": "<!DOCTYPE html>\n<html>\n<head>\n  <title>My Page</title>\n  <link rel=\"stylesheet\" href=\"style.css\">\n</head>\n<body>\n  <h1>Hello World</h1>\n  <script src=\"script.js\"></script>\n</body>\n</html>",
+      "locked": false
+    },
+    {
+      "path": "style.css",
+      "content": "body {\n  font-family: Arial, sans-serif;\n  margin: 20px;\n}\n\nh1 {\n  color: #333;\n}",
+      "locked": false
+    },
+    {
+      "path": "script.js",
+      "content": "console.log('Hello from JavaScript!');",
+      "locked": false
+    }
+  ]
+}]]></answerpreload>
+    <globalextra></globalextra>
+    <useace>0</useace>
+    <resultcolumns></resultcolumns>
+    <template><![CDATA[
+import json
+import os
+import re
+import subprocess
+import sys
+import tempfile
+from html.parser import HTMLParser
+
+RAW_ANSWER = """{{ STUDENT_ANSWER | e('py') }}"""
+
+
+def _exit_with_error(message):
+    print(f"ERROR: {message}")
+    sys.exit(1)
+
+
+try:
+    parsed_answer = json.loads(RAW_ANSWER)
+except json.JSONDecodeError as exc:
+    _exit_with_error(f"Unable to parse submission JSON ({exc})")
+
+if isinstance(parsed_answer, dict):
+    student_files = parsed_answer.get('files', [])
+else:
+    student_files = parsed_answer
+
+if not isinstance(student_files, list):
+    _exit_with_error("Submission must contain a 'files' list.")
+
+
+class StudentProject:
+    def __init__(self, files):
+        self.records = []
+        self.by_path = {}
+        for entry in files:
+            if not isinstance(entry, dict):
+                continue
+            path = (entry.get('path') or '').strip()
+            if not path:
+                continue
+            normalized = path.replace('\\', '/')
+            content = entry.get('content', '')
+            record = {
+                'path': normalized,
+                'content': content,
+                'extension': normalized.rsplit('.', 1)[-1].lower() if '.' in normalized else ''
+            }
+            self.records.append(record)
+            self.by_path[normalized] = record
+
+    def get_content(self, path, default=''):
+        record = self.by_path.get(path)
+        return record['content'] if record else default
+
+    @staticmethod
+    def _normalize_extensions(extensions):
+        if not extensions:
+            return []
+        if isinstance(extensions, str):
+            items = extensions.split(',')
+        else:
+            items = extensions
+        normalized = []
+        for item in items:
+            if not isinstance(item, str):
+                continue
+            trimmed = item.strip().lower()
+            if trimmed:
+                normalized.append(trimmed)
+        return normalized
+
+    def _filter_candidates(self, candidates, pattern=None, extensions=None):
+        filtered = list(candidates)
+        if pattern:
+            try:
+                regex = re.compile(pattern)
+                filtered = [rec for rec in filtered if regex.search(rec['path'])]
+            except re.error:
+                filtered = []
+        if extensions:
+            filtered = [rec for rec in filtered if rec['extension'] in extensions]
+        return filtered
+
+    @staticmethod
+    def _looks_like_regex(text):
+        if not text:
+            return False
+        if text.startswith('^') or text.endswith('$'):
+            return True
+        special_chars = set('*+?|[](){}^$\\')
+        if any(ch in special_chars for ch in text):
+            return True
+        if '.*' in text or '\d' in text or '\w' in text:
+            return True
+        return False
+
+    def select_files(self, target=None, extensions=None, pattern=None):
+        ext_list = self._normalize_extensions(extensions)
+
+        def merge_unique(items):
+            unique = []
+            seen = set()
+            for rec in items:
+                if not rec:
+                    continue
+                if rec['path'] not in seen:
+                    unique.append(rec)
+                    seen.add(rec['path'])
+            return unique
+
+        if target is None or (isinstance(target, str) and target.strip().lower() in ('*', 'any', 'all')):
+            return self._filter_candidates(self.records, pattern, ext_list)
+
+        if isinstance(target, str):
+            target = target.strip()
+            lower_target = target.lower()
+            if lower_target.startswith('regex:'):
+                regex_text = target[len('regex:'):]
+                return self._filter_candidates(self.records, regex_text or pattern, ext_list)
+            if self._looks_like_regex(target):
+                return self._filter_candidates(self.records, target, ext_list)
+            record = self.by_path.get(target)
+            return self._filter_candidates([record] if record else [], pattern, ext_list)
+
+        if isinstance(target, list):
+            combined = []
+            for item in target:
+                combined.extend(self.select_files(item, extensions=ext_list, pattern=pattern))
+            return merge_unique(combined)
+
+        if isinstance(target, dict):
+            nested_target = target.get('files') or target.get('file')
+            nested_pattern = target.get('pattern') or target.get('regex') or pattern
+            nested_ext = target.get('extensions') or ext_list
+            return self.select_files(nested_target, extensions=nested_ext, pattern=nested_pattern)
+
+        return self._filter_candidates(self.records, pattern, ext_list)
+
+    def __bool__(self):
+        return bool(self.records)
+
+
+project = StudentProject(student_files)
+
+
+class _ElementCollector(HTMLParser):
+    def __init__(self):
+        super().__init__()
+        self.elements = []
+        self._stack = []
+
+    def handle_starttag(self, tag, attrs):
+        attr_dict = {k.lower(): v for k, v in attrs}
+        classes = attr_dict.get('class', '')
+        element = {
+            'tag': tag.lower(),
+            'attrs': attr_dict,
+            'classes': set(filter(None, re.split(r'\s+', classes.strip()))) if classes else set(),
+            'id': attr_dict.get('id'),
+            'text': '',
+            'line': self.getpos()[0]
+        }
+        self.elements.append(element)
+        self._stack.append(element)
+
+    def handle_endtag(self, tag):
+        if self._stack:
+            self._stack.pop()
+
+    def handle_data(self, data):
+        if not self._stack or not data:
+            return
+        for element in self._stack:
+            element['text'] += data
+
+
+class HTMLDocument:
+    def __init__(self, text):
+        parser = _ElementCollector()
+        try:
+            parser.feed(text)
+        except Exception:
+            pass
+        self.elements = parser.elements
+
+    def find(self, **criteria):
+        return [elem for elem in self.elements if _element_matches(elem, criteria)]
+
+
+def _element_matches(element, criteria):
+    tag = criteria.get('tag')
+    if tag and tag != '*' and element['tag'] != tag.lower():
+        return False
+    elem_id = criteria.get('id')
+    if elem_id and element['id'] != elem_id:
+        return False
+    classes = criteria.get('classes')
+    if classes:
+        if isinstance(classes, str):
+            class_list = [c.strip() for c in classes.split(',') if c.strip()]
+        else:
+            class_list = classes
+        required = {c.strip() for c in class_list if c.strip()}
+        if not required.issubset(element['classes']):
+            return False
+    attrs = criteria.get('attributes') or {}
+    for key, expected in attrs.items():
+        actual = element['attrs'].get(key.lower())
+        if isinstance(expected, dict):
+            regex = expected.get('regex')
+            equals = expected.get('equals')
+            contains = expected.get('contains')
+            if regex:
+                if not actual or not re.search(regex, actual):
+                    return False
+            elif equals is not None and actual != equals:
+                return False
+            elif contains and (not actual or contains not in actual):
+                return False
+        elif actual != expected:
+            return False
+    text_contains = criteria.get('text_contains')
+    if text_contains:
+        haystack = element['text'] or ''
+        if isinstance(text_contains, str):
+            values = [text_contains]
+        else:
+            values = text_contains
+        for needle in values:
+            if needle and needle not in haystack:
+                return False
+    return True
+
+
+CSS_COMMENT_RE = re.compile(r'/\*.*?\*/', re.S)
+
+
+def _parse_css_rules(content):
+    stripped = CSS_COMMENT_RE.sub('', content)
+    rules = []
+    i = 0
+    length = len(stripped)
+    while i < length:
+        if stripped[i].isspace():
+            i += 1
+            continue
+        selector_start = i
+        while i < length and stripped[i] != '{':
+            i += 1
+        if i >= length:
+            break
+        selector_text = stripped[selector_start:i].strip()
+        i += 1
+        depth = 1
+        block_start = i
+        while i < length and depth > 0:
+            char = stripped[i]
+            if char == '{':
+                depth += 1
+            elif char == '}':
+                depth -= 1
+            i += 1
+        block = stripped[block_start:i - 1]
+        if selector_text.startswith('@'):
+            nested = _parse_css_rules(block)
+            rules.extend(nested)
+            continue
+        selectors = [s.strip() for s in selector_text.split(',') if s.strip()]
+        declarations = {}
+        for declaration in block.split(';'):
+            if ':' not in declaration:
+                continue
+            prop, value = declaration.split(':', 1)
+            prop = prop.strip().lower()
+            value = value.strip()
+            if prop:
+                declarations[prop] = value
+        for selector in selectors:
+            rules.append({'selector': selector, 'properties': dict(declarations)})
+    return rules
+
+
+VOID_HTML_TAGS = {
+    'area', 'base', 'br', 'col', 'embed', 'hr', 'img', 'input', 'link',
+    'meta', 'param', 'source', 'track', 'wbr'
+}
+
+
+NODE_HARNESS = r"""
+const fs = require('fs');
+const vm = require('vm');
+const assert = require('assert').strict;
+
+function serialise(value) {
+    if (typeof value === 'string') {
+        return value;
+    }
+    try {
+        return JSON.stringify(value);
+    } catch (err) {
+        return String(value);
+    }
+}
+
+if (process.argv.length < 3) {
+    console.error('Payload path missing');
+    process.exit(2);
+}
+
+const payload = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
+const logs = [];
+const sandbox = {
+    console: {
+        log: (...args) => logs.push(args.map(serialise).join(' '))
+    },
+    assert,
+    studentFiles: payload.studentFiles,
+    exports: {},
+    module: { exports: {} },
+    setTimeout,
+    clearTimeout
+};
+
+sandbox.global = sandbox;
+sandbox.window = sandbox;
+sandbox.document = payload.documentStub || {};
+
+const context = vm.createContext(sandbox);
+
+try {
+    for (const file of payload.studentFiles) {
+        vm.runInContext(file.content, context, { filename: file.path });
+    }
+    if (payload.setup) {
+        vm.runInContext(payload.setup, context, { filename: 'test-setup.js' });
+    }
+    if (payload.testCode) {
+        vm.runInContext(payload.testCode, context, { filename: 'test.js' });
+    }
+    fs.writeFileSync(payload.outputPath, JSON.stringify({ ok: true, logs }), 'utf8');
+} catch (error) {
+    const message = error && error.stack ? error.stack : String(error);
+    fs.writeFileSync(payload.outputPath, JSON.stringify({ ok: false, message, logs }), 'utf8');
+}
+"""
+
+
+class TestResult:
+    __slots__ = ('success', 'message')
+
+    def __init__(self, success, message):
+        self.success = success
+        self.message = message
+
+
+class _SingleTagParser(HTMLParser):
+    def __init__(self):
+        super().__init__()
+        self.attrs = {}
+
+    def handle_starttag(self, tag, attrs):
+        self.attrs = {k.lower(): v for k, v in attrs}
+
+
+class StructuredTestRunner:
+    def __init__(self, project):
+        self.project = project
+        self._html_cache = {}
+        self._css_cache = {}
+        self._line_offsets = {}
+
+    def _pass_message(self, spec):
+        desc = spec.get('description') if isinstance(spec, dict) else None
+        custom = spec.get('success_message') if isinstance(spec, dict) else None
+        if custom:
+            return custom
+        return 'PASS'
+
+    def _fail_message(self, spec, detail, file_path=None, line_number=None):
+        detail = self._append_location(detail, file_path, line_number)
+        return f"FAIL: {detail}"
+
+    @staticmethod
+    def _append_location(detail, file_path=None, line_number=None):
+        if not file_path:
+            return detail
+        if line_number:
+            return f"{detail} ({file_path}:{line_number})"
+        return f"{detail} ({file_path})"
+
+    def _resolve_scope(self, spec, default_ext=None):
+        target = spec.get('files') or spec.get('file') or spec.get('scope') or spec.get('target')
+        pattern = spec.get('pattern') or spec.get('file_pattern')
+        extensions = spec.get('extensions') or spec.get('ext') or default_ext
+        files = self.project.select_files(target, extensions=extensions, pattern=pattern)
+        return files
+
+    def _html_doc(self, path):
+        if path not in self._html_cache:
+            self._html_cache[path] = HTMLDocument(self.project.get_content(path, ''))
+        return self._html_cache[path]
+
+    def _css_doc(self, path):
+        if path not in self._css_cache:
+            self._css_cache[path] = _parse_css_rules(self.project.get_content(path, ''))
+        return self._css_cache[path]
+
+    def run(self, spec):
+        mode = (spec.get('mode') or spec.get('language') or spec.get('type') or '').lower()
+        if mode == 'integration':
+            steps = spec.get('steps') or []
+            if not steps:
+                return TestResult(False, self._fail_message(spec, 'Integration test is missing steps.'))
+            for index, step in enumerate(steps, start=1):
+                merged = dict(step)
+                for inherit_key in ('files', 'file', 'scope', 'target', 'pattern', 'extensions'):
+                    if inherit_key not in merged and inherit_key in spec:
+                        merged[inherit_key] = spec[inherit_key]
+                if 'description' not in merged and spec.get('description'):
+                    merged['description'] = f"{spec['description']} (step {index})"
+                if 'mode' not in merged:
+                    merged['mode'] = merged.get('language') or merged.get('type') or spec.get('step_mode') or spec.get('step_language')
+                result = self.run_single(merged)
+                if not result.success:
+                    detail = f"Step {index} failed ({result.message})"
+                    return TestResult(False, self._fail_message(spec, detail))
+            return TestResult(True, self._pass_message(spec))
+        return self.run_single(spec)
+
+    def run_single(self, spec):
+        mode = (spec.get('mode') or spec.get('language') or spec.get('type') or '').lower()
+        if mode == 'html':
+            return self._run_html(spec)
+        if mode == 'css':
+            return self._run_css(spec)
+        if mode == 'js':
+            return self._run_js(spec)
+        return TestResult(False, self._fail_message(spec, f"Unknown mode '{mode}'."))
+
+    def _run_html(self, spec):
+        checks = spec.get('checks')
+        if not checks:
+            return TestResult(False, self._fail_message(spec, 'No HTML checks supplied.'))
+        default_files = self._resolve_scope(spec, default_ext=['html', 'htm'])
+        if not default_files:
+            return TestResult(False, self._fail_message(spec, 'No HTML files matched the provided scope.'))
+        for check in checks:
+            files = default_files
+            if isinstance(check, dict) and ('file' in check or 'files' in check):
+                files = self._resolve_scope(check, default_ext=['html', 'htm']) or files
+            selector = check.get('selector')
+            criteria = dict(check)
+            if selector and 'tag' not in criteria:
+                parsed = self._parse_selector(selector)
+                selector_tag = parsed.get('tag')
+                selector_id = parsed.get('id')
+                selector_classes = parsed.get('classes')
+            else:
+                selector_tag = selector_id = None
+                selector_classes = None
+
+            base_criteria = {}
+            if selector_tag:
+                base_criteria['tag'] = selector_tag
+            if selector_id:
+                base_criteria['id'] = selector_id
+            if selector_classes:
+                base_criteria['classes'] = selector_classes
+            if 'tag' in criteria:
+                base_criteria['tag'] = criteria.pop('tag')
+            if 'id' in criteria:
+                base_criteria['id'] = criteria.pop('id')
+
+            property_fields = {}
+            for field in ('classes', 'attributes', 'text_contains'):
+                if field in criteria:
+                    property_fields[field] = criteria.pop(field)
+
+            forbid = bool(str(criteria.pop('forbid', criteria.pop('disallow', criteria.pop('prohibit', '')))).lower() in ('1', 'true', 'yes'))
+
+            for meta_key in (
+                'selector', 'file', 'files', 'scope', 'target', 'pattern', 'extensions',
+                'message', 'description', 'mode', 'language', 'type', 'success_message',
+                'property_message', 'structure_message'
+            ):
+                criteria.pop(meta_key, None)
+            count_requirement = criteria.pop('count', None)
+            min_requirement = criteria.pop('min', None)
+            max_requirement = criteria.pop('max', None)
+            matches = []
+            for file in files:
+                doc = self._html_doc(file['path'])
+                for element in doc.find(**base_criteria):
+                    matches.append((file['path'], element))
+            target_label = self._format_target_label(check, base_criteria)
+
+            if not matches:
+                message = check.get('message') or f"Required element '{target_label}' not found."
+                if forbid:
+                    # If forbidding, no matches is success.
+                    continue
+                return TestResult(False, self._fail_message(spec, message, default_files[0]['path'] if default_files else None))
+
+            if forbid:
+                violating = []
+                if property_fields:
+                    for match in matches:
+                        element = match[1]
+                        ok, _ = self._check_property_requirements(element, property_fields)
+                        if ok:
+                            violating.append(match)
+                else:
+                    violating = matches
+                if violating:
+                    first_path, first_element = violating[0]
+                    reason = check.get('forbid_message') or self._describe_forbidden_reason(target_label, property_fields)
+                    return TestResult(False, self._fail_message(spec, reason, first_path, first_element.get('line')))
+                continue
+
+            if property_fields:
+                property_matches = []
+                property_error = None
+                property_error_path = None
+                property_error_line = None
+                for match in matches:
+                    file_path, element = match
+                    ok, reason = self._check_property_requirements(element, property_fields)
+                    if ok:
+                        property_matches.append(match)
+                    else:
+                        property_error = reason
+                        if property_error_path is None:
+                            property_error_path = file_path
+                            property_error_line = element.get('line')
+                if not property_matches:
+                    default_reason = property_error or 'required properties were missing.'
+                    prop_message = (check.get('property_message') or check.get('message') or
+                                    f"Element '{target_label}' {default_reason}")
+                    return TestResult(False, self._fail_message(spec, prop_message, property_error_path, property_error_line))
+                matches = property_matches
+
+            structure_matches = []
+            invalid_path = None
+            invalid_line = None
+            for file_path, element in matches:
+                if self._element_structurally_valid(file_path, element):
+                    structure_matches.append((file_path, element))
+                elif invalid_path is None:
+                    invalid_path = file_path
+                    invalid_line = element.get('line')
+            if not structure_matches:
+                structure_message = (check.get('structure_message') or check.get('message') or
+                                     f"Element '{target_label}' found, but markup is malformed.")
+                return TestResult(False, self._fail_message(spec, structure_message, invalid_path, invalid_line))
+            matches = structure_matches
+
+            # Apply count requirements after property and structure filtering.
+            match_count = len(matches)
+            sample_path = structure_matches[0][0] if structure_matches else None
+            sample_line = structure_matches[0][1].get('line') if structure_matches else None
+            if count_requirement is not None and match_count != count_requirement:
+                message = f"{target_label}: expected {count_requirement} matches, found {match_count}."
+                return TestResult(False, self._fail_message(spec, message, sample_path, sample_line))
+            if min_requirement is not None and match_count < min_requirement:
+                message = f"{target_label}: expected at least {min_requirement} matches, found {match_count}."
+                return TestResult(False, self._fail_message(spec, message, sample_path, sample_line))
+            if max_requirement is not None and match_count > max_requirement:
+                message = f"{target_label}: found {match_count} matches but maximum is {max_requirement}."
+                return TestResult(False, self._fail_message(spec, message, sample_path, sample_line))
+        return TestResult(True, self._pass_message(spec))
+
+    def _parse_selector(self, selector):
+        selector = selector.strip()
+        result = {'classes': []}
+        tag_match = re.match(r'^([a-zA-Z][\w-]*)', selector)
+        if tag_match:
+            result['tag'] = tag_match.group(1).lower()
+        id_matches = re.findall(r'#([\w-]+)', selector)
+        if id_matches:
+            result['id'] = id_matches[-1]
+        class_matches = re.findall(r'\.([\w-]+)', selector)
+        if class_matches:
+            result['classes'] = class_matches
+        return result
+
+    def _format_target_label(self, check, base_criteria):
+        selector = check.get('selector')
+        if selector:
+            return selector
+        tag = base_criteria.get('tag') or '*'
+        label = tag
+        element_id = base_criteria.get('id')
+        if element_id:
+            label += f"#{element_id}"
+        classes = base_criteria.get('classes')
+        if classes:
+            if isinstance(classes, str):
+                class_list = [c.strip() for c in classes.split(',') if c.strip()]
+            else:
+                class_list = list(classes)
+            for cls in class_list:
+                label += f".{cls}"
+        return label
+
+    def _element_structurally_valid(self, filepath, element):
+        html = self.project.get_content(filepath, '')
+        if not html:
+            return False
+        tag = (element.get('tag') or '').lower()
+        if not tag:
+            return False
+        id_required = (element.get('id') or '').strip()
+        class_required = set(element.get('classes') or [])
+        attr_required = element.get('attrs') or {}
+
+        start_index = self._find_element_start_index(filepath, html, tag, element.get('line'))
+        if start_index is None:
+            return False
+
+        snippet, end_index = self._extract_start_tag(html, start_index)
+        if not snippet:
+            return False
+
+        attr_map = self._parse_start_tag_attributes(tag, snippet)
+        if id_required and attr_map.get('id') != id_required:
+            return False
+        if class_required:
+            class_value = attr_map.get('class', '') or ''
+            class_set = {c for c in re.split(r'\s+', class_value.strip()) if c}
+            if not class_required.issubset(class_set):
+                return False
+        for key, value in attr_required.items():
+            key = key.lower()
+            if key in ('id', 'class'):
+                continue
+            if attr_map.get(key) != value:
+                return False
+        if tag not in VOID_HTML_TAGS:
+            closing = f'</{tag}>'
+            if closing.lower() not in html[end_index:].lower():
+                return False
+        return True
+
+    def _check_property_requirements(self, element, property_fields):
+        if not property_fields:
+            return True, None
+
+        if 'classes' in property_fields:
+            required_classes = property_fields['classes']
+            if isinstance(required_classes, str):
+                required = {c.strip() for c in required_classes.split(',') if c.strip()}
+            else:
+                required = {str(c).strip() for c in required_classes if str(c).strip()}
+            missing = [cls for cls in required if cls and cls not in element['classes']]
+            if missing:
+                return False, 'is missing required classes: ' + ', '.join(missing)
+
+        attributes = property_fields.get('attributes') or {}
+        for key, expected in attributes.items():
+            attr_name = key.lower()
+            actual = element['attrs'].get(attr_name)
+            if actual is None:
+                return False, f"is missing attribute '{attr_name}'"
+            if isinstance(expected, dict):
+                if 'equals' in expected:
+                    expected_value = expected['equals']
+                    if actual != expected_value:
+                        return False, f"attribute '{attr_name}' must equal '{expected_value}'"
+                elif 'contains' in expected:
+                    needle = expected['contains']
+                    if needle and needle not in actual:
+                        return False, f"attribute '{attr_name}' must contain '{needle}'"
+                elif 'regex' in expected:
+                    pattern = expected['regex']
+                    try:
+                        if not re.search(pattern, actual):
+                            return False, f"attribute '{attr_name}' must match /{pattern}/"
+                    except re.error:
+                        continue
+                else:
+                    if actual != expected:
+                        return False, f"attribute '{attr_name}' does not match expected value"
+            else:
+                expected_value = str(expected)
+                if actual != expected_value:
+                    return False, f"attribute '{attr_name}' must equal '{expected_value}'"
+
+        text_requirement = property_fields.get('text_contains')
+        if text_requirement:
+            haystack = element['text'] or ''
+            values = [text_requirement] if isinstance(text_requirement, str) else text_requirement
+            missing_text = [needle for needle in values if needle and needle not in haystack]
+            if missing_text:
+                if len(missing_text) == 1:
+                    return False, f"must contain text '{missing_text[0]}'"
+                return False, 'must contain text values: ' + ', '.join(missing_text)
+
+        return True, None
+
+    def _describe_forbidden_reason(self, target_label, property_fields):
+        if property_fields:
+            parts = []
+            if 'classes' in property_fields:
+                classes = property_fields['classes']
+                if isinstance(classes, str):
+                    class_list = [c.strip() for c in classes.split(',') if c.strip()]
+                else:
+                    class_list = [str(c).strip() for c in classes if str(c).strip()]
+                if class_list:
+                    parts.append('classes ' + ', '.join(class_list))
+            attributes = property_fields.get('attributes') or {}
+            attr_names = [k for k in attributes.keys()]
+            if attr_names:
+                parts.append('attributes ' + ', '.join(attr_names))
+            text_req = property_fields.get('text_contains')
+            if text_req:
+                if isinstance(text_req, str):
+                    text_list = [text_req]
+                else:
+                    text_list = [str(t) for t in text_req if str(t)]
+                if text_list:
+                    parts.append('text ' + ', '.join(text_list))
+            if parts:
+                detail = f"Element '{target_label}' must not include " + ' or '.join(parts) + '.'
+            else:
+                detail = f"Element '{target_label}' must not exist."
+        else:
+            detail = f"Element '{target_label}' must not exist."
+        return detail
+
+    def _parse_start_tag_attributes(self, tag, snippet):
+        parser = _SingleTagParser()
+        try:
+            parser.feed(snippet + f'</{tag}>')
+        except Exception:
+            return {}
+        return parser.attrs
+
+    def _find_element_start_index(self, filepath, html, tag, line):
+        if filepath not in self._line_offsets:
+            self._line_offsets[filepath] = self._compute_line_offsets(html)
+        offsets = self._line_offsets[filepath]
+        if not offsets:
+            return None
+        if not line or line < 1 or line > len(offsets):
+            search_start = 0
+        else:
+            search_start = offsets[line - 1]
+        lower_html = html.lower()
+        token = f'<{tag}'.lower()
+        index = lower_html.find(token, search_start)
+        while index != -1:
+            after = index + len(token)
+            if after < len(html):
+                next_char = lower_html[after]
+                if next_char.isalnum() or next_char in ('-', ':'):
+                    index = lower_html.find(token, after)
+                    continue
+            return index
+        return None
+
+    def _extract_start_tag(self, html, index):
+        end = index + 1
+        in_quote = None
+        while end < len(html):
+            ch = html[end]
+            if in_quote:
+                if ch == in_quote:
+                    in_quote = None
+            else:
+                if ch in ('"', "'"):
+                    in_quote = ch
+                elif ch == '>':
+                    snippet = html[index:end + 1]
+                    return snippet, end + 1
+                elif ch == '<' and end != index:
+                    return None, None
+            end += 1
+        return None, None
+
+    @staticmethod
+    def _compute_line_offsets(text):
+        if not text:
+            return [0]
+        offsets = []
+        pos = 0
+        for line in text.splitlines(keepends=True):
+            offsets.append(pos)
+            pos += len(line)
+        if not text.endswith(('\n', '\r')):
+            offsets.append(pos)
+        return offsets
+
+    def _run_css(self, spec):
+        checks = spec.get('checks')
+        if not checks:
+            return TestResult(False, self._fail_message(spec, 'No CSS checks supplied.', files[0]['path'] if files else None))
+        files = self._resolve_scope(spec, default_ext=['css'])
+        if not files:
+            return TestResult(False, self._fail_message(spec, 'No CSS files matched the provided scope.'))
+        for check in checks:
+            selector = check.get('selector')
+            selector_regex = check.get('selector_regex')
+            properties = check.get('properties') or {}
+            single_property = check.get('property')
+            if single_property and single_property not in properties:
+                value = check.get('value') or check.get('equals')
+                properties[single_property] = value
+            min_requirement = check.get('min')
+            max_requirement = check.get('max')
+            matches = []
+            for file in files:
+                for rule in self._css_doc(file['path']):
+                    if selector and rule['selector'] != selector:
+                        continue
+                    if selector_regex and not re.search(selector_regex, rule['selector']):
+                        continue
+                    matches.append((file['path'], rule))
+            if not matches:
+                message = check.get('message') or 'Selector not found.'
+                scope_path = files[0]['path'] if files else None
+                return TestResult(False, self._fail_message(spec, message, scope_path))
+            match_count = len(matches)
+            if min_requirement is not None and match_count < min_requirement:
+                sample_path = matches[0][0] if matches else None
+                message = f'Expected at least {min_requirement} selector matches, found {match_count}.'
+                return TestResult(False, self._fail_message(spec, message, sample_path))
+            if max_requirement is not None and match_count > max_requirement:
+                sample_path = matches[0][0] if matches else None
+                message = f'Too many selector matches ({match_count}).'
+                return TestResult(False, self._fail_message(spec, message, sample_path))
+            for property_name, expected in properties.items():
+                property_name = property_name.lower()
+                ok, property_path = self._check_css_property(matches, property_name, expected)
+                if not ok:
+                    detail = check.get('message') or f"Missing property '{property_name}'."
+                    return TestResult(False, self._fail_message(spec, detail, property_path))
+        return TestResult(True, self._pass_message(spec))
+
+    def _check_css_property(self, matches, property_name, expected):
+        fallback_path = matches[0][0] if matches else None
+        for file_path, rule in matches:
+            actual = rule['properties'].get(property_name)
+            if actual is None:
+                continue
+            if self._compare_values(actual, expected):
+                return True, file_path
+            if fallback_path is None:
+                fallback_path = file_path
+        return False, fallback_path
+
+    @staticmethod
+    def _compare_values(actual, expected):
+        if isinstance(expected, dict):
+            equals = expected.get('equals')
+            contains = expected.get('contains')
+            regex = expected.get('regex')
+            if equals is not None:
+                return _normalise_css_value(actual) == _normalise_css_value(str(equals))
+            if contains:
+                return contains.lower() in actual.lower()
+            if regex:
+                try:
+                    return re.search(regex, actual) is not None
+                except re.error:
+                    return False
+            return False
+        return _normalise_css_value(actual) == _normalise_css_value(str(expected))
+
+    def _run_js(self, spec):
+        js_spec = spec.get('js') or {}
+        test_code = spec.get('jsTest') or spec.get('test') or js_spec.get('test') or js_spec.get('code')
+        if not test_code:
+            return TestResult(False, self._fail_message(spec, 'JS test missing a test body.', files[0]['path'] if files else None))
+        setup_code = spec.get('jsSetup') or js_spec.get('setup') or ''
+        timeout = spec.get('timeout') or js_spec.get('timeout') or 5
+        files = self._resolve_scope(spec, default_ext=['js'])
+        if not files:
+            return TestResult(False, self._fail_message(spec, 'No JavaScript files matched the provided scope.', files[0]['path'] if files else None))
+        outcome = self._execute_js(files, test_code, setup_code, timeout, js_spec)
+        if outcome.success:
+            return TestResult(True, self._pass_message(spec))
+        return TestResult(False, self._fail_message(spec, outcome.message))
+
+    def _execute_js(self, files, test_code, setup_code, timeout, js_spec):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            harness_path = os.path.join(tmpdir, 'runner.js')
+            payload_path = os.path.join(tmpdir, 'payload.json')
+            output_path = os.path.join(tmpdir, 'result.json')
+            with open(harness_path, 'w', encoding='utf-8') as handle:
+                handle.write(NODE_HARNESS)
+            payload = {
+                'studentFiles': [{'path': f['path'], 'content': f['content']} for f in files],
+                'testCode': test_code,
+                'setup': setup_code,
+                'outputPath': output_path,
+                'documentStub': js_spec.get('document')
+            }
+            with open(payload_path, 'w', encoding='utf-8') as handle:
+                json.dump(payload, handle)
+            try:
+                completed = subprocess.run(
+                    ['node', harness_path, payload_path],
+                    capture_output=True,
+                    text=True,
+                    timeout=max(1, min(30, int(timeout)))
+                )
+            except FileNotFoundError:
+                return TestResult(False, 'Node.js runtime is unavailable on the grading server.')
+            except subprocess.TimeoutExpired:
+                return TestResult(False, 'JavaScript test exceeded the allotted time limit.')
+            if completed.returncode != 0:
+                stderr = completed.stderr.strip() or completed.stdout.strip() or 'Unknown Node.js error.'
+                return TestResult(False, stderr)
+            if not os.path.exists(output_path):
+                return TestResult(False, 'JavaScript harness did not produce a result file.')
+            with open(output_path, 'r', encoding='utf-8') as handle:
+                data = json.load(handle)
+            if data.get('ok'):
+                return TestResult(True, 'PASS')
+            message = data.get('message') or 'JavaScript assertion failed.'
+            return TestResult(False, message)
+
+
+def _normalise_css_value(value):
+    return re.sub(r'\s+', ' ', value.strip()).lower()
+
+
+structured_runner = StructuredTestRunner(project)
+
+
+class HTMLValidator(HTMLParser):
+    def __init__(self):
+        super().__init__()
+        self.errors = []
+
+    def error(self, message):
+        self.errors.append(message)
+
+
+def validate_html(html_content):
+    validator = HTMLValidator()
+    try:
+        validator.feed(html_content)
+    except Exception as exc:
+        validator.errors.append(str(exc))
+    return validator.errors
+
+
+def list_student_files(target=None, pattern=None, extensions=None):
+    return [rec['path'] for rec in project.select_files(target, extensions=extensions, pattern=pattern)]
+
+
+def get_file_content(path):
+    return project.get_content(path, '')
+
+
+def find_html_elements(path=None, **criteria):
+    files = project.select_files(path or None, extensions=['html', 'htm'])
+    matches = []
+    for file in files:
+        doc = structured_runner._html_doc(file['path'])
+        for element in doc.find(**criteria):
+            matches.append({'file': file['path'], **element})
+    return matches
+
+
+def get_css_rules(path):
+    return structured_runner._css_doc(path)
+
+
+def run_js_assertions(test_code, files=None, setup=''):
+    scope = {'files': files} if files else {}
+    spec = {**scope, 'mode': 'js', 'jsTest': test_code, 'jsSetup': setup}
+    result = structured_runner.run(spec)
+    if not result.success:
+        raise AssertionError(result.message)
+    return result.message
+
+
+def _promote_inline_check(spec):
+    if not isinstance(spec, dict) or 'checks' in spec:
+        return spec
+    inline_keys = {
+        'selector', 'tag', 'id', 'classes', 'attributes', 'text_contains',
+        'count', 'min', 'max', 'properties', 'property', 'value', 'equals', 'message'
+    }
+    captured = {}
+    for key in list(spec.keys()):
+        if key in inline_keys:
+            captured[key] = spec.pop(key)
+    if not captured:
+        return spec
+    for numeric_key in ('count', 'min', 'max'):
+        if numeric_key in captured and isinstance(captured[numeric_key], str):
+            try:
+                captured[numeric_key] = int(captured[numeric_key])
+            except ValueError:
+                pass
+    mode = (spec.get('mode') or spec.get('language') or spec.get('type') or '').lower()
+    if mode == 'css' and 'properties' not in captured and 'property' in captured:
+        value = captured.pop('value', captured.get('equals'))
+        prop_name = captured.pop('property')
+        if value is not None:
+            captured['properties'] = {prop_name: value}
+    spec['checks'] = [captured]
+    return spec
+
+
+def parse_structured_spec(extra_text):
+    if not extra_text:
+        return None
+    extra_text = extra_text.strip()
+    if not extra_text:
+        return None
+    if extra_text.startswith('{'):
+        try:
+            data = json.loads(extra_text)
+        except json.JSONDecodeError:
+            return None
+        if isinstance(data, dict):
+            if 'mode' not in data:
+                for key in ('language', 'lang', 'type'):
+                    if key in data:
+                        data['mode'] = data[key]
+                        break
+            return _promote_inline_check(data) if data.get('mode') else None
+        return None
+    parts = [segment.strip() for segment in extra_text.split(';') if segment.strip()]
+    if not parts:
+        return None
+    data = {}
+    for part in parts:
+        if ':' not in part:
+            continue
+        key, value = part.split(':', 1)
+        data[key.strip().lower()] = value.strip()
+    if not data:
+        return None
+    mapping = {'lang': 'mode', 'language': 'mode', 'type': 'mode'}
+    for source, target in mapping.items():
+        if source in data:
+            data[target] = data[source]
+            break
+    if 'files' in data:
+        data['files'] = [item.strip() for item in data['files'].split(',') if item.strip()]
+    if 'extensions' in data:
+        data['extensions'] = [item.strip() for item in data['extensions'].split(',') if item.strip()]
+    return _promote_inline_check(data) if data.get('mode') else None
+
+
+def build_test_context():
+    return {
+        '__builtins__': __builtins__,
+        'project': project,
+        'get_file_content': get_file_content,
+        'validate_html': validate_html,
+        'find_html_elements': find_html_elements,
+        'get_css_rules': get_css_rules,
+        'run_js_assertions': run_js_assertions,
+        'list_student_files': list_student_files,
+        'structured_runner': structured_runner,
+    }
+
+
+{% for TEST in TESTCASES %}
+testcode = """{{ TEST.testcode | e('py') }}"""
+extra = """{{ TEST.extra | e('py') }}"""
+
+spec = parse_structured_spec(extra)
+try:
+    if spec:
+        result = structured_runner.run(spec)
+        message = result.message or ''
+        if isinstance(message, str):
+            message = message.strip()
+        print(message)
+    else:
+        if not testcode.strip():
+            print('ERROR: Test case has no structured spec or test code.')
+        else:
+            context = build_test_context()
+            exec(compile(testcode, '<testcase>', 'exec'), context)
+except Exception as exc:
+    print(f"ERROR: {exc}")
+
+{% if not loop.last %}
+print('---')
+{% endif %}
+{% endfor %}]]></template>
+    <iscombinatortemplate>1</iscombinatortemplate>
+    <allowmultiplestdins>0</allowmultiplestdins>
+    <answer></answer>
+    <validateonsave>0</validateonsave>
+    <testsplitterre><![CDATA[|^---[ \t]*\r?\n|m]]></testsplitterre>
+    <language>python3</language>
+    <acelang></acelang>
+    <sandbox>jobesandbox</sandbox>
+    <grader>EqualityGrader</grader>
+    <cputimelimitsecs></cputimelimitsecs>
+    <memlimitmb></memlimitmb>
+    <sandboxparams></sandboxparams>
+    <templateparams></templateparams>
+    <hoisttemplateparams>0</hoisttemplateparams>
+    <extractcodefromjson>0</extractcodefromjson>
+    <templateparamslang>None</templateparamslang>
+    <templateparamsevalpertry>0</templateparamsevalpertry>
+    <templateparamsevald></templateparamsevald>
+    <twigall>0</twigall>
+    <uiplugin>monaco_multifile</uiplugin>
+    <uiparameters></uiparameters>
     <attachments>0</attachments>
     <attachmentsrequired>0</attachmentsrequired>
     <maxfilesize>0</maxfilesize>
