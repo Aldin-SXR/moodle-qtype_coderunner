@@ -1,0 +1,101 @@
+{
+  "name": "ui_monaco_multifile",
+  "parameters": {
+    "import_from_scratchpad": {
+      "type": "boolean",
+      "default": true
+    },
+    "font_size": {
+      "type": "int",
+      "default": 14
+    },
+    "theme": {
+      "type": "string",
+      "default": ""
+    },
+    "auto_switch_light_dark": {
+      "type": "boolean",
+      "default": true
+    },
+    "minimap": {
+      "type": "boolean",
+      "default": false
+    },
+    "word_wrap": {
+      "type": "string",
+      "default": "off"
+    },
+    "tab_size": {
+      "type": "int",
+      "default": 4
+    },
+    "lsp_enabled": {
+      "type": "boolean",
+      "default": true
+    },
+    "lsp_prefix_code": {
+      "type": "string",
+      "default": ""
+    },
+    "lsp_url": {
+      "type": "string",
+      "default": ""
+    },
+    "lsp_base_url": {
+      "type": "string",
+      "default": ""
+    },
+    "use_simple_lsp": {
+      "type": "boolean",
+      "default": true
+    },
+    "rich_features": {
+      "type": "boolean",
+      "default": false
+    },
+    "disable_lsp_prefixes": {
+      "type": "boolean",
+      "default": false
+    },
+    "lsp_workspace_config": {
+      "type": "string",
+      "default": ""
+    },
+  "sidebar_width": {
+    "type": "integer",
+    "default": 200,
+    "label": "Sidebar width (px)",
+    "help": "Width of the file tree sidebar in pixels"
+  },
+  "max_files": {
+    "type": "integer",
+    "default": 20,
+    "label": "Maximum files",
+    "help": "Maximum number of files students can create"
+  },
+  "allowed_extensions": {
+    "type": "array",
+    "default": ["html", "css", "js", "json", "txt"],
+    "label": "Allowed file extensions",
+    "help": "Comma-separated list of allowed file extensions"
+  },
+  "disable_new_files": {
+    "type": "boolean",
+    "default": false,
+    "label": "Disable new files for students",
+    "help": "If enabled, students cannot create new files (authors are unaffected)"
+  },
+  "disable_new_folders": {
+    "type": "boolean",
+    "default": false,
+    "label": "Disable new folders for students",
+    "help": "If enabled, students cannot create new folders (authors are unaffected)"
+  },
+  "use_vscode_icons": {
+    "type": "boolean",
+    "default": true,
+    "label": "Use VS Code icons",
+    "help": "Display VS Code file and folder icons where possible, falling back to Devicon/Codicon otherwise"
+  }
+  }
+}

@@ -660,13 +660,24 @@ define(['jquery', 'qtype_coderunner/userinterfacewrapper', 'core/str'], function
             }
         });
 
-        // In order to initialise the Ui plugin when the answer preload section is
-        // expanded, we monitor attribute mutations in the Answer Preload
-        // header.
-        var observer = new MutationObserver( function () {
-            setUis();
+        // When the answer preload section is expanded, make sure its UI is ready
+        // without re-initialising the main answer editor (which would reset LSP etc).
+        var observer = new MutationObserver(function() {
+            if (preloadHdr.hasClass('collapsed')) {
+                return;
+            }
+            const preloadTextarea = document.getElementById('id_answerpreload');
+            if (!preloadTextarea) {
+                return;
+            }
+            const preloadWrapper = preloadTextarea.current_ui_wrapper;
+            if (preloadWrapper && typeof preloadWrapper.checkForResize === 'function') {
+                preloadWrapper.checkForResize();
+            } else {
+                setUi('id_answerpreload', uiplugin.val());
+            }
         });
-        observer.observe(preloadHdr.get(0), {'attributes': true, 'attributeFilter':['class']});
+        observer.observe(preloadHdr.get(0), {'attributes': true, 'attributeFilter': ['class']});
 
         // Setup click handler for the buttons that allow users to replace the
         // expected output  with the output got from testing the answer program.

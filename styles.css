@@ -1,3 +1,18 @@
+@import url('https://cdn.jsdelivr.net/gh/devicons/devicon@latest/devicon.min.css');
+
+/* Codicon font for Monaco editor icons (copy buttons, hover actions, etc) */
+@font-face {
+    font-family: codicon;
+    font-display: block;
+    src: url(monaco/vs/base/browser/ui/codicons/codicon/codicon.ttf) format("truetype");
+}
+
+/* Spinner animation for preview loading */
+@keyframes monaco-spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
 /* Question and results page */
 
 .que.coderunner div.coderunner-examples,
@@ -526,3 +541,895 @@ body#page-question-type-coderunner div[id^=fitem_id_extra_] {
 }
 
 /* stylelint-enable declaration-no-important  */
+
+/* Monaco Multi-File Editor Styles */
+.monaco-multifile-container {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    font-size: 13px;
+    border: 1px solid var(--mm-border-container, #d0d0d0);
+    background-color: var(--mm-editor-bg, #ffffff);
+    color: var(--mm-item-color, #1f2329);
+    --mm-border-container: #d0d0d0;
+    --mm-bg-sidebar: #f7f7f7;
+    --mm-border-sidebar: #d0d0d0;
+    --mm-header-bg: #f7f7f7;
+    --mm-header-color: #4a4a4a;
+    --mm-icon-color: #404040;
+    --mm-icon-hover-bg: rgba(0, 0, 0, 0.08);
+    --mm-item-color: #1f2329;
+    --mm-item-hover-bg: rgba(0, 0, 0, 0.08);
+    --mm-item-active-bg: #d9e8fb;
+    --mm-item-active-color: #0b2f52;
+    --mm-drag-over-folder-bg: #9dcbf7;
+    --mm-drag-over-folder-color: #0b2f52;
+    --mm-drag-over-root: rgba(0, 120, 215, 0.16);
+    --mm-context-menu-bg: #ffffff;
+    --mm-context-menu-border: #d0d0d0;
+    --mm-context-menu-color: #1f2329;
+    --mm-context-menu-hover-bg: #0b5aaa;
+    --mm-context-menu-hover-color: #ffffff;
+    --mm-tab-bg: #f7f7f7;
+    --mm-tab-border: #d0d0d0;
+    --mm-tab-color: #4a4a4a;
+    --mm-tab-hover-bg: #ffffff;
+    --mm-tab-hover-color: #1f2329;
+    --mm-tab-active-bg: #ffffff;
+    --mm-tab-active-color: #0b2f52;
+    --mm-tab-active-underline: #0b5aaa;
+    --mm-editor-bg: #ffffff;
+    --mm-chevron-color: #6c6c6c;
+    --mm-lock-color: #b45309;
+    --mm-preview-backdrop: rgba(0, 0, 0, 0.5);
+    --mm-preview-modal-bg: #ffffff;
+    --mm-preview-modal-border: #d0d0d0;
+    --mm-preview-header-bg: #f7f7f7;
+    --mm-preview-header-color: #4a4a4a;
+    --mm-preview-button-color: #404040;
+    --mm-preview-button-hover-bg: rgba(0, 0, 0, 0.08);
+    --mm-preview-console-bg: #f7f7f7;
+    --mm-preview-console-color: #1f2329;
+    --mm-preview-console-border: #d0d0d0;
+    --mm-preview-console-muted: #4a5160;
+    --mm-preview-scrollbar-track: rgba(0, 0, 0, 0.03);
+    --mm-preview-scrollbar-thumb: rgba(0, 0, 0, 0.25);
+}
+
+.monaco-multifile-container.monaco-multifile-theme-dark {
+    --mm-border-container: #3e3e42;
+    --mm-bg-sidebar: #252526;
+    --mm-border-sidebar: #3e3e42;
+    --mm-header-bg: #2d2d30;
+    --mm-header-color: #dcdcdc;
+    --mm-icon-color: #dcdcdc;
+    --mm-icon-hover-bg: rgba(255, 255, 255, 0.14);
+    --mm-item-color: #f0f0f0;
+    --mm-item-hover-bg: #2a2d2e;
+    --mm-item-active-bg: #0e639c;
+    --mm-item-active-color: #ffffff;
+    --mm-drag-over-folder-bg: #0e639c;
+    --mm-drag-over-folder-color: #ffffff;
+    --mm-drag-over-root: rgba(14, 99, 156, 0.45);
+    --mm-context-menu-bg: #252526;
+    --mm-context-menu-border: #454545;
+    --mm-context-menu-color: #f0f0f0;
+    --mm-context-menu-hover-bg: #094771;
+    --mm-context-menu-hover-color: #ffffff;
+    --mm-tab-bg: #2d2d30;
+    --mm-tab-border: #252526;
+    --mm-tab-color: rgba(255, 255, 255, 0.75);
+    --mm-tab-hover-bg: #1e1e1e;
+    --mm-tab-hover-color: #ffffff;
+    --mm-tab-active-bg: #1e1e1e;
+    --mm-tab-active-color: #ffffff;
+    --mm-tab-active-underline: #3794ff;
+    --mm-editor-bg: #1e1e1e;
+    --mm-chevron-color: #cccccc;
+    --mm-lock-color: #f2c38f;
+    --mm-preview-backdrop: rgba(0, 0, 0, 0.7);
+    --mm-preview-modal-bg: #1e1e1e;
+    --mm-preview-modal-border: #454545;
+    --mm-preview-header-bg: #2d2d30;
+    --mm-preview-header-color: #cccccc;
+    --mm-preview-button-color: #cccccc;
+    --mm-preview-button-hover-bg: #3a3d41;
+    --mm-preview-console-bg: #1e1e1e;
+    --mm-preview-console-color: #d4d4d4;
+    --mm-preview-console-border: #454545;
+    --mm-preview-console-muted: #a0a0a0;
+    --mm-preview-scrollbar-track: rgba(255, 255, 255, 0.04);
+    --mm-preview-scrollbar-thumb: rgba(255, 255, 255, 0.22);
+}
+
+.monaco-multifile-container.monaco-multifile-theme-light {
+    --mm-border-container: #d0d0d0;
+}
+
+.monaco-multifile-container.monaco-multifile-theme-one-dark {
+    --mm-border-container: #3a3f4b;
+    --mm-bg-sidebar: #21252b;
+    --mm-border-sidebar: #3a3f4b;
+    --mm-header-bg: #2c313c;
+    --mm-header-color: #e5e9f0;
+    --mm-icon-color: #abb2bf;
+    --mm-icon-hover-bg: rgba(255, 255, 255, 0.1);
+    --mm-item-color: #d7dae0;
+    --mm-item-hover-bg: rgba(92, 99, 112, 0.45);
+    --mm-item-active-bg: #3e4451;
+    --mm-item-active-color: #ffffff;
+    --mm-drag-over-folder-bg: #528bff;
+    --mm-drag-over-folder-color: #ffffff;
+    --mm-drag-over-root: rgba(82, 139, 255, 0.25);
+    --mm-context-menu-bg: #282c34;
+    --mm-context-menu-border: #3a3f4b;
+    --mm-context-menu-color: #d7dae0;
+    --mm-context-menu-hover-bg: #3a3f4b;
+    --mm-context-menu-hover-color: #ffffff;
+    --mm-tab-bg: #21252b;
+    --mm-tab-border: #181a1f;
+    --mm-tab-color: #abb2bf;
+    --mm-tab-hover-bg: #2c313c;
+    --mm-tab-hover-color: #ffffff;
+    --mm-tab-active-bg: #282c34;
+    --mm-tab-active-color: #ffffff;
+    --mm-tab-active-underline: #528bff;
+    --mm-editor-bg: #282c34;
+    --mm-chevron-color: #abb2bf;
+    --mm-lock-color: #e0c184;
+    --mm-preview-backdrop: rgba(0, 0, 0, 0.75);
+    --mm-preview-modal-bg: #1f2329;
+    --mm-preview-modal-border: #3a3f4b;
+    --mm-preview-header-bg: #2c313c;
+    --mm-preview-header-color: #e5e9f0;
+    --mm-preview-button-color: #e5e9f0;
+    --mm-preview-button-hover-bg: rgba(82, 139, 255, 0.2);
+    --mm-preview-console-bg: #1f2329;
+    --mm-preview-console-color: #d7dae0;
+    --mm-preview-console-border: #3a3f4b;
+    --mm-preview-console-muted: #aab3c0;
+    --mm-preview-scrollbar-track: rgba(255, 255, 255, 0.05);
+    --mm-preview-scrollbar-thumb: rgba(255, 255, 255, 0.25);
+}
+
+.monaco-multifile-container.monaco-multifile-theme-one-light {
+    --mm-border-container: #dcdfe7;
+    --mm-bg-sidebar: #f8f9fb;
+    --mm-border-sidebar: #dcdfe7;
+    --mm-header-bg: #f2f3f7;
+    --mm-header-color: #2c313a;
+    --mm-icon-color: #4b5263;
+    --mm-icon-hover-bg: rgba(0, 0, 0, 0.06);
+    --mm-item-color: #2c313a;
+    --mm-item-hover-bg: rgba(82, 139, 255, 0.12);
+    --mm-item-active-bg: #e5f0ff;
+    --mm-item-active-color: #1b3a73;
+    --mm-drag-over-folder-bg: #528bff;
+    --mm-drag-over-folder-color: #ffffff;
+    --mm-drag-over-root: rgba(82, 139, 255, 0.16);
+    --mm-context-menu-bg: #ffffff;
+    --mm-context-menu-border: #dcdfe7;
+    --mm-context-menu-color: #2c313a;
+    --mm-context-menu-hover-bg: #e5f0ff;
+    --mm-context-menu-hover-color: #1b3a73;
+    --mm-tab-bg: #f8f9fb;
+    --mm-tab-border: #dcdfe7;
+    --mm-tab-color: #4b5263;
+    --mm-tab-hover-bg: #ffffff;
+    --mm-tab-hover-color: #1b3a73;
+    --mm-tab-active-bg: #ffffff;
+    --mm-tab-active-color: #1b3a73;
+    --mm-tab-active-underline: #528bff;
+    --mm-editor-bg: #fafafa;
+    --mm-chevron-color: #6b717d;
+    --mm-lock-color: #b45309;
+    --mm-preview-backdrop: rgba(0, 0, 0, 0.55);
+    --mm-preview-modal-bg: #ffffff;
+    --mm-preview-modal-border: #dcdfe7;
+    --mm-preview-header-bg: #f2f3f7;
+    --mm-preview-header-color: #2c313a;
+    --mm-preview-button-color: #2c313a;
+    --mm-preview-button-hover-bg: rgba(82, 139, 255, 0.12);
+    --mm-preview-console-bg: #f8f9fb;
+    --mm-preview-console-color: #2c313a;
+    --mm-preview-console-border: #dcdfe7;
+    --mm-preview-console-muted: #526079;
+    --mm-preview-scrollbar-track: rgba(0, 0, 0, 0.04);
+    --mm-preview-scrollbar-thumb: rgba(0, 0, 0, 0.25);
+}
+
+.monaco-multifile-sidebar {
+    background-color: var(--mm-bg-sidebar);
+    border-right: 1px solid var(--mm-border-sidebar);
+    color: var(--mm-item-color);
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    overflow: auto;
+}
+
+.monaco-multifile-active textarea.edit_code {
+    display: none !important;
+}
+
+.monaco-multifile-sidebar-header {
+    padding: 6px 8px;
+    border-bottom: 1px solid var(--mm-border-sidebar);
+    background-color: var(--mm-header-bg);
+    color: var(--mm-header-color);
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.monaco-sidebar-actions {
+    display: flex;
+    gap: 4px;
+}
+
+.monaco-icon-btn {
+    background: none;
+    border: none;
+    padding: 4px 6px;
+    border-radius: 3px;
+    cursor: pointer;
+    font-size: 14px;
+    color: var(--mm-icon-color);
+    transition: background-color 0.15s ease, color 0.15s ease;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
+}
+
+.monaco-icon-btn:hover,
+.monaco-icon-btn:focus-visible {
+    background-color: var(--mm-icon-hover-bg);
+}
+
+.monaco-preview-btn {
+    margin-left: 0;
+    height: 100%;
+    padding: 0 14px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    border: none;
+    border-left: 1px solid var(--mm-tab-border);
+    border-bottom: 1px solid var(--mm-tab-border);
+    border-radius: 0;
+    background-color: var(--mm-tab-bg);
+    color: var(--mm-tab-color);
+    font-size: 13px;
+    cursor: pointer;
+    transition: background-color 0.1s ease, color 0.1s ease;
+}
+
+.monaco-preview-btn:hover,
+.monaco-preview-btn:focus-visible {
+    background-color: var(--mm-tab-hover-bg);
+    color: var(--mm-tab-hover-color);
+}
+
+.monaco-preview-btn .codicon {
+    font-size: 14px;
+}
+
+.monaco-preview-btn.is-disabled {
+    opacity: 0.45;
+    pointer-events: none;
+}
+
+.monaco-preview-label {
+    font-weight: 500;
+    text-transform: none;
+    letter-spacing: 0.01em;
+}
+
+.monaco-tab-controls {
+    display: flex;
+    align-items: stretch;
+    height: 35px;
+}
+
+.monaco-theme-control {
+    position: relative;
+    height: 100%;
+    display: flex;
+}
+
+.monaco-theme-btn {
+    padding: 0 10px;
+}
+
+.monaco-theme-control.open > .monaco-preview-btn {
+    z-index: 11;
+}
+
+.monaco-theme-menu {
+    position: absolute;
+    top: 100%;
+    right: 0;
+    min-width: 240px;
+    background-color: var(--mm-context-menu-bg);
+    border: 1px solid var(--mm-context-menu-border);
+    border-radius: 3px;
+    box-shadow: 0 4px 18px rgba(0, 0, 0, 0.15);
+    padding: 4px 0;
+    z-index: 10;
+}
+
+.monaco-theme-menu button {
+    width: 100%;
+    border: none;
+    background: none;
+    padding: 6px 12px;
+    color: var(--mm-context-menu-color);
+    display: flex;
+    justify-content: flex-start;
+    align-items: center;
+    font-size: 13px;
+    cursor: pointer;
+}
+
+.monaco-theme-menu button:hover,
+.monaco-theme-menu button:focus-visible {
+    background-color: var(--mm-context-menu-hover-bg);
+    color: var(--mm-context-menu-hover-color);
+}
+
+.monaco-theme-menu button.selected {
+    font-weight: 600;
+}
+
+.monaco-theme-menu-label {
+    flex: 1;
+    text-align: left;
+}
+
+.monaco-theme-menu-meta {
+    font-size: 11px;
+    margin-left: auto;
+    opacity: 0.8;
+    text-align: right;
+}
+
+.monaco-multifile-tree {
+    padding: 8px 4px;
+}
+
+.monaco-file-item,
+.monaco-folder-item {
+    padding: 4px 8px;
+    cursor: pointer;
+    transition: background-color 0.1s ease;
+    user-select: none;
+    color: var(--mm-item-color);
+}
+
+.monaco-file-item.locked {
+    color: var(--mm-item-active-color);
+}
+
+.monaco-file-item.locked .monaco-tree-icon {
+    color: var(--mm-lock-color);
+}
+
+.monaco-tab.locked {
+    color: var(--mm-item-active-color);
+}
+
+.monaco-tab.locked .monaco-tab-lock-icon {
+    color: var(--mm-lock-color);
+    opacity: 0.9;
+}
+
+.monaco-tab.locked .monaco-tab-icon.devicon-icon {
+    color: var(--mm-lock-color);
+}
+
+.monaco-tree-icon {
+    font-family: "codicon", "Segoe UI Symbol", sans-serif;
+    font-size: 14px;
+    width: 16px;
+    height: 16px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: inherit;
+}
+
+.monaco-tab-icon {
+    font-family: "codicon", "Segoe UI Symbol", sans-serif;
+    font-size: 14px;
+    width: 16px;
+    height: 16px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: inherit;
+}
+
+.monaco-tree-icon.vscode-icon,
+.monaco-tab-icon.vscode-icon {
+    background-size: contain;
+    background-repeat: no-repeat;
+    background-position: center;
+    color: transparent;
+}
+
+.monaco-tree-icon.devicon-icon,
+.monaco-tab-icon.devicon-icon {
+    font-family: "devicon", "Segoe UI Symbol", sans-serif;
+    font-size: 14px;
+    width: 16px;
+    height: 16px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: #fff;
+}
+
+.monaco-lock-icon {
+    font-family: "codicon", "Segoe UI Symbol", sans-serif;
+    font-size: 13px;
+    margin-left: 4px;
+    color: var(--mm-lock-color);
+    opacity: 0.9;
+}
+
+.monaco-console-output-container {
+    scrollbar-width: thin;
+    scrollbar-color: var(--mm-preview-scrollbar-thumb) var(--mm-preview-scrollbar-track);
+}
+
+.monaco-console-output-container::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+.monaco-console-output-container::-webkit-scrollbar-track {
+    background: var(--mm-preview-scrollbar-track);
+    border-radius: 4px;
+}
+
+.monaco-console-output-container::-webkit-scrollbar-thumb {
+    background-color: var(--mm-preview-scrollbar-thumb);
+    border-radius: 4px;
+}
+
+.monaco-folder-item:hover,
+.monaco-file-item:hover:not(.active) {
+    background-color: var(--mm-item-hover-bg);
+}
+
+.monaco-file-item.active {
+    background-color: var(--mm-item-active-bg) !important;
+    color: var(--mm-item-active-color) !important;
+}
+
+.monaco-folder-item.drag-over,
+.monaco-file-item.drag-over {
+    background-color: var(--mm-drag-over-folder-bg);
+    color: var(--mm-drag-over-folder-color);
+}
+
+.monaco-multifile-tree.drag-over-root {
+    background-color: var(--mm-drag-over-root);
+}
+
+.monaco-chevron {
+    font-size: 10px;
+    color: var(--mm-chevron-color);
+}
+
+.monaco-multifile-tabs {
+    display: flex;
+    background-color: var(--mm-tab-bg);
+    border-bottom: 1px solid var(--mm-tab-border);
+    overflow-x: auto;
+    overflow-y: hidden;
+    height: 35px;
+}
+
+.monaco-tab {
+    padding: 0 12px;
+    cursor: pointer;
+    border-right: 1px solid var(--mm-tab-border);
+    background-color: var(--mm-tab-bg);
+    color: var(--mm-tab-color);
+    white-space: nowrap;
+    transition: background-color 0.1s ease, color 0.1s ease;
+    font-size: 13px;
+    display: flex;
+    align-items: center;
+    position: relative;
+}
+
+.monaco-tab:hover {
+    background-color: var(--mm-tab-hover-bg);
+    color: var(--mm-tab-hover-color);
+}
+
+.monaco-tab.active {
+    background-color: var(--mm-tab-active-bg) !important;
+    color: var(--mm-tab-active-color) !important;
+}
+
+.monaco-tab.active::after {
+    content: '';
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 2px;
+    background-color: var(--mm-tab-active-underline);
+}
+
+.monaco-multifile-editor {
+    background-color: var(--mm-editor-bg);
+}
+
+.monaco-multifile-context-menu {
+    background-color: var(--mm-context-menu-bg);
+    border: 1px solid var(--mm-context-menu-border);
+    color: var(--mm-context-menu-color);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+}
+
+.monaco-multifile-context-menu-item {
+    padding: 6px 12px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.monaco-multifile-context-menu-item:hover,
+.monaco-multifile-context-menu-item:focus-visible {
+    background-color: var(--mm-context-menu-hover-bg);
+    color: var(--mm-context-menu-hover-color);
+}
+
+/* Preview Modal */
+.monaco-preview-modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    display: none;
+    justify-content: center;
+    align-items: center;
+    z-index: 100000;
+}
+
+.monaco-preview-content {
+    width: 95%;
+    height: 95%;
+    max-width: none;
+    border-radius: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+}
+
+.monaco-preview-header {
+    padding: 8px 12px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.monaco-preview-header-left {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.monaco-preview-title {
+    margin: 0;
+    font-size: 13px;
+    font-weight: 500;
+    line-height: 1;
+}
+
+.monaco-preview-modal .monaco-preview-btn {
+    cursor: pointer;
+    padding: 4px 8px;
+    background-color: transparent;
+    border: 1px solid var(--mm-preview-button-border, transparent);
+    border-radius: 3px;
+    transition: background-color 0.2s, color 0.2s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--mm-preview-button-color, inherit);
+}
+
+.monaco-preview-modal .monaco-preview-btn.disabled {
+    opacity: 0.5;
+    pointer-events: none;
+}
+
+.monaco-preview-modal .monaco-preview-btn:hover,
+.monaco-preview-modal .monaco-preview-btn:focus-visible {
+    background-color: var(--mm-preview-button-hover-bg, rgba(0, 0, 0, 0.1));
+}
+
+.monaco-console-toggle-btn {
+    gap: 4px;
+}
+
+.monaco-device-group {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    margin-left: 12px;
+    padding-left: 12px;
+}
+
+.monaco-device-btn {
+    cursor: pointer;
+    padding: 4px 8px;
+    border: 1px solid var(--mm-preview-button-border, transparent);
+    border-radius: 3px;
+    transition: all 0.2s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--mm-preview-button-color, inherit);
+    background-color: transparent;
+}
+
+.monaco-device-btn:hover,
+.monaco-device-btn:focus-visible {
+    background-color: var(--mm-preview-button-hover-bg, rgba(0, 0, 0, 0.15));
+}
+
+.monaco-device-btn.is-active {
+    background-color: var(--mm-preview-button-hover-bg, rgba(0, 0, 0, 0.15));
+    color: var(--mm-preview-button-color, inherit);
+    box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.12);
+}
+
+.monaco-preview-area {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.monaco-preview-iframe-container {
+    flex: 1;
+    padding: 16px;
+    overflow: auto;
+    background-color: #fff;
+    position: relative;
+}
+
+.monaco-preview-loading {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    display: none;
+    justify-content: center;
+    align-items: center;
+    z-index: 10;
+    background-color: rgba(0, 0, 0, 0.1);
+}
+
+.monaco-preview-spinner {
+    width: 48px;
+    height: 48px;
+    border: 4px solid;
+    border-radius: 50%;
+    animation: monaco-spin 1s linear infinite;
+}
+
+.monaco-preview-iframe {
+    width: 100%;
+    height: 100%;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    background-color: white;
+}
+
+/* Console Panel */
+.monaco-console-panel {
+    height: 200px;
+    min-height: 100px;
+    max-height: 80%;
+    flex-shrink: 0;
+    flex-direction: column;
+    overflow: hidden;
+    box-sizing: border-box;
+    font-family: Consolas, Monaco, monospace;
+    font-size: 12px;
+    display: none;
+}
+
+.monaco-console-header {
+    padding: 6px 8px;
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    flex-shrink: 0;
+}
+
+.monaco-console-filter-label {
+    font-size: 11px;
+    margin-right: 4px;
+}
+
+.monaco-console-filter-btn {
+    padding: 2px 8px;
+    font-size: 11px;
+    border-radius: 3px;
+    cursor: pointer;
+    border: 1px solid var(--mm-preview-console-border, transparent);
+    background-color: transparent;
+    color: var(--mm-preview-button-color, inherit);
+}
+
+.monaco-console-search-container {
+    display: flex;
+    align-items: center;
+    margin-left: auto;
+    gap: 6px;
+}
+
+.monaco-console-search-icon {
+    font-size: 13px;
+}
+
+.monaco-console-search-input {
+    padding: 3px 8px;
+    font-size: 11px;
+    border-radius: 3px;
+    width: 180px;
+    outline: none;
+    background-color: var(--mm-preview-console-bg);
+    color: var(--mm-preview-console-color);
+    border: 1px solid var(--mm-preview-console-border);
+}
+
+.monaco-console-output-container {
+    flex: 1 1 0;
+    overflow-y: scroll;
+    overflow-x: auto;
+    padding: 8px;
+    min-height: 0;
+    max-height: 100%;
+    height: 0;
+    box-sizing: border-box;
+}
+
+.console-entry {
+    padding: 6px 8px;
+    border-bottom: 1px solid rgba(128, 128, 128, 0.2);
+    white-space: pre-wrap;
+    word-break: break-word;
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    line-height: 1.4;
+    color: var(--mm-preview-console-color);
+}
+
+.console-line-num {
+    color: var(--mm-preview-console-muted, #7d7d7d);
+    font-size: 11px;
+    font-family: monospace;
+    min-width: 24px;
+    text-align: right;
+    flex-shrink: 0;
+    user-select: none;
+}
+
+.console-time {
+    color: var(--mm-preview-console-muted, #7d7d7d);
+    font-size: 11px;
+    flex-shrink: 0;
+}
+
+.console-message {
+    flex: 1;
+    color: var(--mm-preview-console-color);
+}
+
+.console-icon {
+    flex-shrink: 0;
+    font-size: 14px;
+    margin-top: 2px;
+    color: var(--mm-preview-console-muted, #7d7d7d);
+}
+
+.monaco-console-resize-handle {
+    height: 4px;
+    cursor: ns-resize;
+    flex-shrink: 0;
+    transition: background-color 0.2s;
+    display: none;
+}
+
+.coderunner-diff-popup {
+    white-space: nowrap;
+}
+
+/* File Tree */
+.monaco-folder-item,
+.monaco-file-item {
+    padding: 4px 8px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    font-size: 13px;
+    user-select: none;
+    margin-bottom: 2px;
+    transition: background-color 0.1s;
+}
+
+.monaco-chevron {
+    margin-right: 4px;
+    font-size: 10px;
+}
+
+.monaco-tree-icon {
+    margin-right: 6px;
+}
+
+/* Fix for Monaco hover widget content area minimum width */
+.monaco-editor .monaco-hover-content {
+    min-width: 320px !important;
+}
+
+.monaco-editor .monaco-hover .hover-row .actions {
+    min-width: fit-content !important;
+    white-space: nowrap !important;
+}
+
+.coderunner-diff-modal .modal-dialog {
+    max-width: 1200px;
+    width: 98%;
+}
+
+.coderunner-diff-modal .modal-body {
+    height: 85vh;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+}
+
+.coderunner-diff-info {
+    padding: 12px 16px;
+    background-color: #f8f9fa;
+    border-bottom: 1px solid #dee2e6;
+    font-size: 0.9rem;
+    line-height: 1.4;
+}
+
+.coderunner-diff-labels {
+    display: flex;
+    justify-content: space-between;
+    font-weight: 500;
+}
+
+.coderunner-diff-label-left,
+.coderunner-diff-label-right {
+    flex: 1;
+}
+
+.coderunner-diff-label-right {
+    text-align: right;
+}
+
+.coderunner-diff-modal .coderunner-diff-host {
+    flex: 1;
+    min-height: 0;
+}

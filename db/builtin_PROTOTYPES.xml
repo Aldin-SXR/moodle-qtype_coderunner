@@ -90,6 +90,240 @@ int main() {
     </testcases>
   </question>
 
+<!-- question: multifile_cpp  -->
+  <question type="coderunner">
+    <name>
+      <text>BUILT_IN_PROTOTYPE_multifile_cpp</text>
+    </name>
+    <questiontext format="html">
+      <text>Prototype for multi-file C++ questions using the Monaco multi-file editor.</text>
+    </questiontext>
+    <generalfeedback format="html">
+      <text></text>
+    </generalfeedback>
+    <defaultgrade>1.0000000</defaultgrade>
+    <penalty>0.0000000</penalty>
+    <hidden>0</hidden>
+    <idnumber></idnumber>
+    <coderunnertype>multifile_cpp</coderunnertype>
+    <prototypetype>1</prototypetype>
+    <allornothing>1</allornothing>
+    <penaltyregime>10, 20, ...</penaltyregime>
+    <precheck>0</precheck>
+    <hidecheck>0</hidecheck>
+    <showsource>0</showsource>
+    <answerboxlines>20</answerboxlines>
+    <answerboxcolumns>100</answerboxcolumns>
+    <answerpreload></answerpreload>
+    <globalextra></globalextra>
+    <useace>0</useace>
+    <resultcolumns></resultcolumns>
+    <template><![CDATA[
+import json
+import os
+import subprocess
+import sys
+import tempfile
+
+SEPARATOR = "#<ab@17943918#@>#"
+RAW_ANSWER = """{{ STUDENT_ANSWER | e('py') }}"""
+
+
+def fail(message):
+    print(f"ERROR: {message}")
+    sys.exit(0)
+
+
+def normalise_path(path):
+    path = (path or '').replace('\\', '/').strip()
+    if not path:
+        return None
+    while path.startswith('/'):
+        path = path[1:]
+    normalised = os.path.normpath(path)
+    if normalised.startswith('..'):
+        return None
+    return normalised
+
+
+def write_submission_files():
+    try:
+        parsed = json.loads(RAW_ANSWER)
+    except json.JSONDecodeError as exc:
+        fail(f"Unable to parse submission JSON ({exc})")
+
+    files = parsed.get('files', []) if isinstance(parsed, dict) else parsed
+    if not isinstance(files, list):
+        fail("Submission must contain a 'files' list.")
+
+    sources = []
+    headers = []
+    include_dirs = set()
+    allowed_source_exts = {'.cpp', '.cc', '.cxx', '.c++'}
+    allowed_header_exts = {'.h', '.hh', '.hpp', '.hxx', '.ipp', '.tpp'}
+
+    for entry in files:
+        if not isinstance(entry, dict):
+            continue
+        raw_path = entry.get('path', '')
+        path = normalise_path(raw_path)
+        if not path:
+            continue
+        content = entry.get('content', '')
+        dirpart = os.path.dirname(path)
+        if dirpart:
+            os.makedirs(dirpart, exist_ok=True)
+        with open(path, 'w', encoding='utf-8') as handle:
+            handle.write(content)
+        ext = os.path.splitext(path)[1].lower()
+        if ext in allowed_source_exts:
+            sources.append(path)
+            if dirpart:
+                include_dirs.add(dirpart)
+        elif ext in allowed_header_exts:
+            headers.append(path)
+            if dirpart:
+                include_dirs.add(dirpart)
+
+    return sources, headers, include_dirs
+
+
+def compile_student_main(sources, include_flags):
+    if not sources:
+        return None, None
+    compile_cmd = ['g++', '-std=c++17', '-Wall', '-Wextra', '-Wreturn-type'] + include_flags + sources + ['-o', '__runner__']
+    proc = subprocess.run(compile_cmd, capture_output=True, text=True)
+    return proc.returncode, proc
+
+
+def compile_student_objects(library_sources, include_flags):
+    objects = []
+    for src in library_sources:
+        obj = src + '.o'
+        proc = subprocess.run(['g++', '-std=c++17', '-Wall', '-Wextra', '-Wreturn-type', '-c', src, '-o', obj] + include_flags,
+                              capture_output=True, text=True)
+        if proc.returncode != 0:
+            return None, proc
+        objects.append(obj)
+    return objects, None
+
+
+def make_harness_source(testcode, force_wrap=False):
+    boilerplate = '#include <bits/stdc++.h>\n'
+    normalized = testcode
+    has_main = (not force_wrap) and ('main(' in normalized)
+    body = normalized if has_main else ('int main() {\n' + normalized + '\nreturn 0;\n}\n')
+    return boilerplate + body
+
+
+def compile_and_run_harness(testcode, include_flags, student_objects):
+    has_main = 'main(' in testcode
+    wrapped = not has_main
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.cpp', delete=False) as harness:
+        body = make_harness_source(testcode, wrapped)
+        harness.write(body)
+        harness_path = harness.name
+    exe = harness_path + '.exe'
+    link_cmd = ['g++', '-std=c++17', '-Wall', '-Wextra', '-Wreturn-type', harness_path, '-o', exe] + include_flags + student_objects
+    link_proc = subprocess.run(link_cmd, capture_output=True, text=True)
+    if link_proc.returncode != 0:
+        sys.stdout.write("COMPILE_ERROR\n")
+        sys.stdout.write(link_proc.stdout)
+        sys.stdout.write(link_proc.stderr)
+        return link_proc.returncode
+
+    run_proc = subprocess.run([exe], text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    sys.stdout.write(run_proc.stdout)
+    return run_proc.returncode
+
+
+def main():
+    sources, headers, include_dirs = write_submission_files()
+
+    if not sources:
+        fail("No C++ source files (*.cpp/cc/cxx) found in submission.")
+
+    default_include_dirs = {'.', 'include', 'src'}
+    include_flags = []
+    for inc in sorted(include_dirs | default_include_dirs):
+        include_flags.extend(['-I', inc])
+
+    # Partition sources: main-like vs library
+    main_candidates = [s for s in sources if os.path.basename(s).lower().startswith('main.')]
+    library_sources = [s for s in sources if s not in main_candidates]
+
+    tests = [
+    {% for TEST in TESTCASES %}
+        {"stdin": """{{ TEST.stdin }}""", "testcode": """{{ TEST.testcode }}"""},
+    {% endfor %}
+    ]
+
+    needs_runner = any(not (t.get("testcode") or "").strip() for t in tests)
+
+    # Compile student main binary only if a test needs stdin runner
+    runner_status, runner_proc = (compile_student_main(sources, include_flags) if needs_runner else (None, None))
+    if runner_status is not None and runner_status != 0:
+        sys.stdout.write(runner_proc.stdout)
+        sys.stdout.write(runner_proc.stderr)
+        sys.exit(0)
+
+    # Compile library objects (used when teacher supplies C++ harness code)
+    student_objects, lib_err = compile_student_objects(library_sources, include_flags)
+    if lib_err:
+        sys.stdout.write(lib_err.stdout)
+        sys.stdout.write(lib_err.stderr)
+        sys.exit(0)
+
+    for idx, t in enumerate(tests):
+        testcode = (t.get("testcode") or "").strip()
+        if testcode:
+            # Teacher-provided C++ harness (no stdin)
+            compile_and_run_harness(testcode, include_flags, student_objects or [])
+        else:
+            # Default: run student main with stdin
+            proc = subprocess.run(['./__runner__'], input=t.get("stdin", ""), text=True,
+                                  stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+            sys.stdout.write(proc.stdout)
+        if idx < len(tests) - 1:
+            sys.stdout.write("\n" + SEPARATOR + "\n")
+
+
+if __name__ == "__main__":
+    main()
+]]></template>
+    <iscombinatortemplate>1</iscombinatortemplate>
+    <allowmultiplestdins>0</allowmultiplestdins>
+    <answer></answer>
+    <validateonsave>0</validateonsave>
+    <testsplitterre><![CDATA[|#<ab@17943918#@>#\n|]]></testsplitterre>
+    <language>python3</language>
+    <acelang></acelang>
+    <sandbox>jobesandbox</sandbox>
+    <grader>EqualityGrader</grader>
+    <cputimelimitsecs>10</cputimelimitsecs>
+    <memlimitmb></memlimitmb>
+    <sandboxparams></sandboxparams>
+    <templateparams></templateparams>
+    <hoisttemplateparams>0</hoisttemplateparams>
+    <extractcodefromjson>0</extractcodefromjson>
+    <templateparamslang>None</templateparamslang>
+    <templateparamsevalpertry>0</templateparamsevalpertry>
+    <templateparamsevald></templateparamsevald>
+    <twigall>0</twigall>
+    <uiplugin>monaco_multifile</uiplugin>
+    <uiparameters><![CDATA[{"allowed_extensions":["cpp","cc","cxx","c++","h","hpp","ipp","tpp"],"max_files":30,"tab_size":4,"lsp_enabled":true}]]></uiparameters>
+    <attachments>0</attachments>
+    <attachmentsrequired>0</attachmentsrequired>
+    <maxfilesize>0</maxfilesize>
+    <filenamesregex></filenamesregex>
+    <filenamesexplain></filenamesexplain>
+    <displayfeedback>0</displayfeedback>
+    <giveupallowed>0</giveupallowed>
+    <prototypeextra></prototypeextra>
+    <testcases>
+    </testcases>
+  </question>
+
 <!-- question: 32446  -->
   <question type="coderunner">
     <name>
@@ -3521,17 +3755,162 @@ class StructuredTestRunner:
             return False
         return _normalise_css_value(actual) == _normalise_css_value(str(expected))
 
+    @staticmethod
+    def _is_truthy(value):
+        if isinstance(value, bool):
+            return value
+        if value is None:
+            return False
+        return str(value).strip().lower() in ('1', 'true', 'yes', 'on')
+
+    @staticmethod
+    def _to_int(value):
+        if isinstance(value, int):
+            return value
+        try:
+            return int(str(value).strip())
+        except (ValueError, TypeError):
+            return None
+
+    def _collect_js_regex_checks(self, spec, js_spec):
+        checks = spec.get('regexChecks') or js_spec.get('regexChecks')
+
+        simple_patterns = None
+        for key in ('regex', 'regexes', 'patterns', 'codeRegex', 'codePatterns'):
+            if key in spec:
+                simple_patterns = spec.get(key)
+                break
+            if key in js_spec:
+                simple_patterns = js_spec.get(key)
+                break
+
+        pattern_checks = []
+        if simple_patterns:
+            if isinstance(simple_patterns, str):
+                pattern_checks.append({'pattern': simple_patterns})
+            elif isinstance(simple_patterns, list):
+                for item in simple_patterns:
+                    if isinstance(item, str):
+                        pattern_checks.append({'pattern': item})
+                    elif isinstance(item, dict):
+                        pattern_checks.append(item)
+
+        if pattern_checks:
+            checks = (checks or []) + pattern_checks
+
+        return checks or []
+
+    @staticmethod
+    def _regex_flags(flag_string):
+        flags = 0
+        if not flag_string:
+            return flags
+        for char in str(flag_string):
+            if char.lower() == 'i':
+                flags |= re.IGNORECASE
+            elif char.lower() == 'm':
+                flags |= re.MULTILINE
+            elif char.lower() == 's':
+                flags |= re.DOTALL
+        return flags
+
+    def _run_js_regex_checks(self, files, regex_checks, spec):
+        if not regex_checks:
+            return TestResult(True, self._pass_message(spec))
+
+        for check in regex_checks:
+            pattern = check.get('pattern') or check.get('regex')
+            if not pattern:
+                return TestResult(False, self._fail_message(spec, 'Regex check is missing a pattern.'))
+
+            try:
+                compiled = re.compile(pattern, self._regex_flags(check.get('flags') or check.get('options')))
+            except re.error as exc:
+                return TestResult(False, self._fail_message(spec, f"Invalid regex '{pattern}': {exc}"))
+
+            matches = []
+            for file in files:
+                text = file.get('content') or ''
+                for match in compiled.finditer(text):
+                    line = text.count('\n', 0, match.start()) + 1
+                    line += file.get('offset_line', 0)
+                    matches.append((file.get('original_path') or file['path'], line))
+
+            match_count = len(matches)
+            exact = self._to_int(check.get('count'))
+            min_requirement = self._to_int(check.get('min'))
+            max_requirement = self._to_int(check.get('max'))
+            if exact is not None:
+                min_requirement = max_requirement = exact
+            forbid = self._is_truthy(check.get('forbid') or check.get('disallow') or check.get('prohibit'))
+            message = check.get('message')
+
+            if forbid:
+                if match_count > 0:
+                    target_path, line_number = matches[0]
+                    detail = message or f"Regex /{pattern}/ must not appear in the submission."
+                    return TestResult(False, self._fail_message(spec, detail, target_path, line_number))
+                continue
+
+            if min_requirement is None and max_requirement is None:
+                min_requirement = 1
+
+            if min_requirement is not None and match_count < min_requirement:
+                scope_path = (matches[0][0] if matches else (files[0].get('original_path') or files[0]['path']))
+                if min_requirement == 1:
+                    detail = message or f"Regex /{pattern}/ not found."
+                else:
+                    detail = message or f"Regex /{pattern}/ expected at least {min_requirement} matches, found {match_count}."
+                return TestResult(False, self._fail_message(spec, detail, scope_path))
+
+            if max_requirement is not None and match_count > max_requirement:
+                target_path, line_number = matches[0]
+                detail = message or f"Regex /{pattern}/ matched {match_count} times (maximum {max_requirement})."
+                return TestResult(False, self._fail_message(spec, detail, target_path, line_number))
+
+        return TestResult(True, self._pass_message(spec))
+
     def _run_js(self, spec):
         js_spec = spec.get('js') or {}
         test_code = spec.get('jsTest') or spec.get('test') or js_spec.get('test') or js_spec.get('code')
-        if not test_code:
-            return TestResult(False, self._fail_message(spec, 'JS test missing a test body.', files[0]['path'] if files else None))
+        regex_checks = self._collect_js_regex_checks(spec, js_spec)
+        if not test_code and not regex_checks:
+            return TestResult(False, self._fail_message(spec, 'JavaScript test: missing a test body.'))
         setup_code = spec.get('jsSetup') or js_spec.get('setup') or ''
         timeout = spec.get('timeout') or js_spec.get('timeout') or 5
-        files = self._resolve_scope(spec, default_ext=['js'])
+        files = self._resolve_scope(spec, default_ext=['js', 'html'])
         if not files:
-            return TestResult(False, self._fail_message(spec, 'No JavaScript files matched the provided scope.', files[0]['path'] if files else None))
-        outcome = self._execute_js(files, test_code, setup_code, timeout, js_spec)
+            return TestResult(False, self._fail_message(spec, 'JavaScript test: No files matched the provided scope.'))
+
+        js_files = []
+        for file in files:
+            if file['extension'] == 'js':
+                js_files.append(file)
+            elif file['extension'] == 'html':
+                doc = self._html_doc(file['path'])
+                script_elements = doc.find(tag='script')
+                for i, script_element in enumerate(script_elements):
+                    script_content = script_element.get('text', '')
+                    start_line = script_element.get('line', 1)
+                    if script_content:
+                        js_files.append({
+                            'path': f"{file['path']}_inline_script_{i+1}.js",
+                            'content': script_content,
+                            'original_path': file['path'],
+                            'offset_line': start_line - 1
+                        })
+
+        if not js_files:
+            return TestResult(False, self._fail_message(spec, 'No JavaScript code found in the specified files.'))
+
+        if regex_checks:
+            regex_result = self._run_js_regex_checks(js_files, regex_checks, spec)
+            if not regex_result.success:
+                return regex_result
+            if not test_code:
+                return regex_result
+
+        outcome = self._execute_js(js_files, test_code, setup_code, timeout, js_spec)
         if outcome.success:
             return TestResult(True, self._pass_message(spec))
         return TestResult(False, self._fail_message(spec, outcome.message))
@@ -3763,6 +4142,277 @@ print('---')
     <twigall>0</twigall>
     <uiplugin>monaco_multifile</uiplugin>
     <uiparameters></uiparameters>
+    <attachments>0</attachments>
+    <attachmentsrequired>0</attachmentsrequired>
+    <maxfilesize>0</maxfilesize>
+    <filenamesregex></filenamesregex>
+    <filenamesexplain></filenamesexplain>
+    <displayfeedback>0</displayfeedback>
+    <giveupallowed>0</giveupallowed>
+    <prototypeextra></prototypeextra>
+    <testcases>
+    </testcases>
+  </question>
+
+<!-- question: multifile_java  -->
+  <question type="coderunner">
+    <name>
+      <text>BUILT_IN_PROTOTYPE_multifile_java</text>
+    </name>
+    <questiontext format="html">
+      <text>Prototype for multi-file Java questions using the Monaco multi-file editor.</text>
+    </questiontext>
+    <generalfeedback format="html">
+      <text></text>
+    </generalfeedback>
+    <defaultgrade>1.0000000</defaultgrade>
+    <penalty>0.0000000</penalty>
+    <hidden>0</hidden>
+    <idnumber></idnumber>
+    <coderunnertype>multifile_java</coderunnertype>
+    <prototypetype>1</prototypetype>
+    <allornothing>1</allornothing>
+    <penaltyregime>10, 20, ...</penaltyregime>
+    <precheck>0</precheck>
+    <hidecheck>0</hidecheck>
+    <showsource>0</showsource>
+    <answerboxlines>20</answerboxlines>
+    <answerboxcolumns>100</answerboxcolumns>
+    <answerpreload></answerpreload>
+    <globalextra></globalextra>
+    <useace>0</useace>
+    <resultcolumns></resultcolumns>
+    <template><![CDATA[
+import json
+import os
+import re
+import subprocess
+import sys
+import tempfile
+
+SEPARATOR = "#<ab@17943918#@>#"
+RAW_ANSWER = """{{ STUDENT_ANSWER | e('py') }}"""
+
+
+def fail(message):
+    print(f"ERROR: {message}")
+    sys.exit(0)
+
+
+def normalise_path(path):
+    path = (path or '').replace('\\', '/').strip()
+    if not path:
+        return None
+    while path.startswith('/'):
+        path = path[1:]
+    normalised = os.path.normpath(path)
+    if normalised.startswith('..'):
+        return None
+    return normalised
+
+
+def _detect_package_and_main(content):
+    package = None
+    package_match = re.search(r'^\s*package\s+([a-zA-Z_][\w\.]*)\s*;', content, re.MULTILINE)
+    if package_match:
+        package = package_match.group(1)
+    class_match = re.search(r'public\s+(?:final\s+|abstract\s+)?class\s+([A-Za-z_]\w*)', content)
+    has_main = bool(re.search(r'public\s+static\s+void\s+main\s*\(\s*String\s*\[\]\s*\w*\s*\)', content))
+    classname = class_match.group(1) if class_match else None
+    fqcn = f"{package}.{classname}" if package and classname else classname
+    return package, classname, has_main, fqcn
+
+
+def write_submission_files():
+    try:
+        parsed = json.loads(RAW_ANSWER)
+    except json.JSONDecodeError as exc:
+        fail(f"Unable to parse submission JSON ({exc})")
+
+    files = parsed.get('files', []) if isinstance(parsed, dict) else parsed
+    if not isinstance(files, list):
+        fail("Submission must contain a 'files' list.")
+
+    sources = []
+    main_candidates = []
+    allowed_source_exts = {'.java'}
+
+    for entry in files:
+        if not isinstance(entry, dict):
+            continue
+        raw_path = entry.get('path', '')
+        path = normalise_path(raw_path)
+        if not path:
+            continue
+        content = entry.get('content', '')
+        dirpart = os.path.dirname(path)
+        if dirpart:
+            os.makedirs(dirpart, exist_ok=True)
+        with open(path, 'w', encoding='utf-8') as handle:
+            handle.write(content)
+        ext = os.path.splitext(path)[1].lower()
+        if ext in allowed_source_exts:
+            sources.append(path)
+            package, classname, has_main, fqcn = _detect_package_and_main(content)
+            if has_main and fqcn:
+                main_candidates.append(fqcn)
+
+    return sources, main_candidates
+
+
+def compile_student_sources(sources):
+    if not sources:
+        return None, None
+    compile_cmd = [
+        'javac',
+        '-J-XX:CompressedClassSpaceSize=32m',
+        '-J-XX:MaxMetaspaceSize=96m',
+        '-J-Xss1m',
+        '-J-Xmx128m',
+        '-d', '.'
+    ] + sources
+    proc = subprocess.run(compile_cmd, capture_output=True, text=True)
+    return proc.returncode, proc
+
+
+def make_harness_source(testcode):
+    has_class = bool(re.search(r'\bclass\b', testcode))
+    has_main = bool(re.search(r'\bstatic\s+void\s+main\s*\(', testcode))
+    if has_class and has_main:
+        return testcode
+
+    indent = ' ' * 8
+    body_lines = testcode.splitlines() or ['']
+    body = '\n'.join(indent + line for line in body_lines)
+    return (
+        "import java.util.*;\n"
+        "public class __Tester__ {\n"
+        "    public static void main(String[] args) throws Exception {\n"
+        f"{body}\n"
+        "    }\n"
+        "}\n"
+    )
+
+
+def _harness_entry(source, default_class='__Tester__'):
+    package_match = re.search(r'^\s*package\s+([a-zA-Z_][\w\.]*)\s*;', source, re.MULTILINE)
+    package = package_match.group(1) if package_match else None
+    class_match = re.search(r'public\s+class\s+([A-Za-z_]\w*)', source)
+    classname = class_match.group(1) if class_match else default_class
+    fqcn = f"{package}.{classname}" if package else classname
+    return package, classname, fqcn
+
+
+def compile_and_run_harness(testcode):
+    harness_source = make_harness_source(testcode)
+    package, classname, fqcn = _harness_entry(harness_source)
+    with tempfile.TemporaryDirectory() as tmpdir:
+        target_dir = os.path.join(tmpdir, *(package.split('.')) if package else [])
+        os.makedirs(target_dir, exist_ok=True)
+        harness_path = os.path.join(target_dir, f"{classname}.java")
+        with open(harness_path, 'w', encoding='utf-8') as handle:
+            handle.write(harness_source)
+
+        compile_cmd = [
+            'javac',
+            '-J-XX:CompressedClassSpaceSize=32m',
+            '-J-XX:MaxMetaspaceSize=96m',
+            '-J-Xss1m',
+            '-J-Xmx128m',
+            '-cp', '.',
+            '-d', tmpdir,
+            harness_path
+        ]
+        comp = subprocess.run(compile_cmd, capture_output=True, text=True)
+        if comp.returncode != 0:
+            sys.stdout.write("COMPILE_ERROR\n")
+            sys.stdout.write(comp.stdout)
+            sys.stdout.write(comp.stderr)
+            return comp.returncode
+
+        run_cmd = [
+            'java',
+            '-Xss512k',
+            '-Xmx128m',
+            '-XX:CompressedClassSpaceSize=32m',
+            '-XX:MaxMetaspaceSize=96m',
+            '-cp', f"{tmpdir}{os.pathsep}.",
+            fqcn
+        ]
+        run_proc = subprocess.run(run_cmd, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+        sys.stdout.write(run_proc.stdout)
+        return run_proc.returncode
+
+
+def run_student_main(stdin_text, main_candidates):
+    if not main_candidates:
+        fail("No Java entry point found. Add a public static void main(String[] args) to your submission or supply teacher test code.")
+    main_class = main_candidates[0]
+    run_cmd = [
+        'java',
+        '-Xss512k',
+        '-Xmx128m',
+        '-XX:CompressedClassSpaceSize=32m',
+        '-XX:MaxMetaspaceSize=96m',
+        main_class
+    ]
+    proc = subprocess.run(run_cmd, input=stdin_text, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    sys.stdout.write(proc.stdout)
+    return proc.returncode
+
+
+def main():
+    sources, main_candidates = write_submission_files()
+
+    if not sources:
+        fail("No Java source files (*.java) found in submission.")
+
+    compile_status, compile_proc = compile_student_sources(sources)
+    if compile_status is not None and compile_status != 0:
+        sys.stdout.write(compile_proc.stdout)
+        sys.stdout.write(compile_proc.stderr)
+        sys.exit(0)
+
+    tests = [
+    {% for TEST in TESTCASES %}
+        {"stdin": """{{ TEST.stdin }}""", "testcode": """{{ TEST.testcode }}"""},
+    {% endfor %}
+    ]
+
+    for idx, t in enumerate(tests):
+        testcode = (t.get("testcode") or "").strip()
+        if testcode:
+            compile_and_run_harness(testcode)
+        else:
+            run_student_main(t.get("stdin", ""), main_candidates)
+        if idx < len(tests) - 1:
+            sys.stdout.write("\n" + SEPARATOR + "\n")
+
+
+if __name__ == "__main__":
+    main()
+]]></template>
+    <iscombinatortemplate>1</iscombinatortemplate>
+    <allowmultiplestdins>0</allowmultiplestdins>
+    <answer></answer>
+    <validateonsave>0</validateonsave>
+    <testsplitterre><![CDATA[|#<ab@17943918#@>#\n|]]></testsplitterre>
+    <language>python3</language>
+    <acelang></acelang>
+    <sandbox>jobesandbox</sandbox>
+    <grader>EqualityGrader</grader>
+    <cputimelimitsecs>10</cputimelimitsecs>
+    <memlimitmb></memlimitmb>
+    <sandboxparams></sandboxparams>
+    <templateparams></templateparams>
+    <hoisttemplateparams>0</hoisttemplateparams>
+    <extractcodefromjson>0</extractcodefromjson>
+    <templateparamslang>None</templateparamslang>
+    <templateparamsevalpertry>0</templateparamsevalpertry>
+    <templateparamsevald></templateparamsevald>
+    <twigall>0</twigall>
+    <uiplugin>monaco_multifile</uiplugin>
+    <uiparameters><![CDATA[{"allowed_extensions":["java","txt","json","xml","md","properties"],"max_files":40,"tab_size":4,"lsp_enabled":true}]]></uiparameters>
     <attachments>0</attachments>
     <attachmentsrequired>0</attachmentsrequired>
     <maxfilesize>0</maxfilesize>

@@ -233,7 +233,8 @@ class qtype_coderunner_edit_form extends question_edit_form {
             'rows' => 9,
             'class' => 'answer edit_code',
             'data-params' => $this->get_merged_ui_params(),
-            'data-lang' => $this->acelang];
+            'data-lang' => $this->acelang,
+            'data-author-mode' => '1'];
         $mform->addElement(
             'textarea',
             'answer',
@@ -284,7 +285,9 @@ class qtype_coderunner_edit_form extends question_edit_form {
             'rows' => 5,
             'class' => 'preloadanswer edit_code',
             'data-params' => $this->get_merged_ui_params(),
-            'data-lang' => $this->acelang];
+            'data-lang' => $this->acelang,
+            'data-author-mode' => '1',
+            'data-lockable' => '1'];
         $mform->addElement(
             'textarea',
             'answerpreload',

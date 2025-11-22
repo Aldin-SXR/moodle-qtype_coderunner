@@ -165,3 +165,12 @@ $settings->add(new admin_setting_configtext(
     PARAM_FLOAT,
     10
 ));
+
+$settings->add(new admin_setting_configtext(
+    'qtype_coderunner/lsp_base_url',
+    get_string('lsp_base_url', 'qtype_coderunner'),
+    get_string('lsp_base_url_desc', 'qtype_coderunner'),
+    '',
+    PARAM_RAW_TRIMMED,
+    255
+));

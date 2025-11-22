@@ -31,6 +31,53 @@ $string['aceui_live_autocompletion_descr'] = 'Enable the Ace editor\'s live auto
 $string['aceui_font_size_descr'] = 'Ace editor font size.';
 $string['aceui_import_from_scratchpad_descr'] = 'True to allow the Ace editor to receive the JSON-format answer used by the scratchpad UI and extract the answer code from it. Facilitates switching UIs. Leave true unless you want Ace to edit JSON objects with an "answer_code" key.';
 $string['aceui_theme_descr'] = 'Ace editor theme. Default is the light theme "textmate". An alternative dark theme is "tomorrow_night". Light theme be overridden by user preferences - see auto_switch_dark.';
+$string['monacoui_import_from_scratchpad_descr'] = 'True to allow the Monaco editor to extract the answer code from Scratchpad JSON answers. Leave true unless you explicitly need to edit the raw JSON.';
+$string['monacoui_font_size_descr'] = 'Monaco editor font size (in points).';
+$string['monacoui_theme_descr'] = 'Optional Monaco editor theme identifier (for example "vs" or "vs-dark"). Leave blank to use automatic detection.';
+$string['monacoui_auto_switch_light_dark_descr'] = 'Allow the browser or operating system light/dark preference to choose the Monaco theme when none is specified.';
+$string['monacoui_minimap_descr'] = 'Show the Monaco minimap in the editor.';
+$string['monacoui_word_wrap_descr'] = 'Monaco word wrap mode ("off", "on", "bounded", or "wordWrapColumn").';
+$string['monacoui_tab_size_descr'] = 'Tab size to use when Monaco inserts spaces.';
+$string['responsehistorydiff'] = 'Diff';
+$string['responsehistorydiffshow'] = 'Show diff';
+$string['responsehistorydiffna'] = 'Diff not available';
+$string['responsehistorydiffpreload'] = 'Preloaded answer';
+$string['responsehistorydiffstep'] = 'Step {$a->step} – {$a->time}';
+$string['monacoui_lsp_enabled_descr'] = 'Enable Language Server Protocol support for Monaco.';
+$string['monacoui_lsp_language_descr'] = 'Override the language identifier sent to the LSP server. Leave blank to use the question language.';
+$string['monacoui_lsp_prefix_code_descr'] = 'Hidden prefix code (such as template scaffolding) sent to the LSP server ahead of the student code.';
+$string['monacoui_lsp_url_descr'] = 'Explicit WebSocket URL for the Monaco LSP server. Overrides the base URL below.';
+$string['monacoui_lsp_base_url_descr'] = 'Base WebSocket URL used for Monaco LSP connections; the language will be appended automatically.';
+$string['monacoui_use_simple_lsp_descr'] = 'Use the built-in lightweight LSP client. Disable only when providing an external Monaco language client.';
+$string['monacoui_rich_features_descr'] = 'Enable extra Monaco providers (definitions, references, formatting, rename, folding) using the simple LSP transport.';
+$string['monacoui_disable_lsp_prefixes_descr'] = 'Disable automatic inclusion of template prefix code for LSP. When enabled, the LSP will only see the student code without template scaffolding.';
+$string['monacoui_lsp_workspace_config_descr'] = 'JSON configuration string sent to the LSP server via workspace/configuration requests. Useful for SQL LSP servers that need database connection details.';
+$string['monaco_multifileui_import_from_scratchpad_descr'] = 'True to allow the Monaco editor to extract the answer code from Scratchpad JSON answers. Leave true unless you explicitly need to edit the raw JSON.';
+$string['monaco_multifileui_font_size_descr'] = 'Monaco editor font size (in points).';
+$string['monaco_multifileui_theme_descr'] = 'Optional Monaco editor theme identifier (for example "vs" or "vs-dark"). Leave blank to use automatic detection.';
+$string['monaco_multifileui_auto_switch_light_dark_descr'] = 'Allow the browser or operating system light/dark preference to choose the Monaco theme when none is specified.';
+$string['monaco_multifileui_minimap_descr'] = 'Show the Monaco minimap in the editor.';
+$string['monaco_multifileui_word_wrap_descr'] = 'Monaco word wrap mode ("off", "on", "bounded", or "wordWrapColumn").';
+$string['monaco_multifileui_tab_size_descr'] = 'Tab size to use when Monaco inserts spaces.';
+$string['monaco_multifileui_lsp_enabled_descr'] = 'Enable Language Server Protocol support for Monaco.';
+$string['monaco_multifileui_lsp_language_descr'] = 'Override the language identifier sent to the LSP server. Leave blank to use the question language.';
+$string['monaco_multifileui_lsp_prefix_code_descr'] = 'Hidden prefix code (such as template scaffolding) sent to the LSP server ahead of the student code.';
+$string['monaco_multifileui_lsp_url_descr'] = 'Explicit WebSocket URL for the Monaco LSP server. Overrides the base URL below.';
+$string['monaco_multifileui_lsp_base_url_descr'] = 'Base WebSocket URL used for Monaco LSP connections; the language will be appended automatically.';
+$string['monaco_multifileui_use_simple_lsp_descr'] = 'Use the built-in lightweight LSP client. Disable only when providing an external Monaco language client.';
+$string['monaco_multifileui_rich_features_descr'] = 'Enable extra Monaco providers (definitions, references, formatting, rename, folding) using the simple LSP transport.';
+$string['monaco_multifileui_disable_lsp_prefixes_descr'] = 'Disable automatic inclusion of template prefix code for LSP. When enabled, the LSP will only see the student code without template scaffolding.';
+$string['monaco_multifileui_lsp_workspace_config_descr'] = 'JSON configuration string sent to the LSP server via workspace/configuration requests. Useful for SQL LSP servers that need database connection details.';
+$string['monaco_multifileui_sidebar_width_descr'] = 'Width of the explorer sidebar (in pixels).';
+$string['monaco_multifileui_max_files_descr'] = 'Maximum number of files that students are allowed to create.';
+$string['monaco_multifileui_allowed_extensions_descr'] = 'Comma-separated list of allowed file extensions (students can only create files with these extensions).';
+$string['monaco_multifileui_template_files_descr'] = 'JSON structure describing the initial files/folders shown in the explorer (see documentation for the expected format).';
+$string['monaco_multifileui_disable_new_files_descr'] = 'If enabled, students cannot create new files in the multifile explorer.';
+$string['monaco_multifileui_disable_new_folders_descr'] = 'If enabled, students cannot create new folders in the multifile explorer.';
+$string['monaco_multifileui_use_vscode_icons_descr'] = 'Use VS Code-style file and folder icons instead of the default Devicon set.';
+$string['monaco_ui_notready'] = 'The Monaco editor could not be initialised.';
+$string['monaco_aria_label'] = 'Monaco code editor';
+$string['ui_monaco_multifile'] = 'Monaco (multi-file)';
 $string['addingcoderunner'] = 'Adding a new CodeRunner Question';
 $string['ajax_error'] = '*** AJAX ERROR. DON\'T SAVE THIS! ***';
 $string['allok'] = 'Passed all tests! ';
@@ -885,6 +932,226 @@ If this is likely to prove a problem, the easiest work-around is to define
 one of the test case standard input fields to be a non-empty value - this
 forces CodeRunner into a fallback mode of running each test case separately.</p>';
 
+$string['qtype_mongodb'] = '<p>A MongoDB question type that connects to an actual MongoDB database server.</p>
+ <p><strong>Requirements:</strong></p>
+ <ul>
+ <li>Python3 with pymongo must be installed on the Jobe server</li>
+ <li>A MongoDB server must be accessible from the Jobe server</li>
+ <li>Database credentials must be configured in the question template parameters</li>
+ </ul>
+ <p><strong>Configuration:</strong></p>
+ <p>The MongoDB connection is configured via template parameters. You can set these globally in the admin settings or per-question:</p>
+ <pre><code>{
+    "mongodb_host": "localhost",
+    "mongodb_port": 27017,
+    "mongodb_user": "",
+    "mongodb_password": "",
+    "mongodb_auth_db": "admin",
+    "mongodb_database": "test",
+    "mongodb_collection": "testcollection"
+}</code></pre>
+ <p><strong>How it works:</strong></p>
+ <p>Students write Python code using PyMongo. The template provides:</p>
+ <ul>
+ <li><code>db</code> - The MongoDB database object (access any collection: <code>db.collectionname</code> or <code>db["collectionname"]</code>)</li>
+ <li><code>collection</code> - The configured default collection object</li>
+ <li><code>ObjectId</code> - For working with MongoDB ObjectIds</li>
+ <li><code>datetime</code> - For working with dates</li>
+ </ul>
+ <p><strong>IMPORTANT:</strong> Students must assign query results to a variable named <code>result</code> for output display.</p>
+ <p><strong>Example Student Code:</strong></p>
+ <pre><code># Find all documents (must assign to result!)
+result = list(collection.find())
+
+# Or access a specific collection
+result = list(db.books.find({"author": "Smith"}))
+result = list(db["users"].find({"age": {"$gt": 25}}))
+
+# Count documents
+result = collection.count_documents({"status": "active"})
+</code></pre>
+ <p><strong>Test Case Structure:</strong></p>
+ <ul>
+ <li><strong>Extra field:</strong> Setup code to insert initial documents</li>
+ <li><strong>Test code:</strong> Query to verify the student\'s answer (must assign to <code>result</code> variable)</li>
+ </ul>
+ <p><strong>Example Test Case:</strong></p>
+ <p>Extra: <code>collection.delete_many({}); collection.insert_many([{"name": "Alice", "age": 30}, {"name": "Bob", "age": 25}])</code></p>
+ <p>Test code: <code>result = list(collection.find({"age": {"$gte": 30}}))</code></p>
+ <p><strong>Security Notes:</strong></p>
+ <ul>
+ <li>Use a dedicated database for CodeRunner questions</li>
+ <li>Collections persist between test cases (clear in Extra if needed)</li>
+ <li>Consider using authentication and network isolation</li>
+ <li>Credentials are not visible to students but execute on Jobe server</li>
+ </ul>
+ <p><strong>Output Formatting:</strong></p>
+ <p>Query results are displayed as formatted JSON documents with automatic truncation of long lists. ObjectIds and dates are automatically converted to readable strings.</p>';
+$string['qtype_neo4j'] = '<p>A Neo4j question type that connects to a Neo4j graph database.</p>
+ <p><strong>Requirements:</strong></p>
+ <ul>
+ <li>Python3 with the official <code>neo4j</code> driver must be installed on the Jobe server</li>
+ <li>A Neo4j server must be accessible from the Jobe server</li>
+ <li>Database credentials must be configured in the question template parameters</li>
+ </ul>
+ <p><strong>Configuration:</strong></p>
+ <p>Connection details may be defined globally in the admin settings or overridden per question via template parameters:</p>
+ <pre><code>{
+    "neo4j_protocol": "neo4j+s",
+    "neo4j_host": "localhost",
+    "neo4j_port": 7687,
+    "neo4j_user": "neo4j",
+    "neo4j_password": "your_password",
+    "neo4j_database": "neo4j"
+}</code></pre>
+ <p>Available protocols: <code>neo4j</code>, <code>neo4j+s</code> (secure), <code>bolt</code>, <code>bolt+s</code> (secure). Use <code>neo4j+s</code> for Neo4j Aura cloud databases.</p>
+ <p><strong>How it works:</strong></p>
+ <ul>
+ <li>Each test case runs inside its own Neo4j transaction that is rolled back afterward, keeping the database clean.</li>
+ <li><strong>Extra</strong> is executed first (setup Cypher, optional), followed by the student\'s submission.</li>
+ <li><strong>If Test code is provided:</strong> The student answer runs silently and the Test code output is shown (for validation questions).</li>
+ <li><strong>If Test code is empty:</strong> The student answer output is shown directly (for query/exploration questions).</li>
+ <li>Query results are serialised to readable JSON (nodes, relationships, paths, lists, scalars) with long collections truncated for display.</li>
+ </ul>
+ <p><strong>Example student submission:</strong></p>
+ <pre><code>// Return all people who acted in a movie
+MATCH (p:Person)-[:ACTED_IN]->(m:Movie)
+RETURN p.name AS actor, m.title AS movie
+</code></pre>
+ <p><strong>Example Extra/Test:</strong></p>
+ <ul>
+ <li>Extra: <code>MATCH (n) DETACH DELETE n; CREATE (:Person {name: "Alice"})-[:KNOWS]->(:Person {name: "Bob"});</code></li>
+ <li>Test code: <code>MATCH (p:Person)-[:KNOWS]->(friend) RETURN p.name AS person, friend.name AS friend ORDER BY person, friend</code></li>
+ </ul>
+ <p><strong>Tips:</strong></p>
+ <ul>
+ <li>Separate multiple Cypher statements with semicolons (<code>;</code>).</li>
+ <li>Prefer deterministic ordering in verification queries (e.g. <code>ORDER BY</code>).</li>
+ <li>Consider creating a dedicated Neo4j database or user for assessment content.</li>
+ </ul>';
+$string['neo4j_settings'] = 'Neo4j Database Settings';
+$string['neo4j_settings_desc'] = 'Global default connection settings for Neo4j CodeRunner questions. These can be overridden per question using template parameters. Ensure the Neo4j Python driver is installed on the Jobe server.';
+$string['neo4j_protocol'] = 'Neo4j Protocol';
+$string['neo4j_protocol_desc'] = 'Connection protocol (neo4j, neo4j+s, bolt, bolt+s). Use neo4j+s for Neo4j Aura and other secure connections (default: neo4j+s).';
+$string['neo4j_host'] = 'Neo4j Host';
+$string['neo4j_host_desc'] = 'Hostname or IP address of the Neo4j server.';
+$string['neo4j_port'] = 'Neo4j Port';
+$string['neo4j_port_desc'] = 'Port for the Neo4j server (default: 7687).';
+$string['neo4j_user'] = 'Neo4j Username';
+$string['neo4j_user_desc'] = 'Neo4j account used to execute CodeRunner queries.';
+$string['neo4j_password'] = 'Neo4j Password';
+$string['neo4j_password_desc'] = 'Password for the configured Neo4j user.';
+$string['neo4j_database'] = 'Neo4j Database';
+$string['neo4j_database_desc'] = 'Neo4j database name selected for queries (default: neo4j).';
+$string['qtype_mysql'] = '<p>A MySQL question type that connects to an actual MySQL database server.</p>
+ <p><strong>Requirements:</strong></p>
+ <ul>
+ <li>Python3 with mysql-connector-python must be installed on the Jobe server</li>
+ <li>A MySQL database server must be accessible from the Jobe server</li>
+ <li>Database credentials must be configured in the question template parameters</li>
+ </ul>
+ <p><strong>Configuration:</strong></p>
+ <p>The MySQL connection is configured via template parameters. You can set these globally in the admin settings or per-question:</p>
+ <pre><code>{
+    "mysql_host": "localhost",
+    "mysql_user": "coderunner",
+    "mysql_password": "your_password",
+    "mysql_database": "test",
+    "mysql_port": 3306
+}</code></pre>
+ <p><strong>How it works:</strong></p>
+ <p>For each test case:</p>
+ <ol>
+ <li>The template connects to the MySQL database using the configured credentials</li>
+ <li>Any SQL in the "Extra" field is executed first (for setup)</li>
+ <li>The student\'s SQL query is executed</li>
+ <li>The test code is executed (typically a SELECT query to verify results)</li>
+ <li>Changes are rolled back between test cases (fresh state for each test)</li>
+ </ol>
+ <p><strong>Security Notes:</strong></p>
+ <ul>
+ <li>Use a dedicated database user with limited permissions</li>
+ <li>Consider using a separate database for CodeRunner questions</li>
+ <li>Database credentials are not visible to students but are executed on the Jobe server</li>
+ </ul>
+ <p><strong>Example Test Case:</strong></p>
+ <p>Extra: <code>CREATE TABLE users (id INT, name VARCHAR(50)); INSERT INTO users VALUES (1, \'Alice\'), (2, \'Bob\');</code></p>
+ <p>Test code: <code>SELECT * FROM users ORDER BY id;</code></p>
+ <p>Expected output: The query results with headers and rows tab-separated</p>';
+$string['qtype_solidity'] = '<p>A Solidity question type for writing and testing smart contracts using the Foundry framework.
+Students write smart contract code which is tested using forge-std assertions.</p>
+
+<p><strong>Requirements on Jobe server:</strong></p>
+<ul>
+<li>Foundry (forge) must be installed - install from <a href="https://getfoundry.sh">https://getfoundry.sh</a></li>
+<li>forge-std library must be installed at one of these locations:
+<ul>
+<li>/usr/local/lib/forge-std</li>
+<li>/opt/foundry/lib/forge-std</li>
+<li>/usr/lib/forge-std</li>
+<li>~/.foundry/lib/forge-std</li>
+</ul>
+</li>
+<li>To install forge-std: <code>forge install foundry-rs/forge-std --root /usr/local/lib</code></li>
+</ul>
+
+<p><strong>How to create a question:</strong></p>
+<ol>
+<li>Create a new CodeRunner question and select "solidity" as the question type</li>
+<li>Write the question text describing what contract students should implement</li>
+<li>In the Answer box preload, optionally provide a contract template for students</li>
+<li>Add test cases - each test case should contain a complete test function</li>
+</ol>
+
+<p><strong>Test case format:</strong> Each test case must be a complete Solidity test function using forge-std assertions:</p>
+<pre>function testDeployment() public {
+    StudentContract token = new StudentContract(1000);
+    assertEq(token.totalSupply(), 1000, "Total supply should be 1000");
+}</pre>
+
+<p><strong>Example question setup:</strong></p>
+<p><em>Question text:</em> "Write a Solidity contract called StudentContract that implements a basic token with a totalSupply variable and balanceOf function."</p>
+<p><em>Test case 1:</em></p>
+<pre>function testDeployment() public {
+    StudentContract token = new StudentContract(1000);
+    assertEq(token.totalSupply(), 1000);
+}</pre>
+<p><em>Test case 2:</em></p>
+<pre>function testBalanceOf() public {
+    StudentContract token = new StudentContract(1000);
+    assertEq(token.balanceOf(address(this)), 1000);
+}</pre>
+
+<p><strong>Available forge-std assertions:</strong></p>
+<ul>
+<li><code>assertEq(a, b)</code> - Assert values are equal</li>
+<li><code>assertTrue(condition)</code> - Assert condition is true</li>
+<li><code>assertFalse(condition)</code> - Assert condition is false</li>
+<li><code>assertGt(a, b)</code> - Assert a &gt; b</li>
+<li><code>assertLt(a, b)</code> - Assert a &lt; b</li>
+<li>See <a href="https://book.getfoundry.sh/reference/forge-std/std-assertions">Foundry Book</a> for full list</li>
+</ul>
+
+<p><strong>Student answer format:</strong> Students should write a complete Solidity contract including the SPDX license and pragma:</p>
+<pre>// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.0;
+
+contract StudentContract {
+    uint256 public totalSupply;
+
+    constructor(uint256 initialSupply) {
+        totalSupply = initialSupply;
+    }
+}</pre>
+
+<p><strong>Notes:</strong></p>
+<ul>
+<li>Compilation errors are displayed as syntax errors (not in test result table)</li>
+<li>CPU time limit: 10 seconds, Memory limit: 2048 MB</li>
+<li>All test functions must start with "test" prefix</li>
+<li>Contract must be named "StudentContract" to match the test imports</li>
+</ul>';
+
 $string['qtype_sql'] = '<p>A SQL question type, using sqlite3,
  run from Python3. sqlite3 must be installed on the Jobe server for this question
  type.</p>
@@ -902,6 +1169,19 @@ $string['qtype_sql'] = '<p>A SQL question type, using sqlite3,
  A template string like</p><pre><code>{"columnwidths": [10, 50, 10, 5]}
 </code></pre>
 <p>will instead use column widths of 10, 50, 10 and 5 for the first four columns.</p>';
+
+$string['qtype_multifile_html'] = '<p>A multi-file HTML/CSS/JavaScript question type that opens the Monaco
+multi-file editor with an Explorer-style sidebar. Use the Answer preload panel to define the initial folder
+structure, lock template files, and include starter assets; students can then add, rename, and edit files
+entirely within the UI while their work is stored as JSON.</p>';
+
+$string['qtype_multifile_java'] = '<p>A multi-file Java question type that opens the Monaco multi-file editor
+with an Explorer-style sidebar. Students can build small Java projects with multiple source files; tests can
+either run the student&rsquo;s main method with per-test stdin or compile and execute teacher-supplied harness code.</p>';
+
+$string['qtype_multifile_cpp'] = '<p>A multi-file C++ question type that opens the Monaco multi-file editor
+with an Explorer-style sidebar. Students can edit multiple C++ sources and headers; all .cpp files are compiled
+with discovered include paths so cross-file imports work as in a normal project.</p>';
 
 $string['qtypehelp'] = 'Help with q-type';
 $string['questioncheckboxes'] = 'Customisation';
@@ -1397,3 +1677,39 @@ $string['bulktestusecachelabel'] = 'Use grading cache: ';
 $string['bulktestusecacheexplanation'] = 'Whether or not to use the Coderunner grading cache. Turning it off means that questions will always be run on the
 jobe server. When doing multiple runs, this setting will help show issues with individual jobe servers when you are using a list of servers or a jobe proxy that is load sharing to multiple jobes. Deafult: true';
 $string['bulktestallcachenotclearedmessage'] = '<b>Note:</b> Grading cache not cleared -- do it from admin-plugins-cache if you really want to clear the cache for all courses!';
+
+$string['ui_monaco'] = 'Monaco (with LSP)';
+$string['lsp_base_url'] = 'LSP base URL';
+$string['lsp_base_url_desc'] = 'Base WebSocket URL for Monaco LSP (e.g., ws://host:port).';
+
+// MySQL database settings
+$string['mysql_settings'] = 'MySQL Database Settings';
+$string['mysql_settings_desc'] = 'Global default MySQL connection settings for MySQL question types. These can be overridden per-question using template parameters. Ensure mysql-connector-python is installed on the Jobe server.';
+$string['mysql_host'] = 'MySQL Host';
+$string['mysql_host_desc'] = 'MySQL database server hostname or IP address (accessible from Jobe server)';
+$string['mysql_port'] = 'MySQL Port';
+$string['mysql_port_desc'] = 'MySQL database server port (default: 3306)';
+$string['mysql_user'] = 'MySQL Username';
+$string['mysql_user_desc'] = 'MySQL database username for CodeRunner questions (use a dedicated user with limited permissions)';
+$string['mysql_password'] = 'MySQL Password';
+$string['mysql_password_desc'] = 'MySQL database password for the configured user';
+$string['mysql_database'] = 'MySQL Database';
+$string['mysql_database_desc'] = 'Default MySQL database name for CodeRunner questions (use a dedicated database for security)';
+
+// MongoDB database settings
+$string['mongodb_settings'] = 'MongoDB Database Settings';
+$string['mongodb_settings_desc'] = 'Global default MongoDB connection settings for MongoDB question types. These can be overridden per-question using template parameters. Ensure pymongo is installed on the Jobe server.';
+$string['mongodb_host'] = 'MongoDB Host';
+$string['mongodb_host_desc'] = 'MongoDB server hostname or IP address (accessible from Jobe server)';
+$string['mongodb_port'] = 'MongoDB Port';
+$string['mongodb_port_desc'] = 'MongoDB server port (default: 27017)';
+$string['mongodb_user'] = 'MongoDB Username';
+$string['mongodb_user_desc'] = 'MongoDB username for CodeRunner questions (leave empty for no authentication)';
+$string['mongodb_password'] = 'MongoDB Password';
+$string['mongodb_password_desc'] = 'MongoDB password for the configured user';
+$string['mongodb_auth_db'] = 'MongoDB Auth Database';
+$string['mongodb_auth_db_desc'] = 'Authentication database name (default: admin)';
+$string['mongodb_database'] = 'MongoDB Database';
+$string['mongodb_database_desc'] = 'Default MongoDB database name for CodeRunner questions';
+$string['mongodb_collection'] = 'MongoDB Collection';
+$string['mongodb_collection_desc'] = 'Default collection name for CodeRunner questions';

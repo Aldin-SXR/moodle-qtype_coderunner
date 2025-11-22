@@ -508,7 +508,41 @@ class qtype_coderunner_question extends question_graded_automatically {
         }
         $uiparams->merge_json($this->templateparamsjson, true); // Legacy support.
         $uiparams->merge_json($this->uiparameters);
-        return $uiparams->updated_params();
+        $merged = $uiparams->updated_params();
+        if ($uiplugin === 'monaco' || $uiplugin === 'monaco_multifile') {
+            $lspbase = get_config('qtype_coderunner', 'lsp_base_url');
+            if (!array_key_exists('lsp_base_url', $merged) && !empty($lspbase)) {
+                $merged['lsp_base_url'] = $lspbase;
+            }
+        }
+        if ($uiplugin === 'monaco') {
+            // Check if automatic prefix computation is disabled (default: false/enabled).
+            $disableprefixes = false; // Default value.
+            if (array_key_exists('disable_lsp_prefixes', $merged)) {
+                $disableprefixes = $merged['disable_lsp_prefixes'];
+                // Handle string values like 'true', '1', 'false', '0'.
+                if (is_string($disableprefixes)) {
+                    $disableprefixes = ($disableprefixes === 'true' || $disableprefixes === '1');
+                } else {
+                    $disableprefixes = (bool)$disableprefixes;
+                }
+            }
+            // Only compute and add prefix code if not disabled.
+            if (!$disableprefixes) {
+                if (!array_key_exists('lsp_prefix_code', $merged) || $merged['lsp_prefix_code'] === '') {
+                    $prefix = $this->compute_lsp_prefix_code();
+                    if ($prefix !== '') {
+                        $merged['lsp_prefix_code'] = $prefix;
+                    }
+                } else if ($merged['lsp_prefix_code'] !== '') {
+                    $prefix = $this->compute_lsp_prefix_code();
+                    if ($prefix !== '') {
+                        $merged['lsp_prefix_code'] = $prefix . "\n" . $merged['lsp_prefix_code'];
+                    }
+                }
+            }
+        }
+        return $merged;
     }
 
 
@@ -1039,6 +1073,40 @@ class qtype_coderunner_question extends question_graded_automatically {
         }
         $clone->questionid = $this->id; // Legacy support.
         return $clone;
+    }
+
+    /**
+     * Compute the code prefix that precedes the STUDENT_ANSWER insertion point.
+     *
+     * The resulting string is used by the Monaco LSP bridge so that diagnostics
+     * and completion providers see the professor-defined scaffold that wraps the
+     * student submission.
+     *
+     * @return string The code appearing before STUDENT_ANSWER in the expanded template.
+     */
+    private function compute_lsp_prefix_code(): string {
+        if (empty($this->template)) {
+            return '';
+        }
+        $marker = '__CR_MONACO_STUDENT_ANSWER_MARKER__';
+        $context = [
+            'STUDENT_ANSWER' => $marker,
+            'ESCAPED_STUDENT_ANSWER' => $marker,
+            'MATLAB_ESCAPED_STUDENT_ANSWER' => $marker,
+            'IS_PRECHECK' => "0",
+            'ANSWER_LANGUAGE' => '',
+            'ATTACHMENTS' => '',
+        ];
+        try {
+            $expanded = $this->twig_expand($this->template, $context);
+        } catch (Throwable $e) {
+            return '';
+        }
+        $pos = strpos($expanded ?? '', $marker);
+        if ($pos === false) {
+            return '';
+        }
+        return substr($expanded, 0, $pos);
     }
 
     /**

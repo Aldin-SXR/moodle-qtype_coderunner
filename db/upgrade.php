@@ -438,6 +438,127 @@ function xmldb_qtype_coderunner_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 2025071100, 'qtype', 'coderunner');
     }
 
+    if ($oldversion < 2025102909) {
+        // Load new Solidity prototype.
+        // Note: prototypes are reloaded by update_question_types() at the end of this function.
+        upgrade_plugin_savepoint(true, 2025102909, 'qtype', 'coderunner');
+    }
+
+    if ($oldversion < 2025110500) {
+        // Reload prototypes to include Solidity.
+        // Note: prototypes are reloaded by update_question_types() at the end of this function.
+        upgrade_plugin_savepoint(true, 2025110500, 'qtype', 'coderunner');
+    }
+
+    if ($oldversion < 2025110501) {
+        // Reload prototypes to update Solidity Hardhat template to use pre-installed directory.
+        // This avoids timeout issues from running npm install on every submission.
+        // Note: prototypes are reloaded by update_question_types() at the end of this function.
+        upgrade_plugin_savepoint(true, 2025110501, 'qtype', 'coderunner');
+    }
+
+    if ($oldversion < 2025110502) {
+        // Update Solidity Hardhat template to symlink node_modules instead of copying.
+        // This fixes "File too large" errors when copying large binary files to /tmp.
+        // Note: prototypes are reloaded by update_question_types() at the end of this function.
+        upgrade_plugin_savepoint(true, 2025110502, 'qtype', 'coderunner');
+    }
+
+    if ($oldversion < 2025110503) {
+        // Fix Solidity Hardhat template to properly fail when tests don't pass.
+        // Previous version would show all tests as passing regardless of actual results.
+        // Note: prototypes are reloaded by update_question_types() at the end of this function.
+        upgrade_plugin_savepoint(true, 2025110503, 'qtype', 'coderunner');
+    }
+
+    if ($oldversion < 2025110504) {
+        // Switch Solidity Hardhat to TemplateGrader for proper result display.
+        // Enables JSON output parsing and displays individual test results with "Got" column.
+        // Note: prototypes are reloaded by update_question_types() at the end of this function.
+        upgrade_plugin_savepoint(true, 2025110504, 'qtype', 'coderunner');
+    }
+
+    if ($oldversion < 2025110627) {
+        // Add multifile_html prototype with Monaco multi-file editor support.
+        // Enables VSCode-like multi-file editing for HTML/CSS/JS questions.
+        // Note: prototypes are reloaded by update_question_types() at the end of this function.
+        upgrade_plugin_savepoint(true, 2025110627, 'qtype', 'coderunner');
+    }
+
+    if ($oldversion < 2025112000) {
+        // Refresh prototypes to ship the multifile_html testing framework overhaul.
+        // Note: prototypes are reloaded by update_question_types() at the end of this function.
+        upgrade_plugin_savepoint(true, 2025112000, 'qtype', 'coderunner');
+    }
+
+    if ($oldversion < 2025112001) {
+        // Refresh prototypes to ship the multifile_html testing framework overhaul with support for inline CSS/JS.
+        // Note: prototypes are reloaded by update_question_types() at the end of this function.
+        upgrade_plugin_savepoint(true, 2025112001, 'qtype', 'coderunner');
+    }
+
+    if ($oldversion < 2025112002) {
+        // Refresh prototypes to fix line numbers in multifile_html testing framework.
+        // Note: prototypes are reloaded by update_question_types() at the end of this function.
+        upgrade_plugin_savepoint(true, 2025112002, 'qtype', 'coderunner');
+    }
+
+    if ($oldversion < 2025112003) {
+        // Refresh prototypes to fix JS line numbers in multifile_html testing framework.
+        // Note: prototypes are reloaded by update_question_types() at the end of this function.
+        upgrade_plugin_savepoint(true, 2025112003, 'qtype', 'coderunner');
+    }
+
+    if ($oldversion < 2025112004) {
+        // Add multifile_cpp prototype with Monaco multi-file editor support for C++.
+        // Note: prototypes are reloaded by update_question_types() at the end of this function.
+        upgrade_plugin_savepoint(true, 2025112004, 'qtype', 'coderunner');
+    }
+
+    if ($oldversion < 2025112005) {
+        // Add multifile_java prototype with Monaco multi-file editor support for Java.
+        // Note: prototypes are reloaded by update_question_types() at the end of this function.
+        upgrade_plugin_savepoint(true, 2025112005, 'qtype', 'coderunner');
+    }
+
+    if ($oldversion < 2025112006) {
+        // Refresh prototypes to ensure multifile_cpp is present after prior deletion.
+        // Note: prototypes are reloaded by update_question_types() at the end of this function.
+        upgrade_plugin_savepoint(true, 2025112006, 'qtype', 'coderunner');
+    }
+
+    if ($oldversion < 2025112007) {
+        // Refresh prototypes to reduce Java compile heap for multifile Java (avoid 4GB VM init failure).
+        // Note: prototypes are reloaded by update_question_types() at the end of this function.
+        upgrade_plugin_savepoint(true, 2025112007, 'qtype', 'coderunner');
+    }
+
+    if ($oldversion < 2025112008) {
+        // Refresh prototypes to further reduce Java heap sizes for multifile Java compile/run.
+        // Note: prototypes are reloaded by update_question_types() at the end of this function.
+        upgrade_plugin_savepoint(true, 2025112008, 'qtype', 'coderunner');
+    }
+
+    if ($oldversion < 2025112009) {
+        // Refresh prototypes to lower Java compressed class space/metaspace for multifile Java to avoid VM init errors.
+        upgrade_plugin_savepoint(true, 2025112009, 'qtype', 'coderunner');
+    }
+
+    if ($oldversion < 2025112010) {
+        // Refresh prototypes to remove explicit JVM memory flags for multifile Java (use JVM defaults to avoid thread/CCS OOM).
+        upgrade_plugin_savepoint(true, 2025112010, 'qtype', 'coderunner');
+    }
+
+    if ($oldversion < 2025112011) {
+        // Refresh prototypes to clamp CCS/Metaspace/heap/stack for multifile Java to avoid JVM init failures.
+        upgrade_plugin_savepoint(true, 2025112011, 'qtype', 'coderunner');
+    }
+
+    if ($oldversion < 2025112018) {
+        // Response history diff viewer for CodeRunner attempts.
+        upgrade_plugin_savepoint(true, 2025112018, 'qtype', 'coderunner');
+    }
+
 
     require_once(__DIR__ . '/upgradelib.php');
     update_question_types();
