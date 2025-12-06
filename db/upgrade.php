@@ -559,6 +559,35 @@ function xmldb_qtype_coderunner_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 2025112018, 'qtype', 'coderunner');
     }
 
+    if ($oldversion < 2025113001) {
+        // Upgrade multifile editor and Cypher support
+        upgrade_plugin_savepoint(true, 2025113001, 'qtype', 'coderunner');
+    }
+
+    if ($oldversion < 2025120100) {
+        // Add attribute selector and combinator support to multifile_html prototype
+        // Note: prototypes are reloaded by update_question_types() at the end of this function.
+        upgrade_plugin_savepoint(true, 2025120100, 'qtype', 'coderunner');
+    }
+
+    if ($oldversion < 2025120101) {
+        // Fix attribute selector regex to properly handle quoted values
+        // Note: prototypes are reloaded by update_question_types() at the end of this function.
+        upgrade_plugin_savepoint(true, 2025120101, 'qtype', 'coderunner');
+    }
+
+    if ($oldversion < 2025120200) {
+        // Fix attribute selector regex to properly handle quoted values
+        // Note: prototypes are reloaded by update_question_types() at the end of this function.
+        upgrade_plugin_savepoint(true, 2025120200, 'qtype', 'coderunner');
+    }
+
+    if ($oldversion < 2025120602) {
+        // TypeScript support added
+        // Note: prototypes are reloaded by update_question_types() at the end of this function.
+        upgrade_plugin_savepoint(true, 2025120602, 'qtype', 'coderunner');
+    }
+
 
     require_once(__DIR__ . '/upgradelib.php');
     update_question_types();

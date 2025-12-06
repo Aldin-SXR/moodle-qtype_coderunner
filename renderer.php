@@ -836,6 +836,7 @@ class qtype_coderunner_renderer extends qtype_renderer {
                 'data-prototypeextra' => $question->prototypeextra,
                 'data-lang' => $currentlanguage ? ucwords($currentlanguage) : '',
                 'data-test0' => $question->testcases ? $question->testcases[0]->testcode : '',
+                'data-questionid' => $question->id,
         ];
 
         if ($readonly) {

@@ -402,6 +402,11 @@
     return base + '/' + lang;
   }
 
+  function rewriteTppShimName(text) {
+    if (typeof text !== 'string') return text;
+    return text.replace(/tpp_([^\/\s]+)\.h/gi, '$1.tpp');
+  }
+
   function createConnectionFactory(monacoLanguageClient, wsjson, socket, prefixLineCount, prefixText) {
     // Prepare base reader/writer
     var iws = (wsjson && typeof wsjson.toSocket === 'function') ? wsjson.toSocket(socket) : socket;
@@ -443,14 +448,124 @@
     return nextCount;
   }
 
+  function rewriteTppIncludePaths(text) {
+    if (!text || text.indexOf('.tpp') === -1) {
+      return text;
+    }
+    try {
+      return text.replace(/#\s*include\s*([<"])([^">]+\.tpp)\1/gi, function(match, delim, inc) {
+        var parts = inc.split('/');
+        var filename = parts.pop();
+        var base = filename.replace(/\.tpp$/i, '');
+        var rewritten = 'tpp_' + base + '.h';
+        var rebuilt = (parts.length ? parts.join('/') + '/' : '') + rewritten;
+        return match.replace(inc, rebuilt);
+      });
+    } catch (e) {
+      return text;
+    }
+  }
+
+  function sanitizeOutgoingMessage(msg) {
+    if (!msg || !msg.params) {
+      return msg;
+    }
+    var params = msg.params;
+    // Text on textDocument
+    if (params.textDocument && typeof params.textDocument.text === 'string') {
+      params.textDocument.text = rewriteTppIncludePaths(params.textDocument.text);
+    }
+    // Top-level text field
+    if (typeof params.text === 'string') {
+      params.text = rewriteTppIncludePaths(params.text);
+    }
+    // Content changes
+    if (Array.isArray(params.contentChanges)) {
+      for (var ci = 0; ci < params.contentChanges.length; ci++) {
+        var change = params.contentChanges[ci];
+        if (change && typeof change.text === 'string') {
+          change.text = rewriteTppIncludePaths(change.text);
+        }
+      }
+    }
+    return msg;
+  }
+
+  // URI rewrite pipeline: register functions that map one URI string to another.
+  // Useful for “fake” files like tpp_<base>.h -> <base>.tpp so nav works naturally.
+  var uriRewriters = [
+    function(uri) {
+      if (!uri || typeof uri !== 'string') return uri;
+      return uri.replace(/\/tpp_([^\/]+)\.h$/i, '/$1.tpp');
+    }
+  ];
+  function registerUriRewriter(rewriter) {
+    if (typeof rewriter === 'function') {
+      uriRewriters.push(rewriter);
+    }
+  }
+  function applyUriRewriters(uri) {
+    var result = uri;
+    for (var i = 0; i < uriRewriters.length; i++) {
+      try {
+        result = uriRewriters[i](result) || result;
+      } catch (e) {}
+    }
+    return result;
+  }
+  function rewriteLocationsWithUriRewriters(locations) {
+    if (!locations) return locations;
+    var rewriteLoc = function(loc) {
+      if (!loc || !loc.uri) return loc;
+      var cloned = Object.assign({}, loc);
+      cloned.uri = applyUriRewriters(loc.uri);
+      return cloned;
+    };
+    if (Array.isArray(locations)) {
+      return locations.map(rewriteLoc);
+    }
+    return rewriteLoc(locations);
+  }
+
+  function buildPrefixedContent(prefixText, model, contentTransform, modelUri) {
+    var body = model.getValue();
+    if (typeof contentTransform === 'function') {
+      try {
+        body = contentTransform(body, modelUri, model);
+      } catch (e) {}
+    }
+
+    var safePrefix = rewriteTppIncludePaths(prefixText || '');
+    body = rewriteTppIncludePaths(body);
+
+    return safePrefix + body;
+  }
+
   // Helper: Attach a model to an existing LSP connection
   function attachModelToLspConnection(monaco, model, editor, connection, prefixText, prefixLineCount, attachmentOptions) {
     var modelUri = model.uri.toString();
+    var lspUri = modelUri;
+    var aliasUri = null;
     var cleanupOpts = attachmentOptions || {};
     var disposeEditorOnDetach = cleanupOpts.disposeEditor !== false;
     var disposeModelOnDetach = cleanupOpts.disposeModel !== false;
     var previousRefCount = incrementModelRefCount(connection, modelUri);
     var isFirstAttachment = previousRefCount === 0;
+    var contentTransform = cleanupOpts.contentTransform || null;
+
+    // Map shimmed tpp path back to original .tpp include for server resolution
+    if (modelUri.match(/\/tpp_[^\/]+\.h$/i)) {
+      aliasUri = modelUri.replace(/\/tpp_([^\/]+)\.h$/i, '/$1.tpp');
+      if (!connection.modelUriAliases) {
+        connection.modelUriAliases = new Map();
+      }
+      connection.modelUriAliases.set(aliasUri, modelUri);
+    }
+    // Track per-model transforms
+    if (!connection.modelContentTransforms) {
+      connection.modelContentTransforms = new Map();
+    }
+    connection.modelContentTransforms.set(modelUri, contentTransform);
 
     if (isFirstAttachment) {
       // Register this model with the connection
@@ -459,37 +574,49 @@
         text: prefixText || '',
         lineCount: prefixLineCount || 0
       });
-
-      // Send didOpen notification for this model
-      if (connection.ws && connection.ws.readyState === 1) {
-        connection.send({
-          jsonrpc: '2.0',
-          method: 'textDocument/didOpen',
-          params: {
-            textDocument: {
-              uri: modelUri,
-              languageId: connection.language,
-              version: 1,
-              text: (prefixText || '') + model.getValue()
-            }
+      var didOpenMsgImmediate = {
+        jsonrpc: '2.0',
+        method: 'textDocument/didOpen',
+        params: {
+          textDocument: {
+            uri: lspUri,
+            languageId: connection.language,
+            version: 1,
+            text: buildPrefixedContent(prefixText, model, contentTransform, modelUri)
           }
-        });
+        }
+      };
+
+      if (connection.ws && connection.ws.readyState === 1) {
+        connection.send(didOpenMsgImmediate);
+        // For Cypher: trigger initial linting by sending a didChange notification
+        // The Cypher language server only lints on didChangeContent, not on didOpen
+        if (connection.language === 'cypher') {
+          connection.send({
+            jsonrpc: '2.0',
+            method: 'textDocument/didChange',
+            params: {
+              textDocument: {
+                uri: lspUri,
+                version: 2
+              },
+              contentChanges: [{
+                text: buildPrefixedContent(prefixText, model, contentTransform, modelUri)
+              }]
+            }
+          });
+        }
       } else {
         if (!connection.pendingDidOpen) {
           connection.pendingDidOpen = [];
         }
-        connection.pendingDidOpen.push({
-          jsonrpc: '2.0',
-          method: 'textDocument/didOpen',
-          params: {
-            textDocument: {
-              uri: modelUri,
-              languageId: connection.language,
-              version: 1,
-              text: (prefixText || '') + model.getValue()
-            }
-          }
+        var alreadyQueued = connection.pendingDidOpen.some(function(msg) {
+          return msg && msg.method === 'textDocument/didOpen' &&
+            msg.params && msg.params.textDocument && msg.params.textDocument.uri === lspUri;
         });
+        if (!alreadyQueued) {
+          connection.pendingDidOpen.push(didOpenMsgImmediate);
+        }
       }
 
       // Listen to model changes
@@ -501,11 +628,11 @@
             method: 'textDocument/didChange',
             params: {
               textDocument: {
-                uri: modelUri,
+                uri: lspUri,
                 version: model.getVersionId()
               },
               contentChanges: [{
-                text: (prefixText || '') + model.getValue()
+              text: buildPrefixedContent(prefixText, model, contentTransform, modelUri)
               }]
             }
           });
@@ -522,11 +649,11 @@
                 jsonrpc: '2.0',
                 method: 'textDocument/didSave',
                 params: {
-                  textDocument: {
-                    uri: modelUri
-                  },
-                  text: (prefixText || '') + model.getValue()
-                }
+                textDocument: {
+                  uri: lspUri
+                },
+                text: buildPrefixedContent(prefixText, model, contentTransform, modelUri)
+              }
               });
             }
             saveTimer = null;
@@ -540,7 +667,6 @@
       }
       connection.changeListeners.set(modelUri, changeListener);
     }
-
     return {
       editor: editor,
       model: model,
@@ -616,6 +742,7 @@
   // Helper: Detach a model from an LSP connection
   function detachModelFromLspConnection(monaco, model, connection) {
     var modelUri = model.uri.toString();
+    var lspUri = (connection && connection.lspUriByModel && connection.lspUriByModel.get(modelUri)) || modelUri;
     var remainingRefs = decrementModelRefCount(connection, modelUri);
     if (remainingRefs > 0) {
       return;
@@ -627,9 +754,26 @@
         jsonrpc: '2.0',
         method: 'textDocument/didClose',
         params: {
-          textDocument: { uri: modelUri }
+          textDocument: { uri: lspUri }
         }
       });
+      if (connection.modelUriAliases && connection.modelUriAliases.size > 0) {
+        var aliasesToClose = [];
+        connection.modelUriAliases.forEach(function(primary, alias) {
+          if (primary === modelUri) {
+            aliasesToClose.push(alias);
+          }
+        });
+        for (var ai = 0; ai < aliasesToClose.length; ai++) {
+          connection.send({
+            jsonrpc: '2.0',
+            method: 'textDocument/didClose',
+            params: {
+              textDocument: { uri: aliasesToClose[ai] }
+            }
+          });
+        }
+      }
     }
 
     // Remove from models array
@@ -639,6 +783,24 @@
 
     // Remove prefix
     connection.modelPrefixes.delete(modelUri);
+    connection.modelPrefixes.delete(lspUri);
+    if (connection.modelUriAliases && connection.modelUriAliases.size > 0) {
+      var aliasesToRemove = [];
+      connection.modelUriAliases.forEach(function(primary, alias) {
+        if (primary === modelUri) {
+          aliasesToRemove.push(alias);
+        }
+      });
+      for (var ar = 0; ar < aliasesToRemove.length; ar++) {
+        connection.modelUriAliases.delete(aliasesToRemove[ar]);
+      }
+    }
+    if (connection.lspUriByModel) {
+      connection.lspUriByModel.delete(modelUri);
+    }
+    if (connection.modelUriByLsp) {
+      connection.modelUriByLsp.delete(lspUri);
+    }
 
     // Dispose change listener
     if (connection.changeListeners && connection.changeListeners.has(modelUri)) {
@@ -670,9 +832,15 @@
 
     var model = options.model || (options.editor && options.editor.getModel ? options.editor.getModel() : null);
     var ownsModel = false;
+    var aliasUri = null;
+    var lspUriOverride = options.lspUri || null;
     if (!model) {
       model = createMonacoModel(monaco, options.language || 'plaintext', options.value || '', options.path);
       ownsModel = true;
+    }
+    var modelUriStr = model && model.uri && model.uri.toString ? model.uri.toString() : '';
+    if (modelUriStr.match(/\/tpp_[^\/]+\.h$/i)) {
+      aliasUri = modelUriStr.replace(/\/tpp_([^\/]+)\.h$/i, '/$1.tpp');
     }
 
     var editor = options.editor || null;
@@ -775,6 +943,7 @@
       // Minimal WebSocket + JSON-RPC client without monaco-languageclient
       var urlSimple = buildLspUrl({ lspUrl: options.lspUrl, lspBaseUrl: options.lspBaseUrl, language: options.language });
       var language = options.language || 'plaintext';
+      var lspUriForModel = lspUriOverride || (model && model.uri && model.uri.toString ? model.uri.toString() : null);
 
       // Check if we already have a pooled connection for this language+url
       var existingConnection = globalLspPool.get(language, urlSimple);
@@ -782,7 +951,8 @@
         // Reuse existing connection
         return attachModelToLspConnection(monaco, model, editor, existingConnection, prefixText, prefixLineCount, {
           disposeEditor: ownsEditor,
-          disposeModel: ownsModel
+          disposeModel: ownsModel,
+          contentTransform: options.contentTransform
         });
       }
 
@@ -804,6 +974,9 @@
       var workspaceFolders = null;
       var workspaceFoldersRegistered = false;
       var workspaceConfig = null;
+      var neo4jConnectionSettings = null;
+      var neo4jLintWorkerSettings = null;
+      var neo4jParameterValues = null;
       var pendingCodeActionCommands = []; // Store commands from code actions to execute after edits
       var pendingCommandsByUri = new Map(); // Map URI to pending commands for that file
 
@@ -814,7 +987,14 @@
         lspUrl: urlSimple,
         models: [model],  // Track all models using this connection
         modelRefCounts: new Map([[model.uri.toString(), 1]]),
-        modelPrefixes: new Map([[model.uri.toString(), { text: prefixText, lineCount: prefixLineCount }]]),
+        modelPrefixes: new Map([
+          [model.uri.toString(), { text: prefixText, lineCount: prefixLineCount }],
+          [lspUriForModel || model.uri.toString(), { text: prefixText, lineCount: prefixLineCount }]
+        ]),
+        modelUriAliases: aliasUri ? new Map([[aliasUri, model.uri.toString()]]) : new Map(),
+        modelContentTransforms: new Map([[model.uri.toString(), options.contentTransform || null]]),
+        lspUriByModel: new Map([[model.uri.toString(), lspUriForModel || model.uri.toString()]]),
+        modelUriByLsp: new Map([[lspUriForModel || model.uri.toString(), model.uri.toString()]]),
         pending: pending,
         idSeq: idSeq,
         stopped: stopped,
@@ -826,10 +1006,11 @@
         workspaceUri: workspaceUri,
         workspaceFolders: workspaceFolders,
         workspaceConfig: workspaceConfig,
+        neo4jLintWorkerSettings: null,  // Will be set after extracting from config
         send: function(msg) {
           try {
             if (this.ws && this.ws.readyState === 1) {
-              this.ws.send(JSON.stringify(msg));
+              this.ws.send(JSON.stringify(sanitizeOutgoingMessage(msg)));
             }
           } catch (e) {}
         }
@@ -867,10 +1048,133 @@
           workspaceConfig = null;
         }
       }
+      if (options.language === 'cypher') {
+        if (!workspaceConfig || typeof workspaceConfig !== 'object') {
+          workspaceConfig = {};
+        }
+        if (!workspaceConfig.neo4j || typeof workspaceConfig.neo4j !== 'object') {
+          workspaceConfig.neo4j = {};
+        }
+        if (!workspaceConfig.neo4j.features || typeof workspaceConfig.neo4j.features !== 'object') {
+          workspaceConfig.neo4j.features = {};
+        }
+        if (typeof workspaceConfig.neo4j.features.linting === 'undefined') {
+          workspaceConfig.neo4j.features.linting = true;
+        }
+      }
+
+      function normaliseTruth(value) {
+        if (typeof value === 'boolean') {
+          return value;
+        }
+        if (typeof value === 'string') {
+          var trimmed = value.trim().toLowerCase();
+          return trimmed === 'true' || trimmed === '1';
+        }
+        return !!value;
+      }
+
+      function extractNeo4jConnectionSettings() {
+        if (!workspaceConfig || options.language !== 'cypher') {
+          return null;
+        }
+        var neo4jSettings = workspaceConfig.neo4j;
+        if (!neo4jSettings || typeof neo4jSettings !== 'object') {
+          return null;
+        }
+        var shouldConnect = normaliseTruth(
+          Object.prototype.hasOwnProperty.call(neo4jSettings, 'connect') ? neo4jSettings.connect : true
+        );
+        var connectURL = typeof neo4jSettings.connectURL === 'string' ? neo4jSettings.connectURL.trim() : '';
+        var user = typeof neo4jSettings.user === 'string' ? neo4jSettings.user : '';
+        var password = typeof neo4jSettings.password === 'string' ? neo4jSettings.password : '';
+        var database = typeof neo4jSettings.database === 'string' ? neo4jSettings.database.trim() : '';
+
+        if (!shouldConnect || !connectURL || !user || !password) {
+          return null;
+        }
+
+        var payload = {
+          connect: true,
+          connectURL: connectURL,
+          user: user,
+          password: password
+        };
+        if (database) {
+          payload.database = database;
+        }
+        return payload;
+      }
+
+      neo4jConnectionSettings = extractNeo4jConnectionSettings();
+
+      function extractNeo4jLintWorkerSettings() {
+        if (options.language !== 'cypher') {
+          return null;
+        }
+        var neo4jSettings = (workspaceConfig && workspaceConfig.neo4j) ? workspaceConfig.neo4j : {};
+        var features = neo4jSettings.features;
+        if (features && features.linting === false) {
+          return null;
+        }
+        var lintWorkerPath = (typeof neo4jSettings.lintWorkerPath === 'string') ? neo4jSettings.lintWorkerPath.trim() : '';
+        var linterVersion = (typeof neo4jSettings.linterVersion === 'string') ? neo4jSettings.linterVersion.trim() : '';
+        return {
+          lintWorkerPath: lintWorkerPath.length ? lintWorkerPath : null,
+          linterVersion: linterVersion.length ? linterVersion : 'Default'
+        };
+      }
+
+      neo4jLintWorkerSettings = extractNeo4jLintWorkerSettings();
+      // Store on shared connection for access in registerModelWithLsp
+      sharedConnection.neo4jLintWorkerSettings = neo4jLintWorkerSettings;
+
+      neo4jParameterValues = (function() {
+        if (options.language !== 'cypher') {
+          return null;
+        }
+        var neo4jSettings = workspaceConfig && workspaceConfig.neo4j ? workspaceConfig.neo4j : null;
+        if (neo4jSettings && neo4jSettings.parameters && typeof neo4jSettings.parameters === 'object') {
+          return neo4jSettings.parameters;
+        }
+        return {};
+      })();
+
+      function sendNeo4jLintWorkerUpdate() {
+        if (!neo4jLintWorkerSettings) {
+          return;
+        }
+        send({
+          jsonrpc: '2.0',
+          method: 'updateLintWorker',
+          params: neo4jLintWorkerSettings
+        });
+      }
+
+      function sendNeo4jParametersUpdate() {
+        if (neo4jParameterValues === null) {
+          return;
+        }
+        var payload = neo4jParameterValues;
+        if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+          payload = {};
+        }
+        send({
+          jsonrpc: '2.0',
+          method: 'updateParameters',
+          params: payload
+        });
+      }
 
       function toUri(u) { return (model && model.uri && model.uri.toString()) || u || 'file:///coderunner/' + (options.language || 'txt') + '/Main.txt'; }
       function nowId() { return idSeq++; }
-      function send(msg) { try { if (ws && ws.readyState === 1) ws.send(JSON.stringify(msg)); } catch (e) {} }
+      function send(msg) {
+        try {
+          if (ws && ws.readyState === 1) {
+            ws.send(JSON.stringify(sanitizeOutgoingMessage(msg)));
+          }
+        } catch (e) {}
+      }
       function request(method, params) {
         if (!ws || ws.readyState !== 1) {
           return Promise.reject({ code: 'not_connected' });
@@ -892,7 +1196,11 @@
         if (typeof r.end.line !== 'number' || typeof r.end.character !== 'number') return null;
         var ctx = context || {};
         var targetModel = ctx.model || model;
-        var prefixOffset = typeof ctx.prefixLineCount === 'number' ? ctx.prefixLineCount : prefixLineCount;
+        var prefixOffset = typeof ctx.prefixLineCount === 'number' ? ctx.prefixLineCount : (prefixLineCount || 0);
+        if (prefixOffset && prefixOffset > 0) {
+          if (r.start.line < prefixOffset) return null;
+          if (r.end.line < prefixOffset) return null;
+        }
         var startLineNumber = (r.start.line - prefixOffset) + 1;
         var endLineNumber = (r.end.line - prefixOffset) + 1;
         if (startLineNumber < 1) startLineNumber = 1;
@@ -910,6 +1218,15 @@
         if (maxEndColumn && endColumn > maxEndColumn) endColumn = maxEndColumn;
         if (startColumn < 1) startColumn = 1;
         if (endColumn < 1) endColumn = 1;
+
+        // Final validation: ensure all values are valid numbers before creating Range
+        if (typeof startLineNumber !== 'number' || isNaN(startLineNumber) ||
+            typeof startColumn !== 'number' || isNaN(startColumn) ||
+            typeof endLineNumber !== 'number' || isNaN(endLineNumber) ||
+            typeof endColumn !== 'number' || isNaN(endColumn)) {
+          return null;
+        }
+
         return new monaco.Range(
           startLineNumber,
           startColumn,
@@ -977,7 +1294,7 @@
           };
           if (Array.isArray(item.label)) {
             hint.label = item.label.map(function(part) {
-              var converted = { value: String(part.value || '') };
+              var converted = { label: String(part.value || '') };
               if (part.tooltip) {
                 converted.tooltip = part.tooltip;
               }
@@ -1354,39 +1671,41 @@
           var item = items[i];
           if (!item) continue;
 
-          if (item.location) {
-            var location = toMonacoLocation(item.location, context);
-            if (location && location.range) {
-              results.push({
-                name: item.name || '',
-                containerName: item.containerName,
-                kind: item.kind || monaco.languages.SymbolKind.Function,
-                location: location
-              });
-            }
-          } else {
-            var range = monacoRangeFromLsp(item.range, context);
-            var selectionRange = monacoRangeFromLsp(item.selectionRange, context);
-            // Only include symbol if both ranges are valid and have required properties
-            if (range && selectionRange &&
-                typeof range.startLineNumber === 'number' &&
-                typeof range.startColumn === 'number' &&
-                typeof range.endLineNumber === 'number' &&
-                typeof range.endColumn === 'number' &&
-                typeof selectionRange.startLineNumber === 'number' &&
-                typeof selectionRange.startColumn === 'number' &&
-                typeof selectionRange.endLineNumber === 'number' &&
-                typeof selectionRange.endColumn === 'number') {
-              results.push({
-                name: item.name || '',
-                detail: item.detail,
-                kind: item.kind || monaco.languages.SymbolKind.Function,
-                range: range,
-                selectionRange: selectionRange,
-                children: toMonacoSymbols(item.children || [], context)
-              });
-            }
+          var range = null;
+          var selectionRange = null;
+
+          if (item.range) {
+            range = monacoRangeFromLsp(item.range, context);
+          } else if (item.location && item.location.range) {
+            range = monacoRangeFromLsp(item.location.range, context);
           }
+          if (!range ||
+              typeof range.startLineNumber !== 'number' ||
+              typeof range.startColumn !== 'number' ||
+              typeof range.endLineNumber !== 'number' ||
+              typeof range.endColumn !== 'number') {
+            continue;
+          }
+
+          if (item.selectionRange) {
+            selectionRange = monacoRangeFromLsp(item.selectionRange, context);
+          }
+          if (!selectionRange ||
+              typeof selectionRange.startLineNumber !== 'number' ||
+              typeof selectionRange.startColumn !== 'number' ||
+              typeof selectionRange.endLineNumber !== 'number' ||
+              typeof selectionRange.endColumn !== 'number') {
+            selectionRange = range;
+          }
+
+          results.push({
+            name: item.name || item.detail || '',
+            detail: item.detail || item.containerName,
+            kind: item.kind || monaco.languages.SymbolKind.Function,
+            range: range,
+            selectionRange: selectionRange,
+            children: toMonacoSymbols(item.children || [], context)
+          });
         }
         return results;
       }
@@ -1409,6 +1728,12 @@
     var connections = globalLspPool.getAllConnections();
     for (var i = 0; i < connections.length; i++) {
       var conn = connections[i];
+      if (conn.modelUriAliases && conn.modelUriAliases.has(modelUri)) {
+        var primaryUri = conn.modelUriAliases.get(modelUri);
+        if (conn.modelPrefixes && conn.modelPrefixes.has(primaryUri)) {
+          return conn.modelPrefixes.get(primaryUri);
+        }
+      }
       if (conn.modelPrefixes && conn.modelPrefixes.has(modelUri)) {
         return conn.modelPrefixes.get(modelUri);
       }
@@ -1569,10 +1894,23 @@
       return false;
     }
     var uri = model.uri.toString();
+    var lspUri = (connection.lspUriByModel && connection.lspUriByModel.get(uri)) || uri;
     var prefixText = options.prefixCode || '';
     var baseVersion = typeof model.getVersionId === 'function' ? model.getVersionId() : 1;
     var forcedVersion = typeof options.forceVersionId === 'number' ? options.forceVersionId : null;
     var versionToSend = forcedVersion && forcedVersion > baseVersion ? forcedVersion : (baseVersion + 1);
+    var transform = connection.modelContentTransforms && connection.modelContentTransforms.get(uri);
+    var pref = connection.modelPrefixes && (connection.modelPrefixes.get(lspUri) || connection.modelPrefixes.get(uri));
+    var prefixText = pref && pref.text ? pref.text : '';
+    var content = buildPrefixedContent(prefixText, model, transform, uri);
+    connection.send({
+      jsonrpc: '2.0',
+      method: 'textDocument/didChange',
+      params: {
+        textDocument: { uri: lspUri, version: versionToSend },
+        contentChanges: [{ text: content }]
+      }
+    });
     notifyDidChangeSent({ uri: uri, version: versionToSend });
     return true;
   };
@@ -1893,6 +2231,21 @@
                 }
               });
             }
+            // Send Neo4j connection update, which triggers connectionUpdated + updateParameters
+            // NOTE: updateLintWorker is sent in registerModelWithLsp after textDocument/didOpen
+            if (neo4jConnectionSettings) {
+              send({
+                jsonrpc: '2.0',
+                method: 'connectionUpdated',
+                params: neo4jConnectionSettings
+              });
+              sendNeo4jParametersUpdate();
+            } else {
+              // If no connection settings but we have parameters, send them
+              if (neo4jParameterValues !== null) {
+                sendNeo4jParametersUpdate();
+              }
+            }
             // For Java LSP (jdtls), configure to include commands in code actions
             // By default, jdtls assumes all buffers are auto-validated (validateAllOpenBuffersOnChanges=true)
             // and omits refresh commands. We need those commands for proper diagnostics refresh.
@@ -1913,30 +2266,44 @@
             }
             // Connection was already added to pool when created (to prevent race conditions)
             // Re-open all models after reconnection
+            var didOpenSentUris = new Set();
             for (var mi = 0; mi < sharedConnection.models.length; mi++) {
               var m = sharedConnection.models[mi];
               if (m && m.uri) {
                 var uri = m.uri.toString();
-                var prefixInfo = sharedConnection.modelPrefixes.get(uri) || { text: '', lineCount: 0 };
+                var lspUriForModel = (sharedConnection.lspUriByModel && sharedConnection.lspUriByModel.get(uri)) || uri;
+                var prefixInfo = sharedConnection.modelPrefixes.get(lspUriForModel) || sharedConnection.modelPrefixes.get(uri) || { text: '', lineCount: 0 };
+                var transform = sharedConnection.modelContentTransforms && sharedConnection.modelContentTransforms.get(uri);
+                var payloadText = buildPrefixedContent(prefixInfo.text || '', m, transform, uri);
                 send({
                   jsonrpc: '2.0',
                   method: 'textDocument/didOpen',
                   params: {
                     textDocument: {
-                      uri: uri,
+                      uri: lspUriForModel,
                       languageId: options.language || 'plaintext',
                       version: 1,
-                      text: (prefixInfo.text || '') + m.getValue()
+                      text: payloadText
                     }
                   }
                 });
+                didOpenSentUris.add(uri);
               }
             }
 
             // Send any pending didOpen notifications for models registered during reconnection
             if (sharedConnection.pendingDidOpen && sharedConnection.pendingDidOpen.length > 0) {
+              var filtered = [];
               for (var i = 0; i < sharedConnection.pendingDidOpen.length; i++) {
-                send(sharedConnection.pendingDidOpen[i]);
+                var pendingMsg = sharedConnection.pendingDidOpen[i];
+                var pendingUri = pendingMsg && pendingMsg.params && pendingMsg.params.textDocument && pendingMsg.params.textDocument.uri;
+                if (pendingUri && didOpenSentUris.has(pendingUri)) {
+                  continue; // already sent during reopen loop
+                }
+                filtered.push(pendingMsg);
+              }
+              for (var j = 0; j < filtered.length; j++) {
+                send(filtered[j]);
               }
               sharedConnection.pendingDidOpen = [];
             }
@@ -1950,6 +2317,9 @@
 
         // Multi-model: find which model these diagnostics belong to
         var targetUri = params.uri;
+        if (sharedConnection.modelUriAliases && sharedConnection.modelUriAliases.has(targetUri)) {
+          targetUri = sharedConnection.modelUriAliases.get(targetUri);
+        }
         if (!targetUri) return;
 
         // Find the model in the shared connection
@@ -1965,6 +2335,24 @@
         }
 
         if (!targetModel) return; // Model not found in connection
+
+        // If this is a shimmed tpp_* URI, prefer placing markers on the user-facing .tpp model
+        var normalizedUri = applyUriRewriters(targetUri);
+        var markerModel = targetModel;
+        if (normalizedUri && normalizedUri !== targetUri) {
+          try {
+            var normalizedResource = monaco.Uri.parse(normalizedUri);
+            var normalizedModel = monaco.editor.getModel(normalizedResource);
+            if (normalizedModel) {
+              markerModel = normalizedModel;
+            }
+          } catch (e) {}
+        }
+
+        // Check if model is disposed - if so, silently return to avoid errors
+        if (markerModel.isDisposed && markerModel.isDisposed()) {
+          return;
+        }
 
         var targetPrefixLineCount = targetPrefixInfo.lineCount || 0;
         var diags = [];
@@ -1989,14 +2377,18 @@
           var endLineNumber = adjustedRange.end.line + 1;
           if (startLineNumber < 1) startLineNumber = 1;
           if (endLineNumber < 1) endLineNumber = 1;
-          if (targetModel) {
-            var lineCount = targetModel.getLineCount();
+          if (markerModel) {
+            // Double-check model isn't disposed before calling methods
+            if (markerModel.isDisposed && markerModel.isDisposed()) {
+              continue;
+            }
+            var lineCount = markerModel.getLineCount();
             if (startLineNumber > lineCount) startLineNumber = lineCount;
             if (endLineNumber > lineCount) endLineNumber = lineCount;
           }
 
-          var maxStartColumn = targetModel ? targetModel.getLineMaxColumn(startLineNumber) : null;
-          var maxEndColumn = targetModel ? targetModel.getLineMaxColumn(endLineNumber) : null;
+          var maxStartColumn = markerModel ? markerModel.getLineMaxColumn(startLineNumber) : null;
+          var maxEndColumn = markerModel ? markerModel.getLineMaxColumn(endLineNumber) : null;
           var startColumn = adjustedRange.start.character + 1;
           var endColumn = adjustedRange.end.character + 1;
           if (maxStartColumn && startColumn > maxStartColumn) startColumn = maxStartColumn;
@@ -2013,7 +2405,7 @@
             endColumn: endColumn
           });
         }
-        monaco.editor.setModelMarkers(targetModel, 'lsp', diags);
+        monaco.editor.setModelMarkers(markerModel, 'lsp', diags);
         var filteredDiagnostics = params && params.diagnostics ? params.diagnostics.filter(function(d) {
           return d && d.range && d.range.start && d.range.start.line >= targetPrefixLineCount;
         }) : [];
@@ -2084,12 +2476,18 @@
         }
         var completionProvider = track(monaco.languages.registerCompletionItemProvider(providerLanguage, {
           triggerCharacters: triggerCharacters,
-        provideCompletionItems: function (modelLocal, position) {
+        provideCompletionItems: function (modelLocal, position, context) {
           var prefixInfo = getPrefixInfoForModel(modelLocal);
           var pos = lspPositionFromMonaco(position, prefixInfo.lineCount);
           var docUri = getUriForModel(modelLocal);
           var rangeContext = buildRangeContext(modelLocal);
-          return request('textDocument/completion', { textDocument: { uri: docUri }, position: pos }).then(function (result) {
+          var completionContext = {
+            triggerKind: context && context.triggerKind === 1 ? 2 : 1
+          };
+          if (context && context.triggerCharacter) {
+            completionContext.triggerCharacter = context.triggerCharacter;
+          }
+          return request('textDocument/completion', { textDocument: { uri: docUri }, position: pos, context: completionContext }).then(function (result) {
             var items = result && (result.items || result) || [];
             var suggestions = [];
             for (var i=0;i<items.length;i++) {
@@ -2150,9 +2548,14 @@
               else if (Array.isArray(res.contents)) {
                 for (var i=0;i<res.contents.length;i++) {
                   var c = res.contents[i]; if (!c) continue;
-                  contents.push(typeof c === 'string' ? { value: c } : c);
+                  contents.push(typeof c === 'string' ? { value: rewriteTppShimName(c) } : (c.value ? { value: rewriteTppShimName(c.value) } : c));
                 }
               } else if (res.contents.value) contents.push({ value: res.contents.value });
+            }
+            for (var ci = 0; ci < contents.length; ci++) {
+              if (contents[ci] && contents[ci].value) {
+                contents[ci].value = rewriteTppShimName(contents[ci].value);
+              }
             }
             return { contents: contents, range: rng };
           }).catch(function () { return null; });
@@ -2173,24 +2576,39 @@
         }));
       }
 
-      if (monaco.languages.registerInlayHintsProvider) {
+      if (options.enableInlayHints && monaco.languages.registerInlayHintsProvider) {
         track(monaco.languages.registerInlayHintsProvider(options.language || 'plaintext', {
           provideInlayHints: function(modelLocal, range) {
-            var prefixInfo = getPrefixInfoForModel(modelLocal);
-            var docUri = getUriForModel(modelLocal);
-            var rangeContext = buildRangeContext(modelLocal);
-            var params = { textDocument: { uri: docUri } };
-            if (range) {
-              params.range = {
-                start: { line: (range.startLineNumber - 1) + prefixInfo.lineCount, character: range.startColumn - 1 },
-                end: { line: (range.endLineNumber - 1) + prefixInfo.lineCount, character: range.endColumn - 1 }
-              };
+            try {
+              if (!ws || ws.readyState !== 1) {
+                return Promise.resolve({ hints: [], dispose: function () {} });
+              }
+              var prefixInfo = getPrefixInfoForModel(modelLocal);
+              var docUri = getUriForModel(modelLocal);
+              var rangeContext = buildRangeContext(modelLocal);
+              var params = { textDocument: { uri: docUri } };
+              if (range && typeof range.startLineNumber === 'number' && typeof range.startColumn === 'number' &&
+                  typeof range.endLineNumber === 'number' && typeof range.endColumn === 'number') {
+                params.range = {
+                  start: { line: (range.startLineNumber - 1) + prefixInfo.lineCount, character: range.startColumn - 1 },
+                  end: { line: (range.endLineNumber - 1) + prefixInfo.lineCount, character: range.endColumn - 1 }
+                };
+              }
+              return request('textDocument/inlayHint', params).then(function(res) {
+                var convertedHints = toMonacoInlayHints(res, rangeContext);
+                if (!Array.isArray(convertedHints)) {
+                  convertedHints = [];
+                }
+                return { hints: convertedHints, dispose: function () {} };
+              }).catch(function() {
+                return { hints: [], dispose: function () {} };
+              });
+            } catch (err) {
+              if (root && root.console && typeof root.console.warn === 'function') {
+                root.console.warn('[lmsMonaco] Inlay hint provider error', err);
+              }
+              return Promise.resolve({ hints: [], dispose: function () {} });
             }
-            return request('textDocument/inlayHint', params).then(function(res) {
-              return { hints: toMonacoInlayHints(res, rangeContext), dispose: function () {} };
-            }).catch(function() {
-              return { hints: [], dispose: function () {} };
-            });
           }
         }));
       }
@@ -2204,7 +2622,7 @@
             var context = buildRangeContext(modelLocal);
             return request('textDocument/definition', { textDocument: { uri: docUri }, position: pos })
               .then(function(results) {
-                return toMonacoLocations(results, context);
+                return toMonacoLocations(rewriteLocationsWithUriRewriters(results), context);
               })
               .catch(function () { return []; });
           }
@@ -2218,7 +2636,7 @@
               var context = buildRangeContext(modelLocal);
               return request('textDocument/declaration', { textDocument: { uri: docUri }, position: pos })
                 .then(function(results) {
-                  return toMonacoLocations(results, context);
+                  return toMonacoLocations(rewriteLocationsWithUriRewriters(results), context);
                 })
                 .catch(function () { return []; });
             }
@@ -2233,7 +2651,7 @@
               var context = buildRangeContext(modelLocal);
               return request('textDocument/typeDefinition', { textDocument: { uri: docUri }, position: pos })
                 .then(function(results) {
-                  return toMonacoLocations(results, context);
+                  return toMonacoLocations(rewriteLocationsWithUriRewriters(results), context);
                 })
                 .catch(function () { return []; });
             }
@@ -2248,7 +2666,7 @@
               var context = buildRangeContext(modelLocal);
               return request('textDocument/implementation', { textDocument: { uri: docUri }, position: pos })
                 .then(function(results) {
-                  return toMonacoLocations(results, context);
+                  return toMonacoLocations(rewriteLocationsWithUriRewriters(results), context);
                 })
                 .catch(function () { return []; });
             }
@@ -2303,7 +2721,8 @@
           }));
         }
 
-        track(monaco.languages.registerDocumentSymbolProvider(options.language || 'plaintext', {
+        // Create and register document symbol provider
+        var documentSymbolProvider = {
           provideDocumentSymbols: function(modelLocal) {
             var docUri = getUriForModel(modelLocal);
             var rangeContext = buildRangeContext(modelLocal);
@@ -2313,7 +2732,11 @@
               })
               .catch(function () { return []; });
           }
-        }));
+        };
+        track(monaco.languages.registerDocumentSymbolProvider(options.language || 'plaintext', documentSymbolProvider));
+
+        // Expose provider globally so outline panel can access it
+        sharedConnection.documentSymbolProvider = documentSymbolProvider;
         if (monaco.languages.registerWorkspaceSymbolProvider) {
           track(monaco.languages.registerWorkspaceSymbolProvider({
             provideWorkspaceSymbols: function(query) {
@@ -2790,15 +3213,33 @@
                 .then(function(links) {
                   if (!links || !Array.isArray(links)) return { links: [] };
                   var monacoLinks = [];
+                  var prefixLines = rangeContext && typeof rangeContext.prefixLineCount === 'number'
+                    ? rangeContext.prefixLineCount
+                    : 0;
                   for (var i = 0; i < links.length; i++) {
                     var link = links[i];
-                    if (!link || !link.range) continue;
+                    if (!link || !link.range || !link.target) continue;
+                    if (typeof link.target !== 'string' || !link.target.length) continue;
+                    var linkStartLine = link.range.start && typeof link.range.start.line === 'number'
+                      ? link.range.start.line
+                      : null;
+                    if (linkStartLine !== null && linkStartLine < prefixLines) continue;
                     var range = monacoRangeFromLsp(link.range, rangeContext);
                     if (!range) continue;
                     var monacoLink = {
                       range: range,
-                      url: link.target || link.tooltip
+                      url: link.target
                     };
+                    // Rewrite LSP tpp_* header shims back to their original .tpp filenames for navigation
+                    try {
+                      var targetStr = String(link.target || '');
+                      var match = targetStr.match(/\/tpp_([^\/]+)\.h$/i);
+                      if (match && match[1]) {
+                        var baseName = match[1];
+                        var rewritten = targetStr.replace(/\/tpp_[^\/]+\.h$/i, '/' + baseName + '.tpp');
+                        monacoLink.url = rewritten;
+                      }
+                    } catch (e) {}
                     if (link.tooltip) {
                       monacoLink.tooltip = link.tooltip;
                     }
@@ -3069,8 +3510,8 @@
           }));
         }
 
-        // Semantic Tokens Provider - Enhanced syntax highlighting
-        if (monaco.languages.registerDocumentSemanticTokensProvider) {
+        // Semantic Tokens Provider - Enhanced syntax highlighting (optional)
+        if (options.semanticHighlighting && monaco.languages.registerDocumentSemanticTokensProvider) {
           var semanticTokensLegend = null;
 
           // Helper to build legend from server capabilities
@@ -3264,7 +3705,10 @@
             if (p) { if (msg.error) p.reject(msg.error); else p.resolve(msg.result); }
             return;
           }
-          if (msg.method === 'textDocument/publishDiagnostics') { handleDiagnostics(msg.params); return; }
+          if (msg.method === 'textDocument/publishDiagnostics') {
+            handleDiagnostics(msg.params);
+            return;
+          }
           if (msg.method === 'workspace/applyEdit') {
             var success = false;
             try { success = applyWorkspaceEdit(msg.params && msg.params.edit); } catch (e) { success = false; }
@@ -3280,11 +3724,15 @@
           if (msg.method === 'client/registerCapability') {
             var regList = (msg.params && msg.params.registrations) || [];
             var registeredFolders = false;
+            var wantsConfigUpdates = false;
             for (var ri = 0; ri < regList.length; ri++) {
               var reg = regList[ri];
               if (reg && reg.method === 'workspace/didChangeWorkspaceFolders') {
                 workspaceFoldersRegistered = true;
                 registeredFolders = true;
+              }
+              if (reg && reg.method === 'workspace/didChangeConfiguration') {
+                wantsConfigUpdates = true;
               }
             }
             if (msg.id !== undefined) {
@@ -3292,6 +3740,32 @@
             }
             if (registeredFolders) {
               notifyWorkspaceFoldersAdded();
+            }
+            if (wantsConfigUpdates) {
+              if (workspaceConfig) {
+                send({
+                  jsonrpc: '2.0',
+                  method: 'workspace/didChangeConfiguration',
+                  params: {
+                    settings: workspaceConfig
+                  }
+                });
+              }
+              // Send Neo4j updates when workspace config changes
+              if (neo4jConnectionSettings) {
+                send({
+                  jsonrpc: '2.0',
+                  method: 'connectionUpdated',
+                  params: neo4jConnectionSettings
+                });
+                sendNeo4jParametersUpdate();
+                // Re-send lint worker update in case linter settings changed
+                if (neo4jLintWorkerSettings) {
+                  sendNeo4jLintWorkerUpdate();
+                }
+              } else if (neo4jLintWorkerSettings) {
+                sendNeo4jLintWorkerUpdate();
+              }
             }
             return;
           }
@@ -3442,6 +3916,7 @@
 
     var language = options.language || 'plaintext';
     var urlSimple = buildLspUrl({ lspUrl: options.lspUrl, lspBaseUrl: options.lspBaseUrl, language: language });
+    var lspUri = options.lspUri || (model.uri && model.uri.toString ? model.uri.toString() : null);
 
     // Get existing connection from pool
     var connection = globalLspPool.get(language, urlSimple);
@@ -3456,7 +3931,19 @@
 
     var modelUri = model.uri.toString();
     var prefixText = options.prefixCode || '';
-    var prefixLineCount = prefixText ? prefixText.split('\n').length : 0;
+    var prefixLineCount = countTerminatedLines(prefixText);
+    var aliasUri = null;
+    if (!connection.lspUriByModel) connection.lspUriByModel = new Map();
+    if (!connection.modelUriByLsp) connection.modelUriByLsp = new Map();
+    connection.lspUriByModel.set(modelUri, lspUri);
+    if (lspUri) connection.modelUriByLsp.set(lspUri, modelUri);
+    if (modelUri.match(/\/tpp_[^\/]+\.h$/i)) {
+      aliasUri = modelUri.replace(/\/tpp_([^\/]+)\.h$/i, '/$1.tpp');
+      if (!connection.modelUriAliases) {
+        connection.modelUriAliases = new Map();
+      }
+      connection.modelUriAliases.set(aliasUri, modelUri);
+    }
 
     var previousCount = incrementModelRefCount(connection, modelUri);
     var isNewModel = previousCount === 0;
@@ -3467,27 +3954,56 @@
         text: prefixText,
         lineCount: prefixLineCount
       });
+      if (lspUri) {
+        connection.modelPrefixes.set(lspUri, {
+          text: prefixText,
+          lineCount: prefixLineCount
+        });
+      }
+      if (!connection.modelContentTransforms) {
+        connection.modelContentTransforms = new Map();
+      }
+      connection.modelContentTransforms.set(modelUri, options.contentTransform || null);
 
       var didOpenMsg = {
         jsonrpc: '2.0',
         method: 'textDocument/didOpen',
         params: {
           textDocument: {
-            uri: modelUri,
+            uri: lspUri,
             languageId: language,
             version: 1,
-            text: prefixText + model.getValue()
+            text: buildPrefixedContent(prefixText, model, options.contentTransform, modelUri)
           }
         }
       };
 
       if (connection.ws && connection.ws.readyState === 1) {
         connection.send(didOpenMsg);
+
+        // For Cypher language, send updateLintWorker immediately after didOpen
+        // The Cypher LS needs this to initialize the lint worker and start linting
+        if (language === 'cypher' && connection.neo4jLintWorkerSettings) {
+          connection.send({
+            jsonrpc: '2.0',
+            method: 'updateLintWorker',
+            params: connection.neo4jLintWorkerSettings
+          });
+        }
       } else {
         if (!connection.pendingDidOpen) {
           connection.pendingDidOpen = [];
         }
         connection.pendingDidOpen.push(didOpenMsg);
+
+        // Also queue updateLintWorker for Cypher to be sent when connection opens
+        if (language === 'cypher' && connection.neo4jLintWorkerSettings) {
+          connection.pendingDidOpen.push({
+            jsonrpc: '2.0',
+            method: 'updateLintWorker',
+            params: connection.neo4jLintWorkerSettings
+          });
+        }
       }
 
       // Store save timers on connection object so they persist
@@ -3497,19 +4013,20 @@
 
       var changeListener = model.onDidChangeContent(function() {
         if (connection && connection.ws && connection.ws.readyState === 1) {
-          connection.send({
+          var changeMsg = {
             jsonrpc: '2.0',
             method: 'textDocument/didChange',
             params: {
               textDocument: {
-                uri: modelUri,
+                uri: lspUri,
                 version: model.getVersionId()
               },
               contentChanges: [{
-                text: prefixText + model.getValue()
+                text: buildPrefixedContent(prefixText, model, options.contentTransform, modelUri)
               }]
             }
-          });
+          };
+          connection.send(changeMsg);
           notifyDidChangeSent({ uri: modelUri, version: model.getVersionId() });
 
           // Debounce didSave to trigger full project revalidation after changes stabilize
@@ -3523,13 +4040,13 @@
               connection.send({
                 jsonrpc: '2.0',
                 method: 'textDocument/didSave',
-                params: {
-                  textDocument: {
-                    uri: modelUri
-                  },
-                  text: prefixText + model.getValue()
-                }
-              });
+            params: {
+              textDocument: {
+                uri: lspUri
+              },
+              text: buildPrefixedContent(prefixText, model, options.contentTransform, modelUri)
+            }
+          });
             }
             connection.saveTimers.delete(modelUri);
           }, 500); // 500ms delay after last change
@@ -3542,6 +4059,10 @@
       }
       connection.changeListeners.set(modelUri, changeListener);
     }
+    if (!connection.modelContentTransforms) {
+      connection.modelContentTransforms = new Map();
+    }
+    connection.modelContentTransforms.set(modelUri, options.contentTransform || null);
 
     // Return disposable
     return {
@@ -3556,7 +4077,7 @@
             jsonrpc: '2.0',
             method: 'textDocument/didClose',
             params: {
-              textDocument: { uri: modelUri }
+              textDocument: { uri: lspUri }
             }
           });
         }
@@ -3566,6 +4087,18 @@
         });
 
         connection.modelPrefixes.delete(modelUri);
+        if (lspUri) {
+          connection.modelPrefixes.delete(lspUri);
+        }
+        if (aliasUri && connection.modelUriAliases && connection.modelUriAliases.has(aliasUri)) {
+          connection.modelUriAliases.delete(aliasUri);
+        }
+        if (connection.lspUriByModel) {
+          connection.lspUriByModel.delete(modelUri);
+        }
+        if (connection.modelUriByLsp && lspUri) {
+          connection.modelUriByLsp.delete(lspUri);
+        }
 
         if (connection.changeListeners && connection.changeListeners.has(modelUri)) {
           var listener = connection.changeListeners.get(modelUri);
@@ -3685,6 +4218,19 @@
     return true;
   }
 
+  /**
+   * Get the document symbol provider for a given language and LSP URL
+   */
+  function getDocumentSymbolProvider(language, lspUrl, lspBaseUrl) {
+    language = language || 'plaintext';
+    var urlSimple = buildLspUrl({ lspUrl: lspUrl, lspBaseUrl: lspBaseUrl, language: language });
+    var connection = globalLspPool.get(language, urlSimple);
+    if (connection && connection.documentSymbolProvider) {
+      return connection.documentSymbolProvider;
+    }
+    return null;
+  }
+
   return {
     createMonacoLspEditor: createMonacoLspEditor,
     bindEditorModelToLsp: bindEditorModelToLsp,
@@ -3696,6 +4242,7 @@
     registerDidChangeHook: registerDidChangeHook,
     notifyFileDeleted: notifyFileDeleted,
     notifyFileCreated: notifyFileCreated,
-    notifyFileRenamed: notifyFileRenamed
+    notifyFileRenamed: notifyFileRenamed,
+    getDocumentSymbolProvider: getDocumentSymbolProvider
   };
 }));

@@ -141,6 +141,8 @@ define(['core/templates', 'core/notification'], function(Templates, Notification
      * When the wrapper has been set up on a text area, the text area
      * element has a reference, current_ui_wrapper, to the UI wrapper.
      */
+    const MIN_WRAPPER_HEIGHT = 50;
+
     function InterfaceWrapper(uiname, textareaId) {
         let t = this; // For use by embedded functions.
 
@@ -150,7 +152,6 @@ define(['core/templates', 'core/notification'], function(Templates, Notification
         this.uniqueId = Math.random();
         const PIXELS_PER_ROW = 19;  // For estimating height of textareas.
         const MAX_GROWN_ROWS = 50;  // Upper limit to artifically grown textarea rows.
-        const MIN_WRAPPER_HEIGHT = 50;
         this.isFullScreenEnable = null;
         this.taId = textareaId;
         this.loadFailId = textareaId + '_loadfailerr';
@@ -199,6 +200,8 @@ define(['core/templates', 'core/notification'], function(Templates, Notification
 
         this.wLast = 0;  // Record last known width and height. See checkForResize().
         this.hLast = 0;
+        this.wrapperWidth = this.wrapperNode.clientWidth;
+        this.wrapperHeight = this.wrapperNode.clientHeight;
 
 
         /**
@@ -439,6 +442,8 @@ define(['core/templates', 'core/notification'], function(Templates, Notification
      * @param {String} fieldId The id of answer field.
      */
     InterfaceWrapper.prototype.initFullScreenToggle = function(fieldId) {
+        const t = this;
+        const fullscreenClass = 'coderunner-fullscreen-active';
         const wrapperEditor = document.getElementById(`${fieldId}_wrapper`);
         const screenModeButton = wrapperEditor.parentNode.querySelector('.screen-mode-button');
         if (screenModeButton) {
@@ -446,12 +451,64 @@ define(['core/templates', 'core/notification'], function(Templates, Notification
         }
 
         Templates.renderForPromise('qtype_coderunner/screenmode_button', {}).then(({html}) => {
-            const screenModeButton = Templates.appendNodeContents(wrapperEditor, html, '')[0];
-            const fullscreenButton = screenModeButton.querySelector('.button-fullscreen');
-            const exitFullscreenButton = screenModeButton.querySelector('.button-exit-fullscreen');
+            const screenModeButtonElement = Templates.appendNodeContents(wrapperEditor, html, '')[0];
+            const fullscreenButton = screenModeButtonElement.querySelector('.button-fullscreen');
+            const exitFullscreenButton = screenModeButtonElement.querySelector('.button-exit-fullscreen');
 
             // When load successfully, show the fullscreen button.
             fullscreenButton.classList.remove('d-none');
+
+            const restoreExitButtonContainer = () => {
+                if (exitFullscreenButton.parentNode !== screenModeButtonElement) {
+                    screenModeButtonElement.append(exitFullscreenButton);
+                }
+            };
+
+            const handleFullscreenChange = () => {
+                const inFullscreen = document.fullscreenElement === wrapperEditor;
+                if (inFullscreen) {
+                    wrapperEditor.classList.add(fullscreenClass);
+                    fullscreenButton.classList.add('d-none');
+                    exitFullscreenButton.classList.remove('d-none');
+                } else {
+                    wrapperEditor.classList.remove(fullscreenClass);
+                    restoreExitButtonContainer();
+                    exitFullscreenButton.classList.add('d-none');
+                    fullscreenButton.classList.remove('d-none');
+                    const restoredHeight = (typeof t.wrapperHeight === 'number' && !Number.isNaN(t.wrapperHeight))
+                        ? Math.max(t.wrapperHeight, MIN_WRAPPER_HEIGHT)
+                        : MIN_WRAPPER_HEIGHT;
+                    wrapperEditor.style.height = restoredHeight + 'px';
+
+                    const storedWidth = (typeof t.wrapperWidth === 'number' && !Number.isNaN(t.wrapperWidth) && t.wrapperWidth > 0)
+                        ? t.wrapperWidth
+                        : (wrapperEditor.parentElement ? wrapperEditor.parentElement.clientWidth : wrapperEditor.clientWidth || 0);
+                    const fallbackWidth = storedWidth > 0 ? storedWidth : (t.wrapperNode.clientWidth || t.wLast || wrapperEditor.clientWidth || 0);
+                    if (fallbackWidth > 0) {
+                        wrapperEditor.style.width = fallbackWidth + 'px';
+                    } else {
+                        wrapperEditor.style.width = '100%';
+                    }
+                    wrapperEditor.style.maxWidth = '100%';
+
+                    const widthToRestore = (typeof t.widthEditNode === 'number' && t.widthEditNode > 0)
+                        ? t.widthEditNode
+                        : fallbackWidth || t.wLast;
+                    const heightToRestore = (typeof t.heightEditNode === 'number' && t.heightEditNode > 0)
+                        ? t.heightEditNode
+                        : restoredHeight;
+                    if (t.uiInstance && typeof t.uiInstance.resize === 'function') {
+                        t.uiInstance.resize(widthToRestore, heightToRestore);
+                    }
+                    window.requestAnimationFrame(() => {
+                        wrapperEditor.style.width = '100%';
+                        wrapperEditor.style.removeProperty('max-width');
+                        window.setTimeout(() => t.checkForResize(), 30);
+                    });
+                }
+            };
+
+            wrapperEditor.addEventListener('fullscreenchange', handleFullscreenChange);
 
             // Add event listeners to the fullscreen/exit-fullscreen button.
             fullscreenButton.addEventListener('click', enterFullscreen.bind(this,
@@ -472,33 +529,28 @@ define(['core/templates', 'core/notification'], function(Templates, Notification
             // The editor can stretch out.
             // So we need to save the original height and width of the editor before going fullscreen.
             t.wrapperHeight = t.wrapperNode.clientHeight;
-            t.heightEditNode = t.hLast;
-            t.widthEditNode = t.wLast;
+            t.wrapperWidth = t.wrapperNode.clientWidth;
+            t.heightEditNode = t.wrapperNode.clientHeight;
+            t.widthEditNode = t.wrapperNode.clientWidth;
 
             fullscreenButton.classList.add('d-none');
             // Append exit fullscreen button to the wrapper editor.
             // So that when in the fullscreen mode, the exit fullscreen button will be in the wrapper editor.
             wrapperEditor.append(exitFullscreenButton);
+            exitFullscreenButton.classList.remove('d-none');
+            wrapperEditor.classList.add(fullscreenClass);
 
-            // Handle fullscreen event.
-            wrapperEditor.addEventListener('fullscreenchange', () => {
-                if (document.fullscreenElement === null) {
-                    // When exit fullscreen using ESC key or press exit fullscreen button.
-                    // We need to reset the editor to the original size.
-                    t.uiInstance.resize(t.widthEditNode, t.heightEditNode);
-
-                    // We need to reset the wrapper height to the original height.
-                    // In fullscreen mode, the wrapper height can change by stretching it out.
-                    wrapperEditor.style.height = t.wrapperHeight + 'px';
-
-                    // Add and remove the d-none class to show and hide the buttons.
-                    exitFullscreenButton.classList.add('d-none');
-                    fullscreenButton.classList.remove('d-none');
-                } else {
-                    exitFullscreenButton.classList.remove('d-none');
+            wrapperEditor.requestFullscreen().catch(function(error) {
+                wrapperEditor.classList.remove(fullscreenClass);
+                exitFullscreenButton.classList.add('d-none');
+                fullscreenButton.classList.remove('d-none');
+                restoreExitButtonContainer();
+                if (typeof Notification !== 'undefined' && Notification && typeof Notification.exception === 'function') {
+                    Notification.exception(error);
+                } else if (typeof window !== 'undefined' && window.console && typeof window.console.error === 'function') {
+                    window.console.error('[CodeRunner] Failed to enter fullscreen', error);
                 }
             });
-            wrapperEditor.requestFullscreen().catch(Notification.exception);
         }
 
         /**
@@ -509,11 +561,8 @@ define(['core/templates', 'core/notification'], function(Templates, Notification
         function exitFullscreen(e) {
             let t = this;
             e.preventDefault();
+            wrapperEditor.classList.remove(fullscreenClass);
             document.exitFullscreen();
-
-            // Reset the editor to the original size before going fullscreen.
-            wrapperEditor.style.height = t.wrapperHeight + 'px';
-            t.uiInstance.resize(t.widthEditNode, t.heightEditNode);
         }
     };
 

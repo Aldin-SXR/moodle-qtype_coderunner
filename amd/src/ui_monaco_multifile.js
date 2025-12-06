@@ -64,12 +64,14 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
         rich_features: false,
         disable_lsp_prefixes: false,
         lsp_workspace_config: '',
+        semantic_highlighting: false,
         sidebar_width: 200,
         max_files: 20,
         allowed_extensions: ['html', 'css', 'js', 'json', 'txt'],
         disable_new_files: false,
         disable_new_folders: false,
-        use_vscode_icons: true
+        use_vscode_icons: true,
+        autosave: false  // Disable autosave by default (enabled for students/preview, disabled for question authoring)
     };
 
     const LANGUAGE_MAP = {
@@ -169,6 +171,7 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
     const MAX_SEARCH_RESULTS = 500;
     const SNIPPET_CONTEXT = 80;
     const SEARCH_DEFAULT_MESSAGE = 'Enter a search term to search all files.';
+    const AUTOSAVE_STATUS_DEFAULT_COLOR = 'var(--mm-autosave-color, #475569)';
 
     let monacoLoadPromise = null;
     let monacoThemePromise = null;
@@ -268,6 +271,42 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
         }
     }
 
+    MonacoMultifileWrapper.prototype.getFilePathFromUri = function(uri) {
+        const prefix = 'file:///' + this.workspaceRoot + '/';
+        if (typeof uri === 'string' && uri.indexOf(prefix) === 0) {
+            return uri.slice(prefix.length);
+        }
+        return uri || '';
+    };
+
+    MonacoMultifileWrapper.prototype.rewriteTppIncludeName = function(includePath) {
+        if (!includePath || includePath.toLowerCase().indexOf('.tpp') === -1) {
+            return includePath;
+        }
+        const parts = includePath.split('/');
+        const filename = parts.pop();
+        const base = filename.replace(/\.tpp$/i, '');
+        const rewritten = 'tpp_' + base + '.h';
+        return (parts.length ? parts.join('/') + '/' : '') + rewritten;
+    };
+
+    MonacoMultifileWrapper.prototype.rewriteTppIncludes = function(text, uri) {
+        if (!text || typeof text !== 'string') {
+            return text;
+        }
+        return text.replace(/#\s*include\s*"([^"]+\.tpp)"/gi, (match, inc) => {
+            const rewritten = this.rewriteTppIncludeName(inc);
+            return rewritten && rewritten !== inc ? match.replace(inc, rewritten) : match;
+        });
+    };
+
+    MonacoMultifileWrapper.prototype.getLspContentTransform = function() {
+        if (!this._lspContentTransform) {
+            this._lspContentTransform = (text, uri) => this.rewriteTppIncludes(text, uri);
+        }
+        return this._lspContentTransform;
+    };
+
     function rebindLspForFile(file, lspOptions, monacoInstance, adapterInstance, oldUri) {
         if (!file || !monacoInstance || !adapterInstance) {
             return;
@@ -292,7 +331,8 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
             language: file.getLanguage(),
             lspUrl: lspOptions.lspUrl,
             lspBaseUrl: lspOptions.lspBaseUrl,
-            prefixCode: lspOptions.prefixCode
+            prefixCode: lspOptions.prefixCode,
+            contentTransform: lspOptions.contentTransform
         });
 
         // If oldUri is provided, notify LSP about the rename
@@ -1258,6 +1298,15 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
         this.themeListener = null;
         this.initialUiState = null;
         this.pendingActivePath = null;
+        this.lastAutosaveTimestamp = null;
+        this.autosaveStatusBar = null;
+        this.autosaveStatusText = null;
+        this.autosaveRestoreBtn = null;
+        this.autosaveStatusDefaultColor = null;
+        this.sidebarStatusBar = null;
+        this.autosaveToast = null;
+        this.autosaveToastTimer = null;
+        this.autosaveWarningShown = false;
 
         // Initialize virtual file system
         this.vfs = null;
@@ -1265,6 +1314,7 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
 
         // UI elements
         this.container = null;
+        this.activityBar = null;
         this.sidebar = null;
         this.editorContainer = null;
         this.tabBar = null;
@@ -1279,14 +1329,28 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
         this.searchResultsContainer = null;
         this.searchStatusLabel = null;
         this.searchPanelVisible = false;
+        this.outlinePanel = null;
+        this.outlineTreeContainer = null;
+        this.problemsPanel = null;
+        this.problemsListContainer = null;
+        this.currentOutlineSymbols = [];
+        this.problemFilters = {
+            error: true,
+            warning: true,
+            info: true,
+            hint: true
+        };
+        this.currentProblems = [];
+        this.markerChangeListener = null;
+        this.activeView = 'explorer'; // 'explorer', 'search', 'outline', or 'problems'
+        this.sidebarCollapsed = false;
         this.userSelectedTheme = readStoredThemePreference();
         this.currentTheme = resolveTheme(this.params);
         this.themeControl = null;
         this.themeMenu = null;
         this.themeButton = null;
-        this.documentEventNamespace = '.monacoMultifile-' + this.textareaId;
         this.boundKeydownHandler = (e) => this.handleGlobalKeydown(e);
-        $(document).on('keydown' + this.documentEventNamespace, this.boundKeydownHandler);
+        document.addEventListener('keydown', this.boundKeydownHandler, true);
 
         ensureCodiconStyles();
 
@@ -1301,6 +1365,7 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
 
     MonacoMultifileWrapper.prototype.init = function(w, h) {
         this.debouncedSyncToLocalStorage = debounce(this.syncToLocalStorage.bind(this), 2000);
+        this.debouncedRefreshOutline = debounce(this.refreshOutline.bind(this), 1000);
         // Load initial data from textarea
         const textareaContent = this.textarea.value;
         let initialData;
@@ -1320,7 +1385,7 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
 
         // Check for and apply localStorage data if newer
         try {
-            const localDataStr = window.localStorage.getItem(this.getLocalStorageKey());
+            const localDataStr = this.loadLocalBackupData();
             if (localDataStr) {
                 const localData = JSON.parse(localDataStr);
                 const serverTimestamp = (initialData && initialData.timestamp) ? initialData.timestamp : 0;
@@ -1413,6 +1478,8 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
             }
             this.pendingActivePath = null;
 
+            this.registerMarkerListener();
+
             // LSP will be set up when each file is opened
             // We don't register all files at once to avoid rapidly switching the editor between models
         }).catch(err => {
@@ -1430,8 +1497,12 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
         // Fix width/height for hidden fields (answerpreload)
         const width = w > 0 ? w : (this.textarea.clientWidth || 800);
         const height = h > 0 ? h : (this.textarea.clientHeight || 300);
-        this.container.style.width = width + 'px';
+        // Use 100% width to always fill parent, avoiding fullscreen sizing issues
+        this.container.style.width = '100%';
+        this.container.style.maxWidth = '100%';
+        this.container.style.boxSizing = 'border-box';
         this.container.style.height = height + 'px';
+        this.container.style.overflow = 'hidden';
         if (!this.currentTheme) {
             this.currentTheme = resolveTheme(this.params);
         }
@@ -1440,33 +1511,29 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
         // Sidebar
         this.sidebar = $('<div class="monaco-multifile-sidebar"></div>');
         this.sidebar.css({
-            width: this.params.sidebar_width + 'px'
+            width: this.params.sidebar_width + 'px',
+            flexShrink: 0  // Prevent sidebar from shrinking and disappearing
         });
 
         // Sidebar header with title and actions
         const sidebarHeader = $('<div class="monaco-multifile-sidebar-header"></div>');
 
-        const titleSpan = $('<span>Explorer</span>');
+        const titleSpan = $('<span class="monaco-sidebar-title">Explorer</span>');
         const actionsDiv = $('<div class="monaco-sidebar-actions"></div>');
 
-        const searchToggleBtn = $('<button type="button" class="monaco-icon-btn" title="Search in files"><span class="codicon codicon-search"></span></button>');
-        searchToggleBtn.on('click', () => this.toggleSearchPanel());
-
+        // Actions will be populated by updateSidebarActions based on active view
         const newFileBtn = $('<button type="button" class="monaco-icon-btn" title="New File"><span class="codicon codicon-new-file"></span></button>');
         const newFolderBtn = $('<button type="button" class="monaco-icon-btn" title="New Folder"><span class="codicon codicon-new-folder"></span></button>');
 
         if (this.allowNewFiles) {
             newFileBtn.on('click', () => this.promptNewFile(''));
-        } else {
-            newFileBtn.hide();
+            actionsDiv.append(newFileBtn);
         }
         if (this.allowNewFolders) {
             newFolderBtn.on('click', () => this.promptNewFolder(''));
-        } else {
-            newFolderBtn.hide();
+            actionsDiv.append(newFolderBtn);
         }
 
-        actionsDiv.append(searchToggleBtn, newFileBtn, newFolderBtn);
         sidebarHeader.append(titleSpan, actionsDiv);
         this.sidebar.append(sidebarHeader);
 
@@ -1475,13 +1542,29 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
             this.sidebar.append(this.searchPanel);
         }
 
+        this.createProblemsPanel();
+        if (this.problemsPanel) {
+            this.sidebar.append(this.problemsPanel);
+        }
+
+        this.createOutlinePanel();
+        if (this.outlinePanel) {
+            this.sidebar.append(this.outlinePanel);
+        }
+
         // File tree container
         this.fileTree = $('<div class="monaco-multifile-tree"></div>');
         this.sidebar.append(this.fileTree);
+        this.sidebar.find('.monaco-sidebar-status').remove();
+        this.sidebarStatusBar = $('<div class="monaco-sidebar-status"></div>');
+        this.sidebar.append(this.sidebarStatusBar);
 
         // Root-level context menu (blank area of the tree).
         this.fileTree.on('contextmenu', (e) => {
             const targetItem = $(e.target).closest('.monaco-file-item, .monaco-folder-item');
+            if (this.activeView !== 'explorer') {
+                return;
+            }
             if (targetItem.length === 0) {
                 e.preventDefault();
                 e.stopPropagation();
@@ -1490,7 +1573,14 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
         });
 
         this.sidebar.on('contextmenu', (e) => {
-            const targetItem = $(e.target).closest('.monaco-file-item, .monaco-folder-item');
+            const $target = $(e.target);
+            if (this.activeView !== 'explorer') {
+                return;
+            }
+            if ($target.closest('.monaco-sidebar-status').length) {
+                return;
+            }
+            const targetItem = $target.closest('.monaco-file-item, .monaco-folder-item');
             if (targetItem.length === 0) {
                 e.preventDefault();
                 e.stopPropagation();
@@ -1553,7 +1643,8 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
             flex: 1,
             display: 'flex',
             flexDirection: 'column',
-            overflow: 'visible'
+            overflow: 'visible',
+            minWidth: 0
         });
 
         // Tab bar container with tabs and preview button
@@ -1620,11 +1711,26 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
 
         tabControls.append(previewBtn);
         tabControls.append(this.themeControl);
+        this.autosaveStatusBar = $('<div class="monaco-autosave-status" role="status" aria-live="polite"></div>');
+        this.autosaveStatusText = $('<span class="monaco-autosave-text"></span>');
+        this.autosaveRestoreBtn = $('<button type="button" class="monaco-autosave-restore">Restore backup</button>');
+        this.autosaveRestoreBtn.on('click', () => this.restoreFromLocalBackup());
+        this.autosaveStatusBar.append(this.autosaveStatusText);
+        this.autosaveStatusBar.append(this.autosaveRestoreBtn);
+        this.autosaveStatusDefaultColor = AUTOSAVE_STATUS_DEFAULT_COLOR;
+
+        // Hide autosave UI if in author mode or if autosave is disabled
+        if (this.authorMode || !this.params.autosave) {
+            this.autosaveStatusBar.hide();
+        }
+
+        this.attachAutosaveStatusToSidebar();
 
         tabBarContainer.append(this.tabBar);
         tabBarContainer.append(tabControls);
         this.refreshThemeMenu();
         this.updateThemeButtonState();
+        this.setAutosaveStatus('idle');
 
         // Editor container
         this.editorContainer = $('<div class="monaco-multifile-editor"></div>');
@@ -1637,6 +1743,11 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
         rightPanel.append(tabBarContainer);
         rightPanel.append(this.editorContainer);
 
+        this.container.style.position = 'relative';
+
+        // Create and insert activity bar before sidebar
+        const activityBar = this.createActivityBar();
+        this.container.appendChild(activityBar[0]);
         this.container.appendChild(this.sidebar[0]);
         this.container.appendChild(rightPanel[0]);
 
@@ -1655,6 +1766,1504 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
         });
     };
 
+    MonacoMultifileWrapper.prototype.ensureOutlineLspProvider = function(language, lspOptions) {
+        if (!this.monaco || !this.params.lsp_enabled) {
+            return Promise.resolve(null);
+        }
+        if (!language || !lspOptions || !lspOptions.enabled || !lspOptions.lspUrl) {
+            return Promise.resolve(null);
+        }
+
+        const self = this;
+        const tryGetProvider = function() {
+            try {
+                return adapter.getDocumentSymbolProvider(language, lspOptions.lspUrl, lspOptions.lspBaseUrl);
+            } catch (err) {
+                logWarn('Error while querying LSP provider for ' + language, err);
+                return null;
+            }
+        };
+
+        const existing = tryGetProvider();
+        if (existing && typeof existing.provideDocumentSymbols === 'function') {
+            return Promise.resolve(existing);
+        }
+
+        if (typeof self.registerWorkspaceFilesWithLsp === 'function') {
+            try {
+                self.registerWorkspaceFilesWithLsp(language, null);
+            } catch (err) {
+                logWarn('Failed to register workspace files with LSP for ' + language, err);
+            }
+        }
+
+        const maxAttempts = 5;
+        const delayMs = 200;
+        return new Promise(function(resolve) {
+            let attempt = 0;
+            const checkProvider = function() {
+                const provider = tryGetProvider();
+                if (provider && typeof provider.provideDocumentSymbols === 'function') {
+                    resolve(provider);
+                    return;
+                }
+                if (attempt >= maxAttempts) {
+                    resolve(null);
+                    return;
+                }
+                attempt++;
+                setTimeout(checkProvider, delayMs);
+            };
+            checkProvider();
+        });
+    };
+
+    MonacoMultifileWrapper.prototype.attachAutosaveStatusToSidebar = function() {
+        if (!this.sidebarStatusBar || !this.autosaveStatusBar) {
+            return;
+        }
+        const parent = this.autosaveStatusBar.parent();
+        const alreadyInSidebar = parent && parent.length && parent[0] === this.sidebarStatusBar[0];
+        if (alreadyInSidebar) {
+            return;
+        }
+        this.autosaveStatusBar.detach();
+        this.sidebarStatusBar.append(this.autosaveStatusBar);
+    };
+
+    MonacoMultifileWrapper.prototype.createActivityBar = function() {
+        const activityBar = $('<div class="monaco-activity-bar"></div>');
+
+        const activityTabs = $('<div class="monaco-activity-tabs"></div>');
+
+        // Explorer tab
+        const explorerTab = $('<button type="button" class="monaco-activity-tab active" data-view="explorer"></button>');
+        explorerTab.attr('title', 'Explorer (Ctrl+Shift+E)');
+        explorerTab.attr('aria-label', 'Explorer');
+        explorerTab.append('<span class="codicon codicon-files"></span>');
+        explorerTab.on('click', () => this.toggleView('explorer'));
+
+        // Search tab
+        const searchTab = $('<button type="button" class="monaco-activity-tab" data-view="search"></button>');
+        searchTab.attr('title', 'Search (Ctrl+Shift+F)');
+        searchTab.attr('aria-label', 'Search');
+        searchTab.append('<span class="codicon codicon-search"></span>');
+        searchTab.on('click', () => this.toggleView('search'));
+
+        // Outline tab
+        const outlineTab = $('<button type="button" class="monaco-activity-tab" data-view="outline"></button>');
+        outlineTab.attr('title', 'Outline (Ctrl+Shift+O)');
+        outlineTab.attr('aria-label', 'Outline');
+        outlineTab.append('<span class="codicon codicon-symbol-class"></span>');
+        outlineTab.on('click', () => this.toggleView('outline'));
+        // Problems tab
+        const problemsTab = $('<button type="button" class="monaco-activity-tab" data-view="problems"></button>');
+        problemsTab.attr('title', 'Problems (Ctrl+Shift+M)');
+        problemsTab.attr('aria-label', 'Problems');
+        problemsTab.append('<span class="codicon codicon-issues"></span>');
+        problemsTab.on('click', () => this.toggleView('problems'));
+
+        activityTabs.append(explorerTab, searchTab, outlineTab, problemsTab);
+
+        // Future: Activity actions at bottom
+        const activityActions = $('<div class="monaco-activity-actions"></div>');
+
+        activityBar.append(activityTabs, activityActions);
+        this.activityBar = activityBar;
+
+        return activityBar;
+    };
+
+    MonacoMultifileWrapper.prototype.toggleView = function(viewName) {
+        // If clicking active view, toggle sidebar collapse
+        if (this.activeView === viewName && !this.sidebarCollapsed) {
+            this.collapseSidebar();
+            return;
+        }
+
+        // If sidebar collapsed, expand it
+        if (this.sidebarCollapsed) {
+            this.expandSidebar();
+        }
+
+        // Switch to requested view
+        this.switchToView(viewName);
+    };
+
+    MonacoMultifileWrapper.prototype.collapseSidebar = function() {
+        this.sidebarCollapsed = true;
+        this.sidebar.addClass('collapsed');
+    };
+
+    MonacoMultifileWrapper.prototype.expandSidebar = function() {
+        this.sidebarCollapsed = false;
+        this.sidebar.removeClass('collapsed');
+    };
+
+    MonacoMultifileWrapper.prototype.switchToView = function(viewName) {
+        if (this.activeView === viewName) {
+            return;
+        }
+
+        this.activeView = viewName;
+
+        // Update activity tab states
+        if (this.activityBar) {
+            this.activityBar.find('.monaco-activity-tab').removeClass('active');
+            this.activityBar.find(`.monaco-activity-tab[data-view="${viewName}"]`).addClass('active');
+        }
+
+        // Update sidebar header title
+        const titleMap = {
+            'explorer': 'Explorer',
+            'search': 'Search',
+            'outline': 'Outline',
+            'problems': 'Problems'
+        };
+        const title = titleMap[viewName] || 'Explorer';
+        this.sidebar.find('.monaco-sidebar-title').text(title);
+
+        // Show/hide appropriate view content
+        if (viewName === 'explorer') {
+            this.showExplorerView();
+        } else if (viewName === 'search') {
+            this.showSearchView();
+        } else if (viewName === 'outline') {
+            this.showOutlineView();
+        } else if (viewName === 'problems') {
+            this.showProblemsView();
+        }
+    };
+
+    MonacoMultifileWrapper.prototype.showExplorerView = function() {
+        // Hide search panel
+        if (this.searchPanel) {
+            this.searchPanel.hide();
+        }
+
+        // Hide outline panel
+        if (this.outlinePanel) {
+            this.outlinePanel.hide();
+        }
+        if (this.problemsPanel) {
+            this.problemsPanel.hide();
+        }
+
+        // Show file tree
+        if (this.fileTree) {
+            this.fileTree.show();
+        }
+
+        // Update sidebar header actions for explorer context
+        this.updateSidebarActions('explorer');
+    };
+
+    MonacoMultifileWrapper.prototype.showSearchView = function() {
+        // Hide file tree
+        if (this.fileTree) {
+            this.fileTree.hide();
+        }
+
+        // Hide outline panel
+        if (this.outlinePanel) {
+            this.outlinePanel.hide();
+        }
+        if (this.problemsPanel) {
+            this.problemsPanel.hide();
+        }
+
+        // Show search panel
+        if (this.searchPanel) {
+            this.searchPanel.show();
+            // Focus search input
+            setTimeout(() => {
+                if (this.searchInput) {
+                    this.searchInput.trigger('focus');
+                    this.searchInput.select();
+                }
+            }, 100);
+        }
+
+        // Update sidebar header actions for search context
+        this.updateSidebarActions('search');
+    };
+
+    MonacoMultifileWrapper.prototype.showOutlineView = function() {
+        // Hide file tree
+        if (this.fileTree) {
+            this.fileTree.hide();
+        }
+
+        // Hide search panel
+        if (this.searchPanel) {
+            this.searchPanel.hide();
+        }
+        if (this.problemsPanel) {
+            this.problemsPanel.hide();
+        }
+
+        // Show outline panel
+        if (this.outlinePanel) {
+            this.outlinePanel.show();
+            this.refreshOutline();
+        }
+
+        // Update sidebar header actions for outline context
+        this.updateSidebarActions('outline');
+    };
+
+    MonacoMultifileWrapper.prototype.showProblemsView = function() {
+        if (this.fileTree) {
+            this.fileTree.hide();
+        }
+        if (this.searchPanel) {
+            this.searchPanel.hide();
+        }
+        if (this.outlinePanel) {
+            this.outlinePanel.hide();
+        }
+        if (this.problemsPanel) {
+            this.problemsPanel.show();
+            this.refreshProblems();
+        }
+        this.updateSidebarActions('problems');
+    };
+
+    MonacoMultifileWrapper.prototype.refreshOutline = function() {
+        if (!this.outlineTreeContainer || !this.monaco || !this.editor || !this.vfs) {
+            if (this.outlineTreeContainer) {
+                this.outlineTreeContainer.empty();
+                const emptyMsg = $('<div class="monaco-outline-empty">No file selected</div>');
+                emptyMsg.css({
+                    padding: '8px',
+                    color: 'var(--mm-search-text-muted)',
+                    fontStyle: 'italic',
+                    textAlign: 'center'
+                });
+                this.outlineTreeContainer.append(emptyMsg);
+            }
+            return;
+        }
+
+        const self = this;
+
+        // Collect symbols from all files
+        const filesToProcess = this.vfs.getAllFiles();
+
+        // Process each file and collect symbols
+        const fileSymbolPromises = filesToProcess.map(function(file) {
+            if (!file) {
+                return Promise.resolve({ file: file, symbols: [] });
+            }
+
+            // If file doesn't have a model, create one temporarily for symbol extraction
+            let model = file.model;
+            let temporaryModel = false;
+            if (!model && file.content) {
+                const language = file.getLanguage ? file.getLanguage() : (file.language || 'plaintext');
+                const filePath = file.path || 'unknown';
+                const uri = self.monaco.Uri.parse('inmemory://outline/' + filePath);
+                model = self.monaco.editor.createModel(file.content, language, uri);
+                temporaryModel = true;
+            } else if (!model) {
+                return Promise.resolve({ file: file, symbols: [] });
+            }
+
+            const language = file.getLanguage ? file.getLanguage() : (file.language || 'plaintext');
+            const filePath = file.path || 'unknown';
+
+            const lspOptions = self.getLspOptionsForLanguage(language);
+
+            const fetchWithBuiltInProviders = function() {
+                // Try Monaco's internal built-in document symbol providers (for css, js, typescript, html, json)
+                return new Promise(function(resolve) {
+                    const timeout = setTimeout(function() {
+                        // Dispose temporary model if created
+                        if (temporaryModel && model) {
+                            model.dispose();
+                        }
+                        resolve({ file: file, symbols: [] });
+                    }, 2000);
+
+                    // Approach: Use Monaco editor's internal getWorker for supported languages
+                    // For CSS, JavaScript, TypeScript, HTML, JSON - Monaco has built-in language workers
+                    const languageWorkerMap = {
+                        'css': 'css',
+                        'scss': 'css',
+                        'less': 'css',
+                        'javascript': 'javascript',
+                        'typescript': 'typescript',
+                        'json': 'json',
+                        'html': 'html'
+                    };
+
+                const workerLanguage = languageWorkerMap[language];
+                if (!workerLanguage) {
+                    clearTimeout(timeout);
+                    // Dispose temporary model if created
+                    if (temporaryModel && model) {
+                        model.dispose();
+                    }
+                    resolve({ file: file, symbols: [] });
+                    return;
+                }
+
+                // Try to access Monaco's language features via commands API
+                try {
+                    // Monaco provides document symbols through the languages API
+                    // We need to use executeDocumentSymbolProvider command
+                    if (self.monaco.languages && self.monaco.languages.DocumentSymbolProviderRegistry) {
+                        // Retry mechanism: wait for provider to be registered
+                        // HTML/CSS/JS language services may take a moment to initialize
+                        let attempt = 0;
+                        const maxAttempts = 5;
+                        const retryDelay = 100; // ms between retries
+
+                        const tryGetProviders = function() {
+                            const providers = self.monaco.languages.DocumentSymbolProviderRegistry.all(model);
+
+                            if (providers.length > 0) {
+                                const provider = providers[0];
+                                Promise.resolve(provider.provideDocumentSymbols(model, {})).then(function(symbols) {
+                                    clearTimeout(timeout);
+                                    // Dispose temporary model if created
+                                    if (temporaryModel && model) {
+                                        model.dispose();
+                                    }
+                                    resolve({ file: file, symbols: symbols || [] });
+                                }).catch(function(err) {
+                                    clearTimeout(timeout);
+                                    // Dispose temporary model if created
+                                    if (temporaryModel && model) {
+                                        model.dispose();
+                                    }
+                                    resolve({ file: file, symbols: [] });
+                                });
+                                return;
+                            }
+
+                            // No providers found yet
+                            attempt++;
+                            if (attempt < maxAttempts) {
+                                // Retry after a short delay
+                                setTimeout(tryGetProviders, retryDelay);
+                            } else {
+                                // Max attempts reached, use fallback
+                                const fallbackSymbols = self.generateFallbackSymbols(model, file, language);
+                                clearTimeout(timeout);
+                                if (temporaryModel && model) {
+                                    model.dispose();
+                                }
+                                resolve({ file: file, symbols: fallbackSymbols });
+                            }
+                        };
+
+                        // Start the retry loop
+                        tryGetProviders();
+                        return;
+                    }
+
+                    const fallbackSymbols = self.generateFallbackSymbols(model, file, language);
+                    clearTimeout(timeout);
+                    if (temporaryModel && model) {
+                        model.dispose();
+                    }
+                    resolve({ file: file, symbols: fallbackSymbols });
+                } catch (e) {
+                    clearTimeout(timeout);
+                    // Dispose temporary model if created
+                    if (temporaryModel && model) {
+                        model.dispose();
+                    }
+                    resolve({ file: file, symbols: [] });
+                }
+            });
+            };
+
+            return self.ensureOutlineLspProvider(language, lspOptions).then(function(provider) {
+                if (provider && typeof provider.provideDocumentSymbols === 'function') {
+                    return Promise.resolve(provider.provideDocumentSymbols(model))
+                        .then(function(symbols) {
+
+                            // If LSP returns empty symbols, try built-in provider as fallback
+                            if (!symbols || symbols.length === 0) {
+                                return fetchWithBuiltInProviders();
+                            }
+
+                            if (temporaryModel && model) {
+                                model.dispose();
+                            }
+                            return { file: file, symbols: symbols || [] };
+                        })
+                        .catch(function(err) {
+                            // Try built-in provider as fallback
+                            return fetchWithBuiltInProviders();
+                        });
+                }
+                return fetchWithBuiltInProviders();
+            });
+        });
+
+        Promise.all(fileSymbolPromises).then(function(results) {
+            // Transform and organize symbols by file
+            const organizedSymbols = [];
+            results.forEach(function(result) {
+                if (result.symbols && result.symbols.length > 0) {
+                    const transformed = self.transformSymbols(result.symbols, result.file ? result.file.path : null);
+                    if (transformed.length > 0) {
+                        organizedSymbols.push({
+                            file: result.file,
+                            symbols: transformed
+                        });
+                    }
+                }
+            });
+
+            self.currentOutlineSymbols = organizedSymbols;
+            self.renderOutlineTree();
+        }).catch(function(err) {
+            self.currentOutlineSymbols = [];
+            self.renderOutlineTree();
+        });
+    };
+
+    /**
+     * Validate symbols to ensure they have proper range objects.
+     * This prevents errors when Monaco tries to navigate to undefined ranges.
+     *
+     * @param {Array} rawSymbols Array of DocumentSymbol objects
+     * @returns {Array} Filtered array with only valid symbols
+     */
+    MonacoMultifileWrapper.prototype.transformSymbols = function(rawSymbols, filePath) {
+        if (!Array.isArray(rawSymbols)) {
+            return [];
+        }
+        const defaultKind = this.monaco && this.monaco.languages && this.monaco.languages.SymbolKind
+            ? this.monaco.languages.SymbolKind.Function
+            : 11; // Function kind fallback
+        const convert = (symbols) => {
+            const result = [];
+            for (const symbol of symbols) {
+                if (!symbol) {
+                    continue;
+                }
+                // Some providers return SymbolInformation with `location`.
+                let range = symbol.range;
+                let selectionRange = symbol.selectionRange;
+                if (!range && symbol.location && symbol.location.range) {
+                    range = symbol.location.range;
+                }
+                if (!range ||
+                    typeof range.startLineNumber !== 'number' ||
+                    typeof range.startColumn !== 'number' ||
+                    typeof range.endLineNumber !== 'number' ||
+                    typeof range.endColumn !== 'number') {
+                    continue;
+                }
+                if (!selectionRange ||
+                    typeof selectionRange.startLineNumber !== 'number' ||
+                    typeof selectionRange.startColumn !== 'number' ||
+                    typeof selectionRange.endLineNumber !== 'number' ||
+                    typeof selectionRange.endColumn !== 'number') {
+                    selectionRange = range;
+                }
+                result.push({
+                    name: symbol.name || symbol.detail || '',
+                    detail: symbol.detail || symbol.containerName || '',
+                    kind: typeof symbol.kind === 'number' ? symbol.kind : defaultKind,
+                    range: range,
+                    selectionRange: selectionRange,
+                    filePath: filePath || null,
+                    children: convert(symbol.children || [])
+                });
+            }
+            return result;
+        };
+
+        const converted = convert(rawSymbols);
+
+        // Post-process to reconstruct hierarchy from flattened symbols
+        // Some LSPs (like Java) return flattened symbols with containerName/detail
+        // indicating parent relationships instead of proper nesting
+        return this.reconstructHierarchy(converted);
+    };
+
+    MonacoMultifileWrapper.prototype.extractObjectProperties = function(objectText, model, startIndex, parentName) {
+        const children = [];
+        const SymbolKind = this.monaco.languages.SymbolKind || { Method: 6, Property: 7 };
+        const propertyRegex = /([A-Za-z0-9_]+)\s*:\s*(?:function\s*)?/g;
+        let match;
+        while ((match = propertyRegex.exec(objectText)) !== null) {
+            const name = match[1];
+            if (!name) continue;
+            const valueMatch = objectText.slice(match.index).match(/:\s*([^,]+)/);
+            const value = valueMatch ? valueMatch[1].trim() : '';
+            const kind = value.startsWith('function') || value.startsWith('(')
+                ? (SymbolKind.Method || 6)
+                : (SymbolKind.Property || 7);
+
+            // Calculate full range (property name + value)
+            const fullLength = match[0].length + (valueMatch ? valueMatch[0].length : 0);
+            const range = this.rangeFromIndex(model, startIndex + match.index, fullLength);
+            if (!range) continue;
+
+            // Calculate selection range (just the property name)
+            const selectionRange = this.rangeFromIndex(model, startIndex + match.index, name.length);
+
+            children.push({
+                name: name,
+                detail: parentName || '',
+                kind: kind,
+                range: range,
+                selectionRange: selectionRange || range,
+                filePath: null,
+                children: []
+            });
+        }
+        return children;
+    };
+
+    /**
+     * Reconstructs symbol hierarchy from flattened symbols.
+     * Some LSP servers return symbols in a flat list with 'detail' field
+     * indicating the parent container instead of proper nesting.
+     *
+     * @param {Array} symbols Flat array of symbols
+     * @returns {Array} Hierarchically organized symbols
+     */
+    MonacoMultifileWrapper.prototype.reconstructHierarchy = function(symbols) {
+        if (!Array.isArray(symbols) || symbols.length === 0) {
+            return symbols;
+        }
+
+        // First, try to detect if symbols are already properly nested
+        const hasNesting = symbols.some(function(s) { return s.children && s.children.length > 0; });
+        if (hasNesting) {
+            // Already has hierarchy, just return
+            return symbols;
+        }
+
+        // For duplicate names (like multiple <p> tags), we need to match by position
+        // Build potential parent-child relationships based on ranges and names
+        const rootSymbols = [];
+        const processed = new Set();
+
+        // Helper to check if one range contains another
+        const rangeContains = function(parent, child) {
+            return parent.range.startLineNumber <= child.range.startLineNumber &&
+                   parent.range.endLineNumber >= child.range.endLineNumber &&
+                   (parent.range.startLineNumber < child.range.startLineNumber ||
+                    parent.range.endLineNumber > child.range.endLineNumber ||
+                    parent.range.startColumn < child.range.startColumn);
+        };
+
+        // Symbol kind constants (from Monaco/LSP)
+        const SymbolKind = {
+            File: 1, Module: 2, Namespace: 3, Package: 4, Class: 5, Method: 6,
+            Property: 7, Field: 8, Constructor: 9, Enum: 10, Interface: 11,
+            Function: 12, Variable: 13, Constant: 14, String: 15, Number: 16
+        };
+
+        // Container kinds that can have children
+        const containerKinds = [
+            SymbolKind.Class, SymbolKind.Interface, SymbolKind.Enum,
+            SymbolKind.Module, SymbolKind.Namespace, SymbolKind.Package
+        ];
+
+        // For each symbol, find its most immediate parent (if any)
+        symbols.forEach(function(symbol, idx) {
+            // Find potential parents: symbols whose name matches this symbol's detail
+            // and whose range contains this symbol's range
+            let bestParent = null;
+            let smallestParentRange = Infinity;
+
+            symbols.forEach(function(potentialParent, parentIdx) {
+                if (idx === parentIdx) {
+                    return; // Skip self
+                }
+
+                // Check if detail matches potential parent's name
+                if (symbol.detail && symbol.detail === potentialParent.name) {
+                    // Check if parent's range contains child's range
+                    if (rangeContains(potentialParent, symbol)) {
+                        // Calculate parent range size
+                        const rangeSize = (potentialParent.range.endLineNumber - potentialParent.range.startLineNumber);
+
+                        // Prefer the smallest containing parent (most immediate)
+                        if (rangeSize < smallestParentRange) {
+                            bestParent = potentialParent;
+                            smallestParentRange = rangeSize;
+                        }
+                    } else {
+                        // Fallback: If LSP returns incomplete ranges (only identifier position),
+                        // use heuristics: detail matches + parent is a container kind + child comes after parent
+                        const isParentContainer = containerKinds.indexOf(potentialParent.kind) !== -1;
+                        const childAfterParent = symbol.range.startLineNumber > potentialParent.range.startLineNumber;
+
+                        if (isParentContainer && childAfterParent) {
+                            // Use line distance as proxy for "range size" in fallback mode
+                            const lineDistance = symbol.range.startLineNumber - potentialParent.range.startLineNumber;
+                            if (lineDistance < smallestParentRange) {
+                                bestParent = potentialParent;
+                                smallestParentRange = lineDistance;
+                            }
+                        }
+                    }
+                }
+            });
+
+            if (bestParent) {
+                // Add as child to the best parent
+                if (!bestParent.children) {
+                    bestParent.children = [];
+                }
+                bestParent.children.push(symbol);
+                processed.add(symbol);
+            } else {
+                // No parent found, add to root
+                rootSymbols.push(symbol);
+                processed.add(symbol);
+            }
+        });
+
+        return rootSymbols;
+    };
+
+    MonacoMultifileWrapper.prototype.generateFallbackSymbols = function(model, file, language) {
+        if (!model) {
+            return [];
+        }
+        const text = model.getValue();
+        if (!text) {
+            return [];
+        }
+        const lowerLang = (language || '').toLowerCase();
+        if (lowerLang === 'css' || lowerLang === 'scss' || lowerLang === 'less') {
+            return this.generateCssSymbols(model, text, file && file.path);
+        }
+        if (lowerLang === 'javascript' || lowerLang === 'typescript' || lowerLang === 'jsx' || lowerLang === 'tsx') {
+            return this.generateJsSymbols(model, text, file && file.path);
+        }
+        if (lowerLang === 'html' || lowerLang === 'htm') {
+            return this.generateHtmlSymbols(model, text, file && file.path);
+        }
+        return [];
+    };
+
+    MonacoMultifileWrapper.prototype.generateHtmlSymbols = function(model, text, filePath) {
+        const SymbolKind = this.monaco.languages.SymbolKind || {
+            Class: 5,
+            Method: 6,
+            Function: 12,
+            Variable: 13,
+            Property: 7,
+            Field: 13
+        };
+        const voidElements = new Set([
+            'area', 'base', 'br', 'col', 'embed', 'hr', 'img',
+            'input', 'link', 'meta', 'param', 'source', 'track', 'wbr'
+        ]);
+        const tagRegex = /<\s*(\/?)([A-Za-z0-9:_-]+)([\s\S]*?)>/g;
+        const stack = [];
+        const roots = [];
+        const self = this;
+
+        const attachSymbol = (entry, parentEntry, endIndex) => {
+            const length = Math.max(1, endIndex - entry.startIdx);
+            const range = self.rangeFromIndex(model, entry.startIdx, length);
+            if (range) {
+                entry.symbol.range = range;
+                if (!entry.symbol.selectionRange) {
+                    entry.symbol.selectionRange = range;
+                }
+            }
+            if (parentEntry) {
+                entry.symbol.detail = parentEntry.tagName;
+                parentEntry.symbol.children.push(entry.symbol);
+            } else {
+                roots.push(entry.symbol);
+            }
+        };
+
+        const createEntry = (rawName, normalizedName, startIdx, fullTag) => {
+            const selectionOffset = fullTag.indexOf(rawName);
+            const selectionRange = selectionOffset >= 0
+                ? self.rangeFromIndex(model, startIdx + selectionOffset, rawName.length)
+                : null;
+            return {
+                tagName: normalizedName,
+                startIdx: startIdx,
+                symbol: {
+                    name: rawName,
+                    detail: '',
+                    kind: SymbolKind.Method || 6,
+                    range: null,
+                    selectionRange: selectionRange,
+                    filePath: filePath || null,
+                    children: []
+                }
+            };
+        };
+
+        let match;
+        while ((match = tagRegex.exec(text)) !== null) {
+            const isClosing = !!match[1];
+            const rawName = match[2] || '';
+            if (!rawName) {
+                continue;
+            }
+            const normalizedName = rawName.toLowerCase();
+            const fullTag = match[0];
+            const startIdx = match.index;
+            const isSelfClosing = /\/>\s*$/.test(fullTag) || voidElements.has(normalizedName);
+
+            if (isClosing) {
+                // Close entries until we find a matching opening tag
+                while (stack.length) {
+                    const top = stack.pop();
+                    const parentEntry = stack.length ? stack[stack.length - 1] : null;
+                    const endIdx = top.tagName === normalizedName ? tagRegex.lastIndex : startIdx;
+                    attachSymbol(top, parentEntry, endIdx);
+                    if (top.tagName === normalizedName) {
+                        break;
+                    }
+                }
+                continue;
+            }
+
+            const entry = createEntry(rawName, normalizedName, startIdx, fullTag);
+            if (!entry.symbol) {
+                continue;
+            }
+
+            if (isSelfClosing) {
+                entry.symbol.range = self.rangeFromIndex(model, startIdx, fullTag.length) || entry.symbol.range;
+                const parentEntry = stack.length ? stack[stack.length - 1] : null;
+                if (parentEntry) {
+                    entry.symbol.detail = parentEntry.tagName;
+                    parentEntry.symbol.children.push(entry.symbol);
+                } else {
+                    roots.push(entry.symbol);
+                }
+            } else {
+                stack.push(entry);
+            }
+        }
+
+        // Close any remaining open tags
+        while (stack.length) {
+            const entry = stack.pop();
+            const parentEntry = stack.length ? stack[stack.length - 1] : null;
+            attachSymbol(entry, parentEntry, text.length);
+        }
+
+        return roots;
+    };
+
+    MonacoMultifileWrapper.prototype.generateCssSymbols = function(model, text, filePath) {
+        const symbols = [];
+        const blockRegex = /([^{}@]+)\s*\{([^{}]*)\}/g;
+        let match;
+        while ((match = blockRegex.exec(text)) !== null) {
+            const selector = (match[1] || '').trim();
+            if (!selector || selector.startsWith('@')) {
+                continue;
+            }
+            const length = match[0] ? match[0].length : selector.length;
+            const range = this.rangeFromIndex(model, match.index, length);
+            if (!range) {
+                continue;
+            }
+            symbols.push({
+                name: selector,
+                detail: filePath || '',
+                kind: 100, // Custom kind for CSS selectors
+                range: range,
+                selectionRange: range,
+                filePath: filePath || null,
+                children: []
+            });
+        }
+        return symbols;
+    };
+
+        MonacoMultifileWrapper.prototype.generateJsSymbols = function(model, text, filePath) {
+        const symbols = [];
+        const SymbolKind = this.monaco.languages.SymbolKind || { Class: 5, Method: 6, Function: 12, Variable: 13, Property: 7 };
+        const self = this;
+
+        // Helper to create a symbol with proper ranges
+        const createSymbol = (name, kind, startIdx, length, nameOffset, parentName) => {
+            const range = self.rangeFromIndex(model, startIdx, length);
+            if (!range) {
+                return null;
+            }
+            const selectionRange = nameOffset !== undefined
+                ? self.rangeFromIndex(model, startIdx + nameOffset, name.length)
+                : range;
+
+            return {
+                name: name,
+                detail: parentName || '',
+                kind: kind,
+                range: range,
+                selectionRange: selectionRange || range,
+                filePath: filePath || null,
+                children: []
+            };
+        };
+
+        // Extract symbols from a text block (supports nested extraction)
+        const extractSymbolsFromBlock = (blockText, baseOffset, parentName) => {
+            const blockSymbols = [];
+            const excludedRanges = []; // Track ranges that are already processed (function bodies)
+            let match;
+
+            // Extract functions (including nested)
+            const functionRegex = /function\s+([A-Za-z0-9_]+)\s*\([^)]*\)\s*\{/g;
+            while ((match = functionRegex.exec(blockText)) !== null) {
+                const nameOffset = match[0].indexOf(match[1]);
+                const funcStart = baseOffset + match.index;
+                const funcBodyStart = baseOffset + match.index + match[0].length;
+
+                // Find matching closing brace
+                const funcBody = self.findMatchingBrace(blockText, match.index + match[0].length - 1);
+                const funcLength = funcBody ? (funcBody.end - match.index + 1) : match[0].length;
+
+                const symbol = createSymbol(match[1], SymbolKind.Function, funcStart, funcLength, nameOffset, parentName);
+                if (symbol && funcBody) {
+                    // Mark this range as excluded so variables inside aren't extracted at this level
+                    excludedRanges.push({
+                        start: match.index + match[0].length,
+                        end: funcBody.end
+                    });
+
+                    // Extract nested symbols from function body
+                    symbol.children = extractSymbolsFromBlock(funcBody.content, funcBodyStart, match[1]);
+                    blockSymbols.push(symbol);
+                }
+            }
+
+            // Helper to check if a position is inside an excluded range
+            const isExcluded = (pos) => {
+                return excludedRanges.some(range => pos >= range.start && pos < range.end);
+            };
+
+            // Extract variables and arrow functions
+            const varRegex = /(?:const|let|var)\s+([A-Za-z0-9_]+)\s*=\s*/g;
+            while ((match = varRegex.exec(blockText)) !== null) {
+                // Skip if this variable is inside a function body we already processed
+                if (isExcluded(match.index)) {
+                    continue;
+                }
+
+                const name = match[1];
+                const nameOffset = match[0].indexOf(name);
+                const valueStart = match.index + match[0].length;
+                const remaining = blockText.slice(valueStart);
+
+                // Check if it's a function
+                const isFuncMatch = remaining.match(/^(?:async\s+)?(?:function\s*\([^)]*\)\s*\{|\([^)]*\)\s*=>)/);
+                const isObjectMatch = remaining.match(/^\s*\{/);
+
+                let kind = SymbolKind.Variable;
+                let valueLength = 0;
+                const children = [];
+
+                if (isFuncMatch) {
+                    kind = SymbolKind.Function;
+                    if (remaining[0] === '(' || remaining.indexOf('(') < remaining.indexOf('{')) {
+                        // Arrow function or function expression
+                        const bodyMatch = self.findMatchingBrace(remaining, remaining.indexOf('{'));
+                        if (bodyMatch) {
+                            valueLength = bodyMatch.end + 1;
+                            // Extract nested symbols from function body
+                            const bodyStart = baseOffset + valueStart + remaining.indexOf('{') + 1;
+                            children.push(...extractSymbolsFromBlock(bodyMatch.content, bodyStart, name));
+                        }
+                    }
+                } else if (isObjectMatch) {
+                    const objMatch = self.findMatchingBrace(remaining, 0);
+                    if (objMatch) {
+                        valueLength = objMatch.end + 1;
+                        // Extract object properties
+                        const objStart = baseOffset + valueStart + remaining.indexOf('{') + 1;
+                        const props = self.extractObjectProperties(objMatch.content, model, objStart, name);
+                        children.push(...props);
+                    }
+                }
+
+                // Find end of statement (semicolon or newline)
+                if (valueLength === 0) {
+                    const endMatch = remaining.match(/[;\n]/);
+                    valueLength = endMatch ? endMatch.index + 1 : Math.min(remaining.length, 100);
+                }
+
+                const totalLength = match[0].length + valueLength;
+                const symbol = createSymbol(name, kind, baseOffset + match.index, totalLength, nameOffset, parentName);
+                if (symbol) {
+                    symbol.children = children;
+                    blockSymbols.push(symbol);
+                }
+            }
+
+            return blockSymbols;
+        };
+
+        // Start extraction from the top level (no parent)
+        return extractSymbolsFromBlock(text, 0, null);
+    };
+
+    // Helper to find matching closing brace and extract content
+    MonacoMultifileWrapper.prototype.findMatchingBrace = function(text, startPos) {
+        const openChar = text[startPos];
+        if (openChar !== '{') {
+            const braceIdx = text.indexOf('{', startPos);
+            if (braceIdx === -1) return null;
+            startPos = braceIdx;
+        }
+
+        let depth = 1;
+        let i = startPos + 1;
+        const closeChar = '}';
+
+        while (i < text.length && depth > 0) {
+            const char = text[i];
+            // Skip strings
+            if (char === '"' || char === "'" || char === '`') {
+                const stringEnd = this.findStringEnd(text, i, char);
+                if (stringEnd > i) {
+                    i = stringEnd;
+                    continue;
+                }
+            }
+            // Skip comments
+            if (char === '/' && text[i + 1] === '/') {
+                const lineEnd = text.indexOf('\n', i);
+                i = lineEnd > 0 ? lineEnd : text.length;
+                continue;
+            }
+            if (char === '/' && text[i + 1] === '*') {
+                const commentEnd = text.indexOf('*/', i + 2);
+                i = commentEnd > 0 ? commentEnd + 2 : text.length;
+                continue;
+            }
+
+            if (char === '{') depth++;
+            else if (char === '}') depth--;
+
+            if (depth === 0) {
+                return {
+                    end: i,
+                    content: text.slice(startPos + 1, i)
+                };
+            }
+            i++;
+        }
+        return null;
+    };
+
+    MonacoMultifileWrapper.prototype.findStringEnd = function(text, startPos, quoteChar) {
+        let i = startPos + 1;
+        while (i < text.length) {
+            if (text[i] === '\\') {
+                i += 2; // Skip escaped character
+                continue;
+            }
+            if (text[i] === quoteChar) {
+                return i;
+            }
+            i++;
+        }
+        return startPos;
+    };
+
+    MonacoMultifileWrapper.prototype.rangeFromIndex = function(model, startIndex, length) {
+        try {
+            const startPos = model.getPositionAt(startIndex);
+            const endPos = model.getPositionAt(startIndex + (length || 1));
+            return {
+                startLineNumber: startPos.lineNumber,
+                startColumn: startPos.column,
+                endLineNumber: endPos.lineNumber,
+                endColumn: endPos.column
+            };
+        } catch (err) {
+            return null;
+        }
+    };
+
+
+    MonacoMultifileWrapper.prototype.renderOutlineTree = function() {
+        if (!this.outlineTreeContainer) {
+            return;
+        }
+
+        this.outlineTreeContainer.empty();
+
+        if (!this.currentOutlineSymbols || this.currentOutlineSymbols.length === 0) {
+            const emptyMsg = $('<div class="monaco-outline-empty">No symbols found</div>');
+            emptyMsg.css({
+                padding: '8px',
+                color: 'var(--mm-search-text-muted)',
+                fontStyle: 'italic',
+                textAlign: 'center'
+            });
+            this.outlineTreeContainer.append(emptyMsg);
+            return;
+        }
+
+        // Render symbols grouped by file
+        this.currentOutlineSymbols.forEach(fileGroup => {
+            // Add collapsible file header
+            const fileHeader = $('<div class="monaco-outline-file-group"></div>');
+            fileHeader.css({
+                fontWeight: '600',
+                fontSize: '12px',
+                padding: '6px 8px 2px 8px',
+                color: 'var(--mm-item-color)',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                cursor: 'pointer',
+                userSelect: 'none'
+            });
+
+            // Add chevron for collapsing
+            const chevron = $('<span class="codicon codicon-chevron-down monaco-file-chevron"></span>');
+            chevron.css({
+                fontSize: '14px',
+                color: 'var(--mm-chevron-color)',
+                marginRight: '2px'
+            });
+
+            // Get file icon using the same method as Explorer
+            const iconDescriptor = this.getIconDescriptorForFile(fileGroup.file);
+            const fileIconElem = createIconElement(iconDescriptor, 'monaco-tree-icon');
+            fileIconElem.css({ fontSize: '14px', marginRight: '0', flexShrink: '0' });
+
+            const fileName = $('<span></span>').text(fileGroup.file.path || 'unknown');
+            fileName.css({ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' });
+
+            fileHeader.append(chevron, fileIconElem, fileName);
+            this.outlineTreeContainer.append(fileHeader);
+
+            // Container for file symbols
+            const fileSymbolsContainer = $('<div class="monaco-file-symbols"></div>');
+
+            // Render symbols for this file (with base indent of 1 for file grouping)
+            const groupFilePath = fileGroup.file ? fileGroup.file.path : null;
+            fileGroup.symbols.forEach(symbol => {
+                this.renderSymbol(symbol, fileSymbolsContainer, 1, groupFilePath);
+            });
+
+            this.outlineTreeContainer.append(fileSymbolsContainer);
+
+            // Make file header collapsible
+            let isExpanded = true;
+            fileHeader.on('click', () => {
+                isExpanded = !isExpanded;
+                chevron.removeClass('codicon-chevron-down codicon-chevron-right');
+                chevron.addClass(isExpanded ? 'codicon-chevron-down' : 'codicon-chevron-right');
+                fileSymbolsContainer.toggle();
+            });
+        });
+    };
+
+    MonacoMultifileWrapper.prototype.renderSymbol = function(symbol, container, depth, filePath) {
+        const self = this;
+        const indent = depth * 12;
+
+        const symbolItem = $('<div class="monaco-symbol-item"></div>');
+        symbolItem.css({
+            padding: '4px 8px',
+            paddingLeft: (8 + indent) + 'px',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            fontSize: '13px',
+            userSelect: 'none',
+            marginBottom: '1px',
+            transition: 'background-color 0.1s ease',
+            minWidth: 'fit-content',
+            position: 'relative'
+        });
+
+        // Add indent guides for parent levels
+        for (let i = 1; i < depth; i++) {
+            const guideLeft = 8 + (i * 12) + 7; // Center the guide in the indent space
+            const guide = $('<div class="monaco-symbol-indent-guide"></div>');
+            guide.css({
+                left: guideLeft + 'px'
+            });
+            symbolItem.append(guide);
+        }
+
+        // Hover effect
+        symbolItem.on('mouseenter', () => {
+            symbolItem.css('background', 'var(--mm-item-hover-bg)');
+        }).on('mouseleave', () => {
+            symbolItem.css('background', 'transparent');
+        });
+
+        // Add chevron if has children, otherwise add spacing placeholder
+        let childrenContainer = null;
+        if (symbol.children && symbol.children.length > 0) {
+            const chevron = $('<span class="codicon codicon-chevron-down monaco-chevron"></span>');
+            chevron.css({
+                marginRight: '4px',
+                fontSize: '14px',
+                color: 'var(--mm-chevron-color)',
+                width: '14px',
+                display: 'inline-block',
+                textAlign: 'center'
+            });
+            symbolItem.append(chevron);
+
+            // Track expansion state (start expanded)
+            let isExpanded = true;
+            chevron.on('click', (e) => {
+                e.stopPropagation();
+                isExpanded = !isExpanded;
+                chevron.removeClass('codicon-chevron-down codicon-chevron-right');
+                chevron.addClass(isExpanded ? 'codicon-chevron-down' : 'codicon-chevron-right');
+                if (childrenContainer) {
+                    childrenContainer.toggle();
+                }
+            });
+        } else {
+            // Add invisible placeholder to maintain alignment
+            const placeholder = $('<span class="monaco-chevron-placeholder"></span>');
+            placeholder.css({
+                marginRight: '4px',
+                width: '14px',
+                display: 'inline-block'
+            });
+            symbolItem.append(placeholder);
+        }
+
+        // Symbol icon based on kind
+        const iconClass = this.getSymbolIcon(symbol.kind);
+        const symbolIcon = $(`<span class="codicon ${iconClass} monaco-tree-icon monaco-symbol-icon"></span>`);
+        symbolIcon.attr('data-symbol-kind', symbol.kind);
+        symbolIcon.css({
+            marginRight: '6px',
+            fontSize: '16px'
+        });
+
+        // Symbol name
+        const symbolName = $(`<span class="monaco-symbol-name"></span>`);
+        symbolName.text(symbol.name);
+        if (symbol.name) {
+            symbolName.attr('title', symbol.name);
+        }
+        symbolName.css({
+            whiteSpace: 'nowrap',
+            color: 'var(--mm-item-color)'
+        });
+
+        symbolItem.append(symbolIcon, symbolName);
+
+        // Symbol detail (optional) - positioned at the right
+        if (symbol.detail) {
+            const symbolDetail = $(`<span class="monaco-symbol-detail"></span>`);
+            symbolDetail.text(symbol.detail);
+            symbolDetail.attr('title', symbol.detail);
+            symbolDetail.css({
+                marginLeft: '8px',
+                fontSize: '11px',
+                fontStyle: 'italic',
+                color: 'var(--mm-search-text-muted)',
+                position: 'absolute',
+                right: '8px',
+                paddingLeft: '4px'
+            });
+            symbolItem.append(symbolDetail);
+        }
+
+        // Click to navigate
+        symbolItem.on('click', () => {
+            const targetPath = symbol.filePath || filePath || (self.activeFile && self.activeFile.path);
+            const reveal = () => {
+                if (self.editor && symbol.selectionRange) {
+                    self.editor.setSelection(symbol.selectionRange);
+                    self.editor.revealRangeInCenter(symbol.selectionRange);
+                    self.editor.focus();
+                } else if (self.editor && symbol.range) {
+                    self.editor.setSelection(symbol.range);
+                    self.editor.revealRangeInCenter(symbol.range);
+                    self.editor.focus();
+                }
+            };
+            if (targetPath && (!self.activeFile || self.activeFile.path !== targetPath)) {
+                self.openFile(targetPath);
+                setTimeout(reveal, 40);
+            } else {
+                reveal();
+            }
+        });
+
+        container.append(symbolItem);
+
+        // Render children (initially expanded)
+        if (symbol.children && symbol.children.length > 0) {
+            childrenContainer = $('<div class="monaco-symbol-children"></div>');
+
+            symbol.children.forEach(child => {
+                self.renderSymbol(child, childrenContainer, depth + 1, filePath);
+            });
+
+            container.append(childrenContainer);
+        }
+    };
+
+    MonacoMultifileWrapper.prototype.registerMarkerListener = function() {
+        if (!this.monaco || !this.monaco.editor) {
+            return;
+        }
+        if (this.markerChangeListener && typeof this.markerChangeListener.dispose === 'function') {
+            this.markerChangeListener.dispose();
+        }
+        this.markerChangeListener = this.monaco.editor.onDidChangeMarkers(() => {
+            this.refreshProblems();
+        });
+        this.refreshProblems(true);
+    };
+
+    MonacoMultifileWrapper.prototype.getSeverityInfo = function(severity) {
+        const MarkerSeverity = this.monaco && this.monaco.MarkerSeverity ? this.monaco.MarkerSeverity : {};
+        const severityMap = {};
+        severityMap[MarkerSeverity.Error] = { key: 'error', label: 'Error', className: 'monaco-problem-error', icon: 'codicon-error', rank: 0 };
+        severityMap[MarkerSeverity.Warning] = { key: 'warning', label: 'Warning', className: 'monaco-problem-warning', icon: 'codicon-warning', rank: 1 };
+        severityMap[MarkerSeverity.Info] = { key: 'info', label: 'Info', className: 'monaco-problem-info', icon: 'codicon-info', rank: 2 };
+        severityMap[MarkerSeverity.Hint] = { key: 'hint', label: 'Hint', className: 'monaco-problem-hint', icon: 'codicon-lightbulb', rank: 3 };
+        return severityMap[severity] || { key: 'info', label: 'Info', className: 'monaco-problem-info', icon: 'codicon-info', rank: 2 };
+    };
+
+    MonacoMultifileWrapper.prototype.refreshProblems = function(forceRender) {
+        if (!this.monaco || !this.monaco.editor) {
+            this.currentProblems = [];
+            if (forceRender || this.activeView === 'problems') {
+                this.renderProblemsList();
+            }
+            return;
+        }
+        const markers = this.monaco.editor.getModelMarkers({});
+        const problems = [];
+        for (let i = 0; i < markers.length; i++) {
+            const marker = markers[i];
+            if (!marker) {
+                continue;
+            }
+            const info = this.getSeverityInfo(marker.severity);
+            const startLine = marker.startLineNumber || 1;
+            const startColumn = marker.startColumn || 1;
+            const endLine = marker.endLineNumber || startLine;
+            const endColumn = marker.endColumn || startColumn;
+            const relativePath = this.getRelativePathFromUri(marker.resource);
+            problems.push({
+                message: marker.message || '',
+                severity: info,
+                startLine: startLine,
+                startColumn: startColumn,
+                endLine: endLine,
+                endColumn: endColumn,
+                path: relativePath || '(unknown)',
+                owner: marker.owner || '',
+                rank: info.rank
+            });
+        }
+        problems.sort((a, b) => {
+            if (a.rank !== b.rank) {
+                return a.rank - b.rank;
+            }
+            if (a.path !== b.path) {
+                return a.path.localeCompare(b.path);
+            }
+            if (a.startLine !== b.startLine) {
+                return a.startLine - b.startLine;
+            }
+            return a.startColumn - b.startColumn;
+        });
+        this.currentProblems = problems;
+        if (forceRender || this.activeView === 'problems') {
+            this.renderProblemsList();
+        }
+    };
+
+    MonacoMultifileWrapper.prototype.isProblemVisible = function(problem) {
+        const key = problem && problem.severity && problem.severity.key ? problem.severity.key : 'info';
+        return this.problemFilters[key] !== false;
+    };
+
+    MonacoMultifileWrapper.prototype.renderProblemsList = function() {
+        if (!this.problemsListContainer) {
+            return;
+        }
+        this.problemsListContainer.empty();
+        if (!this.currentProblems || this.currentProblems.length === 0) {
+            const emptyMsg = $('<div class="monaco-problems-empty">No problems detected</div>');
+            this.problemsListContainer.append(emptyMsg);
+            return;
+        }
+        const visibleProblems = this.currentProblems.filter(problem => this.isProblemVisible(problem));
+        if (visibleProblems.length === 0) {
+            const emptyMsg = $('<div class="monaco-problems-empty">No problems match the selected filters</div>');
+            this.problemsListContainer.append(emptyMsg);
+            return;
+        }
+        const grouped = new Map();
+        visibleProblems.forEach(problem => {
+            const key = problem.path || '(unknown)';
+            if (!grouped.has(key)) {
+                grouped.set(key, []);
+            }
+            grouped.get(key).push(problem);
+        });
+        Array.from(grouped.keys()).sort().forEach(path => {
+            const header = $('<div class="monaco-problem-group"></div>');
+            header.text(path);
+            this.problemsListContainer.append(header);
+
+            grouped.get(path).forEach(problem => {
+                const item = $('<div class="monaco-problem-item"></div>');
+                item.addClass(problem.severity.className);
+                const icon = $('<span class="monaco-problem-icon codicon"></span>');
+                icon.addClass(problem.severity.icon);
+                const content = $('<div class="monaco-problem-content"></div>');
+                const message = $('<div class="monaco-problem-message"></div>');
+                message.text(problem.message || '(no details)');
+                const meta = $('<div class="monaco-problem-meta"></div>');
+                meta.text(`Ln ${problem.startLine}, Col ${problem.startColumn}`);
+                content.append(message, meta);
+                item.append(icon, content);
+                item.on('click', () => this.navigateToProblem(problem));
+                this.problemsListContainer.append(item);
+            });
+        });
+    };
+
+    MonacoMultifileWrapper.prototype.navigateToProblem = function(problem) {
+        if (!problem || !problem.path) {
+            return;
+        }
+        this.openFile(problem.path);
+        setTimeout(() => {
+            if (!this.editor || !this.monaco) {
+                return;
+            }
+            const range = new this.monaco.Range(
+                problem.startLine,
+                problem.startColumn,
+                problem.endLine,
+                problem.endColumn
+            );
+            this.editor.setSelection(range);
+            this.editor.revealRangeInCenter(range);
+            this.editor.focus();
+        }, 50);
+    };
+
+    MonacoMultifileWrapper.prototype.getRelativePathFromUri = function(resource) {
+        if (!resource) {
+            return '';
+        }
+        let raw = '';
+        if (typeof resource.path === 'string') {
+            raw = resource.path;
+        } else if (typeof resource.fsPath === 'string') {
+            raw = resource.fsPath;
+        } else if (typeof resource.toString === 'function') {
+            raw = resource.toString();
+        }
+        if (!raw) {
+            return '';
+        }
+        const prefix = '/' + this.workspaceRoot + '/';
+        const idx = raw.indexOf(prefix);
+        if (idx !== -1) {
+            raw = raw.substring(idx + prefix.length);
+        }
+        return raw.replace(/^\/+/, '');
+    };
+
+    MonacoMultifileWrapper.prototype.getSymbolIcon = function(symbolKind) {
+        // Map Monaco SymbolKind enum to codicons
+        const iconMap = {
+            0: 'codicon-symbol-file',
+            1: 'codicon-symbol-module',
+            2: 'codicon-symbol-namespace',
+            3: 'codicon-symbol-package',
+            4: 'codicon-symbol-class',
+            5: 'codicon-symbol-method',
+            6: 'codicon-symbol-property',
+            7: 'codicon-symbol-field',
+            8: 'codicon-symbol-constructor',
+            9: 'codicon-symbol-enum',
+            10: 'codicon-symbol-interface',
+            11: 'codicon-symbol-function',
+            12: 'codicon-symbol-variable',
+            13: 'codicon-symbol-constant',
+            14: 'codicon-symbol-string',
+            15: 'codicon-symbol-number',
+            16: 'codicon-symbol-boolean',
+            17: 'codicon-symbol-array',
+            18: 'codicon-symbol-object',
+            19: 'codicon-symbol-key',
+            20: 'codicon-symbol-null',
+            21: 'codicon-symbol-enum-member',
+            22: 'codicon-symbol-struct',
+            23: 'codicon-symbol-event',
+            24: 'codicon-symbol-operator',
+            25: 'codicon-symbol-type-parameter',
+            100: 'codicon-symbol-class' // CSS selectors use class icon (same as Outline button)
+        };
+
+        return iconMap[symbolKind] || 'codicon-symbol-misc';
+    };
+
+    MonacoMultifileWrapper.prototype.updateSidebarActions = function(viewName) {
+        const actionsDiv = this.sidebar.find('.monaco-sidebar-actions');
+        if (!actionsDiv || actionsDiv.length === 0) {
+            return;
+        }
+
+        actionsDiv.empty();
+
+        if (viewName === 'explorer') {
+            // Show New File and New Folder buttons
+            if (this.allowNewFiles) {
+                const newFileBtn = $('<button type="button" class="monaco-icon-btn" title="New File"></button>');
+                newFileBtn.append('<span class="codicon codicon-new-file"></span>');
+                newFileBtn.on('click', () => this.promptNewFile(''));
+                actionsDiv.append(newFileBtn);
+            }
+            if (this.allowNewFolders) {
+                const newFolderBtn = $('<button type="button" class="monaco-icon-btn" title="New Folder"></button>');
+                newFolderBtn.append('<span class="codicon codicon-new-folder"></span>');
+                newFolderBtn.on('click', () => this.promptNewFolder(''));
+                actionsDiv.append(newFolderBtn);
+            }
+        } else if (viewName === 'search') {
+            // Show search-specific actions (e.g., clear results)
+            const clearBtn = $('<button type="button" class="monaco-icon-btn" title="Clear Search"></button>');
+            clearBtn.append('<span class="codicon codicon-clear-all"></span>');
+            clearBtn.on('click', () => this.resetSearchPanel());
+            actionsDiv.append(clearBtn);
+        } else if (viewName === 'outline') {
+            // Show refresh button for outline
+            const refreshBtn = $('<button type="button" class="monaco-icon-btn" title="Refresh Outline"></button>');
+            refreshBtn.append('<span class="codicon codicon-refresh"></span>');
+            refreshBtn.on('click', () => this.refreshOutline());
+            actionsDiv.append(refreshBtn);
+        } else if (viewName === 'problems') {
+            const refreshProblemsBtn = $('<button type="button" class="monaco-icon-btn" title="Refresh Problems"></button>');
+            refreshProblemsBtn.append('<span class="codicon codicon-refresh"></span>');
+            refreshProblemsBtn.on('click', () => this.refreshProblems(true));
+            actionsDiv.append(refreshProblemsBtn);
+        }
+    };
+
     MonacoMultifileWrapper.prototype.createSearchPanel = function() {
         if (this.searchPanel) {
             return;
@@ -1664,8 +3273,13 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
             padding: '8px',
             borderTop: '1px solid rgba(0,0,0,0.05)',
             borderBottom: '1px solid rgba(0,0,0,0.05)',
-            display: 'none'
+            display: 'flex',
+            flex: '1',
+            minHeight: 0,
+            overflow: 'hidden',
+            flexDirection: 'column'
         });
+        panel.hide();
 
         const controls = $('<div class="monaco-search-controls"></div>');
         controls.css({
@@ -1734,15 +3348,7 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
         searchBtn.append('<span class="codicon codicon-arrow-right"></span>');
         searchBtn.on('click', () => this.executeSearch());
 
-        const resetBtn = $('<button type="button" class="monaco-icon-btn" title="Clear search"></button>');
-        resetBtn.append('<span class="codicon codicon-clear-all"></span>');
-        resetBtn.on('click', () => this.resetSearchPanel());
-
-        const closeBtn = $('<button type="button" class="monaco-icon-btn" title="Hide search panel"></button>');
-        closeBtn.append('<span class="codicon codicon-chevron-up"></span>');
-        closeBtn.on('click', () => this.toggleSearchPanel(false));
-
-        buttonsWrapper.append(searchBtn, resetBtn, closeBtn);
+        buttonsWrapper.append(searchBtn);
         actionsRow.append(leftOptions, buttonsWrapper);
 
         controls.append(inputRow, actionsRow);
@@ -1750,23 +3356,99 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
         this.searchStatusLabel = $(`<div class="monaco-search-status">${SEARCH_DEFAULT_MESSAGE}</div>`);
         this.searchStatusLabel.css({
             fontSize: '12px',
-            color: '#666',
+            color: 'var(--mm-search-text-muted)',
             marginBottom: '6px'
         });
 
         this.searchResultsContainer = $('<div class="monaco-search-results"></div>');
         this.searchResultsContainer.css({
-            maxHeight: '200px',
+            maxHeight: 'none',
             overflowY: 'auto',
+            overflowX: 'auto',
             border: '1px solid rgba(0,0,0,0.08)',
             borderRadius: '3px',
-            padding: '4px'
+            padding: '4px',
+            flex: '1',
+            minHeight: 0
         });
 
         panel.append(controls, this.searchStatusLabel, this.searchResultsContainer);
         this.searchPanel = panel;
         this.renderSearchResults([]);
         this.searchPanelVisible = false;
+    };
+
+    MonacoMultifileWrapper.prototype.createOutlinePanel = function() {
+        if (this.outlinePanel) {
+            return;
+        }
+        const panel = $('<div class="monaco-multifile-outline-panel"></div>');
+        panel.css({
+            display: 'none',
+            flex: '1',
+            overflowY: 'hidden',
+            overflowX: 'auto',
+            padding: '4px 0',
+            minHeight: 0
+        });
+
+        this.outlineTreeContainer = $('<div class="monaco-outline-tree"></div>');
+        this.outlineTreeContainer.css({
+            flex: 1,
+            minHeight: 0,
+            overflowY: 'auto',
+            overflowX: 'auto'
+        });
+        panel.append(this.outlineTreeContainer);
+        this.outlinePanel = panel;
+    };
+
+    MonacoMultifileWrapper.prototype.createProblemsPanel = function() {
+        if (this.problemsPanel) {
+            return;
+        }
+        const panel = $('<div class="monaco-multifile-problems-panel"></div>');
+        panel.css({
+            display: 'none',
+            flex: '1',
+            overflow: 'hidden',
+            minHeight: 0,
+            padding: '4px 0'
+        });
+
+        const filtersRow = $('<div class="monaco-problem-filter-row"></div>');
+        const filtersGroup = $('<div class="monaco-problem-filter-group"></div>');
+        const severityFilters = [
+            {key: 'error', label: 'Errors', icon: 'codicon-error'},
+            {key: 'warning', label: 'Warnings', icon: 'codicon-warning'},
+            {key: 'info', label: 'Info', icon: 'codicon-info'},
+            {key: 'hint', label: 'Hints', icon: 'codicon-lightbulb'}
+        ];
+        severityFilters.forEach(def => {
+            const filterButton = $('<button type="button" class="monaco-problem-filter"></button>');
+            filterButton.attr('data-severity', def.key);
+            const isActive = this.problemFilters[def.key] !== false;
+            if (isActive) {
+                filterButton.addClass('active');
+            }
+            const icon = $(`<span class="codicon ${def.icon}"></span>`);
+            const text = $(`<span>${def.label}</span>`);
+            filterButton.append(icon, text);
+            filterButton.on('click', () => {
+                const nextState = !(this.problemFilters[def.key] !== false);
+                this.problemFilters[def.key] = nextState;
+                filterButton.toggleClass('active', nextState);
+                this.renderProblemsList();
+            });
+            filtersGroup.append(filterButton);
+        });
+        filtersRow.append(filtersGroup);
+
+        const list = $('<div class="monaco-problems-list"></div>');
+
+        panel.append(filtersRow, list);
+        this.problemsListContainer = list;
+        this.problemsPanel = panel;
     };
 
     MonacoMultifileWrapper.prototype.createContextMenu = function() {
@@ -1791,15 +3473,41 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
         if (event.defaultPrevented) {
             return;
         }
-        const key = event.key || event.code;
-        const isSearchShortcut = (key === 'F' || key === 'f') && event.shiftKey &&
+        const key = event.key || '';
+        const code = event.code || '';
+
+        // Ctrl+Shift+E or Cmd+Shift+E: Toggle Explorer view
+        const isExplorerShortcut = (key === 'E' || key === 'e' || code === 'KeyE') && event.shiftKey &&
             (event.ctrlKey || event.metaKey);
-        if (!isSearchShortcut) {
-            return;
+
+        // Ctrl+Shift+F or Cmd+Shift+F: Toggle Search view
+        const isSearchShortcut = (key === 'F' || key === 'f' || code === 'KeyF') && event.shiftKey &&
+            (event.ctrlKey || event.metaKey);
+
+        // Ctrl+Shift+O or Cmd+Shift+O: Toggle Outline view
+        const isOutlineShortcut = (key === 'O' || key === 'o' || code === 'KeyO') && event.shiftKey &&
+            (event.ctrlKey || event.metaKey);
+
+        const isProblemsShortcut = (key === 'M' || key === 'm' || code === 'KeyM') && event.shiftKey &&
+            (event.ctrlKey || event.metaKey);
+
+        if (isExplorerShortcut) {
+            event.preventDefault();
+            event.stopPropagation();
+            this.toggleView('explorer');
+        } else if (isSearchShortcut) {
+            event.preventDefault();
+            event.stopPropagation();
+            this.toggleView('search');
+        } else if (isOutlineShortcut) {
+            event.preventDefault();
+            event.stopPropagation();
+            this.toggleView('outline');
+        } else if (isProblemsShortcut) {
+            event.preventDefault();
+            event.stopPropagation();
+            this.toggleView('problems');
         }
-        event.preventDefault();
-        event.stopPropagation();
-        this.toggleSearchPanel();
     };
 
     MonacoMultifileWrapper.prototype.toggleSearchPanel = function(forceState) {
@@ -1938,7 +3646,7 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
             const placeholder = $('<div class="monaco-search-placeholder">No results.</div>');
             placeholder.css({
                 fontSize: '12px',
-                color: '#888'
+                color: 'var(--mm-search-placeholder-color)'
             });
             this.searchResultsContainer.append(placeholder);
             return;
@@ -1951,7 +3659,7 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
                 cursor: 'pointer'
             });
             item.on('mouseenter', () => {
-                item.css('background', 'rgba(0,0,0,0.05)');
+                item.css('background', 'var(--mm-item-hover-bg)');
             }).on('mouseleave', () => {
                 item.css('background', 'transparent');
             });
@@ -1959,14 +3667,15 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
             const pathLabel = $('<div class="monaco-search-result-path"></div>');
             pathLabel.css({
                 fontSize: '12px',
-                fontWeight: '600'
+                fontWeight: '600',
+                color: 'var(--mm-search-text-color)'
             });
             pathLabel.text(result.path + ':' + result.lineNumber + ':' + result.column);
 
             const snippet = $('<div class="monaco-search-result-snippet"></div>');
             snippet.css({
                 fontSize: '12px',
-                color: '#444'
+                color: 'var(--mm-search-text-muted)'
             });
             snippet.html(result.snippet);
 
@@ -2004,6 +3713,7 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
             const tabSize = parseNumber(this.params.tab_size, DEFAULTS.tab_size);
             const minimapEnabled = normaliseBoolean(this.params.minimap, DEFAULTS.minimap);
             const wordWrapMode = this.params.word_wrap || DEFAULTS.word_wrap;
+            const semanticEnabled = normaliseBoolean(this.params.semantic_highlighting, DEFAULTS.semantic_highlighting || false);
 
             this.editor = this.monaco.editor.create(this.editorContainer[0], {
                 fontSize: fontSize,
@@ -2024,12 +3734,15 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
                 lightbulb: {                    // Enable lightbulb for code actions
                     enabled: true
                 },
-                'semanticHighlighting.enabled': false,
+                'semanticHighlighting.enabled': semanticEnabled,
                 // Disable sticky scroll to prevent crashes with LSP outline
                 stickyScroll: {
                     enabled: false
                 }
             });
+
+            // Enable in-editor navigation for hrefs that reference files in the virtual FS.
+            this.setupInlineHrefNavigation();
 
             const theme = resolveTheme(this.params);
             this.applyResolvedTheme(theme);
@@ -2054,6 +3767,31 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
                     const selection = input.options ? input.options.selection : null;
 
                     if (targetUri) {
+                        // Check if this is a hash link (fragment identifier)
+                        const fragment = targetUri.fragment;
+                        if (fragment) {
+                            // Handle hash links: search for matching id in current file
+                            const model = this.editor ? this.editor.getModel() : null;
+                            if (model) {
+                                const idPattern = new RegExp('id\\s*=\\s*["\']' + fragment.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '["\']', 'i');
+                                const lineCount = model.getLineCount();
+
+                                for (let i = 1; i <= lineCount; i++) {
+                                    const lineContent = model.getLineContent(i);
+                                    const match = idPattern.exec(lineContent);
+                                    if (match) {
+                                        // Found the target element - navigate to it
+                                        const column = match.index + 1;
+                                        this.editor.setPosition({ lineNumber: i, column: column });
+                                        this.editor.revealLineInCenter(i);
+                                        return this.editor;
+                                    }
+                                }
+                            }
+                            // Hash link target not found - do nothing, return current editor
+                            return this.editor;
+                        }
+
                         // Extract the file path relative to workspace root
                         // URI format: file:///{workspaceRoot}/{filePath}
                         const uriPath = targetUri.path;
@@ -2068,10 +3806,32 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
                                 // Open the file in our multifile editor
                                 this.openFile(filePath);
 
+                                // If there's a fragment but no valid selection, don't try to apply selection
+                                // (this happens with hash links where Monaco creates a malformed selection)
+                                if (fragment) {
+                                    // Fragment exists - already handled above
+                                    return this.editor;
+                                }
+
                                 // If there's a selection/position, navigate to it
                                 if (selection && this.editor) {
-                                    this.editor.setSelection(selection);
-                                    this.editor.revealLineInCenter(selection.startLineNumber);
+                                    // Validate and normalize selection object
+                                    // Monaco sometimes creates incomplete selection objects from hash links
+                                    const validSelection = {
+                                        startLineNumber: selection.startLineNumber,
+                                        startColumn: selection.startColumn,
+                                        endLineNumber: selection.endLineNumber !== undefined ? selection.endLineNumber : selection.startLineNumber,
+                                        endColumn: selection.endColumn !== undefined ? selection.endColumn : selection.startColumn
+                                    };
+
+                                    // Check if all required fields are valid numbers
+                                    if (validSelection.startLineNumber > 0 && validSelection.startColumn > 0 &&
+                                        validSelection.endLineNumber > 0 && validSelection.endColumn > 0) {
+                                        try {
+                                            this.editor.setSelection(validSelection);
+                                            this.editor.revealLineInCenter(validSelection.startLineNumber);
+                                        } catch (err) {}
+                                    }
                                 }
 
                                 return this.editor;
@@ -2143,12 +3903,16 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
 
                         // Setup LSP for the new file
                         const lspOptions = this.getLspOptionsForLanguage(newFile.getLanguage());
-                        rebindLspForFile(newFile, lspOptions, this.monaco, adapter);
+                        const fileLspOptions = Object.assign({}, lspOptions, {
+                            prefixCode: this.getPrefixCodeForFile(newFile, lspOptions.prefixCode),
+                            contentTransform: lspOptions.contentTransform
+                        });
+                        rebindLspForFile(newFile, fileLspOptions, this.monaco, adapter);
                         this.registerWorkspaceFilesWithLsp(newFile.getLanguage(), null);
 
                         // Notify LSP server that file was created (after didOpen)
                         if (newFile.model && newFile.model.uri) {
-                            adapter.notifyFileCreated(this.monaco, newFile.model.uri.toString(), lspOptions);
+                            adapter.notifyFileCreated(this.monaco, newFile.model.uri.toString(), fileLspOptions);
                         }
 
                         this.sync();
@@ -2176,12 +3940,14 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
                             const language = this.activeFile.getLanguage();
                             const lspOptions = this.getLspOptionsForLanguage(language);
                             if (lspOptions && lspOptions.enabled) {
+                                const prefixCode = this.getPrefixCodeForFile(this.activeFile, lspOptions.prefixCode);
                                 // Sync the current content which will trigger LSP re-analysis
                                 adapter.syncModelContent(this.monaco, this.activeFile.model, {
                                     language: language,
                                     lspUrl: lspOptions.lspUrl,
                                     lspBaseUrl: lspOptions.lspBaseUrl,
-                                    prefixCode: lspOptions.prefixCode,
+                                    prefixCode: prefixCode,
+                                    contentTransform: lspOptions.contentTransform,
                                     forceVersionId: (this.activeFile.model.getVersionId() + 1)
                                 });
                             }
@@ -2699,8 +4465,19 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
                 marginBottom: '2px'
             });
 
-            const chevron = $(`<span class="monaco-chevron">${isExpanded ? '▼' : '▶'}</span>`);
-            chevron.css({marginRight: '4px', fontSize: '10px'});
+            // Add indent guides for parent levels
+            for (let i = 1; i <= depth; i++) {
+                const guideLeft = 8 + (i * 16) - 9; // Position the guide in the indent space
+                const guide = $('<div class="monaco-folder-indent-guide"></div>');
+                guide.css({
+                    left: guideLeft + 'px'
+                });
+                folderItem.append(guide);
+            }
+
+            const chevronClass = isExpanded ? 'codicon-chevron-down' : 'codicon-chevron-right';
+            const chevron = $(`<span class="codicon ${chevronClass} monaco-chevron"></span>`);
+            chevron.css({marginRight: '4px', fontSize: '14px'});
 
             const folderIconDescriptor = this.getFolderIconDescriptor(isExpanded, subfolder);
             const folderIcon = createIconElement(folderIconDescriptor, 'monaco-tree-icon');
@@ -2811,6 +4588,16 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
                 userSelect: 'none',
                 marginBottom: '2px'
             });
+
+            // Add indent guides for parent levels
+            for (let i = 1; i <= depth; i++) {
+                const guideLeft = 8 + (i * 16) - 9; // Position the guide in the indent space
+                const guide = $('<div class="monaco-folder-indent-guide"></div>');
+                guide.css({
+                    left: guideLeft + 'px'
+                });
+                fileItem.append(guide);
+            }
 
             const locked = this.isFileLocked(file);
             if (this.activeFile && this.activeFile.path === file.path) {
@@ -3043,6 +4830,11 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
         this.addOpenTab(file.path); // Track tab by click order
         this.renderFileTree();
         this.renderTabs();
+
+        // Refresh outline if outline view is active
+        if (this.activeView === 'outline') {
+            this.refreshOutline();
+        }
     };
 
     /**
@@ -3053,7 +4845,7 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
      * @returns {Object} Monaco URI object
      */
     MonacoMultifileWrapper.prototype.buildModelUri = function(file) {
-        const path = file && file.path ? file.path.replace(/^\/+/, '') : 'untitled.txt';
+        const path = this.getLspPathForFile(file);
         const uriString = 'file:///' + this.workspaceRoot + '/' + path;
         return this.monaco.Uri.parse(uriString);
     };
@@ -3100,6 +4892,12 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
             file.model.onWillDispose(() => { file.model._lspRegistered = false; });
             file.model.onDidChangeContent(() => {
                 this.debouncedSyncToLocalStorage();
+
+                // Auto-refresh outline if outline panel is open
+                if (this.activeView === 'outline') {
+                    this.debouncedRefreshOutline();
+                }
+
                 try {
                     const uri = file.model && file.model.uri ? file.model.uri.toString() : null;
                     const ver = file.model && typeof file.model.getVersionId === 'function'
@@ -3195,6 +4993,7 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
         }
         const disablePrefixes = this.params.disable_lsp_prefixes;
         const prefixCode = disablePrefixes ? '' : (this.params.lsp_prefix_code || '');
+        const contentTransform = language === 'cpp' ? this.getLspContentTransform() : null;
         return {
             enabled: true,
             lspUrl: resolvedUrl,
@@ -3202,8 +5001,72 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
             prefixCode: prefixCode,
             useSimple: this.params.use_simple_lsp,
             richFeatures: this.params.rich_features,
-            workspaceConfig: this.params.lsp_workspace_config || ''
+            semanticHighlighting: normaliseBoolean(this.params.semantic_highlighting, DEFAULTS.semantic_highlighting || false),
+            workspaceConfig: this.params.lsp_workspace_config || '',
+            contentTransform: contentTransform
         };
+    };
+
+    MonacoMultifileWrapper.prototype.getHiddenHeaderInclude = function(file) {
+        if (!file || typeof file.getExtension !== 'function' || file.getExtension() !== 'tpp') {
+            return '';
+        }
+        if (!this.vfs || typeof this.vfs.getFile !== 'function') {
+            return '';
+        }
+
+        const currentContent = (file.model && typeof file.model.getValue === 'function')
+            ? file.model.getValue()
+            : (file.content || '');
+
+        const dir = file.getDirectory();
+        const baseName = file.getName().replace(/\.[^.]+$/, '');
+        const headerName = baseName + '.h';
+        const headerPath = dir ? dir + '/' + headerName : headerName;
+
+        if (!this.vfs.getFile(headerPath)) {
+            return '';
+        }
+
+        // Avoid injecting a duplicate hidden include if the file already includes the header.
+        const includePattern = new RegExp('#\\s*include\\s*[\"<]' + headerName.replace(/[-/\\^$*+?.()|[\\]{}]/g, '\\$&') + '[\">]');
+        if (includePattern.test(currentContent)) {
+            return '';
+        }
+
+        return '#include "' + headerName + '"\n';
+    };
+
+    MonacoMultifileWrapper.prototype.getPrefixCodeForFile = function(file, basePrefix) {
+        const prefix = basePrefix || '';
+        const headerInclude = this.getHiddenHeaderInclude(file);
+        if (!headerInclude) {
+            return prefix;
+        }
+
+        let combined = prefix;
+        if (combined && !combined.endsWith('\n')) {
+            combined += '\n';
+        }
+        combined += headerInclude.endsWith('\n') ? headerInclude : (headerInclude + '\n');
+        return combined;
+    };
+
+    MonacoMultifileWrapper.prototype.getLspPathForFile = function(file) {
+        const rawPath = file && file.path ? file.path.replace(/^\/+/, '') : 'untitled.txt';
+        if (!file || typeof file.getExtension !== 'function') {
+            return rawPath;
+        }
+        const ext = file.getExtension();
+        if (ext !== 'tpp') {
+            return rawPath;
+        }
+        // Present .tpp files to the LSP as distinct .h paths to avoid extension issues and clashes.
+        const parts = rawPath.split('/');
+        const filename = parts.pop();
+        const base = filename.replace(/\.tpp$/i, '');
+        const adjusted = 'tpp_' + base + '.h';
+        return (parts.length ? parts.join('/') + '/' : '') + adjusted;
     };
 
     /**
@@ -3222,6 +5085,8 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
             this.currentLspBinding = null;
             return;
         }
+        const prefixCode = this.getPrefixCodeForFile(file, lspOptions.prefixCode);
+        const contentTransform = lspOptions.contentTransform;
 
         if (file.editorBinding) {
             // File already registered with the LSP; just record it as current.
@@ -3235,11 +5100,13 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
                 editor: this.editor,
                 model: file.model,
                 language: language,
-                prefixCode: lspOptions.prefixCode,
+                prefixCode: prefixCode,
+                contentTransform: contentTransform,
                 lspUrl: lspOptions.lspUrl,
                 lspBaseUrl: lspOptions.lspBaseUrl,
                 useSimpleLsp: lspOptions.useSimple,
                 richFeatures: lspOptions.richFeatures,
+                semanticHighlighting: lspOptions.semanticHighlighting,
                 workspaceConfig: lspOptions.workspaceConfig,
                 path: modelUri,
                 workspaceRootUri: 'file:///' + this.workspaceRoot,
@@ -3249,6 +5116,8 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
             if (file && file.model) {
                 file.model._lspRegistered = true;
             }
+            // Force an immediate sync so reconnects pick up transformed content/paths without user edits.
+            this.fullSyncModel(file.model, file, lspOptions, {force: true, preserveVersion: true});
             this.registerWorkspaceFilesWithLsp(language, file);
         } catch (err) {
             logError('Failed to initialise LSP for ' + file.path, err);
@@ -3288,7 +5157,8 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
                 language: language,
                 lspUrl: lspOptions.lspUrl,
                 lspBaseUrl: lspOptions.lspBaseUrl,
-                prefixCode: lspOptions.prefixCode
+                prefixCode: this.getPrefixCodeForFile(f, lspOptions.prefixCode),
+                contentTransform: lspOptions.contentTransform
             };
             f.lspRegistration = adapter.registerModelWithLsp(this.monaco, model, registrationOptions);
             if (typeof adapter.isModelRegisteredWithLsp === 'function') {
@@ -3357,6 +5227,7 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
         if (!lspOptions || !lspOptions.enabled) {
             return;
         }
+        const prefixCode = this.getPrefixCodeForFile(targetFile, lspOptions.prefixCode);
 
         const uriKey = model.uri && typeof model.uri.toString === 'function' ? model.uri.toString() : null;
         const baseVersion = typeof model.getVersionId === 'function' ? model.getVersionId() : 0;
@@ -3375,7 +5246,8 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
                     language: language,
                     lspUrl: lspOptions.lspUrl,
                     lspBaseUrl: lspOptions.lspBaseUrl,
-                    prefixCode: lspOptions.prefixCode,
+                    prefixCode: prefixCode,
+                    contentTransform: lspOptions.contentTransform,
                     forceVersionId: targetVersion
                 });
                 if (sent) {
@@ -3563,7 +5435,11 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
         this.ensureModelForFile(file);
         // Re-register the moved file with LSP under its new URI (including active file)
         const lspOptions = this.getLspOptionsForLanguage(file.getLanguage());
-        rebindLspForFile(file, lspOptions, this.monaco, adapter, oldUri);
+        const fileLspOptions = Object.assign({}, lspOptions, {
+            prefixCode: this.getPrefixCodeForFile(file, lspOptions.prefixCode),
+            contentTransform: lspOptions.contentTransform
+        });
+        rebindLspForFile(file, fileLspOptions, this.monaco, adapter, oldUri);
         this.registerWorkspaceFilesWithLsp(file.getLanguage(), null);
 
         if (tabWasOpen) {
@@ -3652,7 +5528,11 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
         this.renderTabs();
         this.openFile(fullPath);
         const lspOptions = this.getLspOptionsForLanguage(newFile.getLanguage());
-        rebindLspForFile(newFile, lspOptions, this.monaco, adapter);
+        const fileLspOptions = Object.assign({}, lspOptions, {
+            prefixCode: this.getPrefixCodeForFile(newFile, lspOptions.prefixCode),
+            contentTransform: lspOptions.contentTransform
+        });
+        rebindLspForFile(newFile, fileLspOptions, this.monaco, adapter);
         this.registerWorkspaceFilesWithLsp(newFile.getLanguage(), null);
         this.sync();
     };
@@ -3720,7 +5600,11 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
                 }
                 this.ensureModelForFile(renamedFile);
                 const lspOptions = this.getLspOptionsForLanguage(renamedFile.getLanguage());
-                rebindLspForFile(renamedFile, lspOptions, this.monaco, adapter, oldUri);
+                const fileLspOptions = Object.assign({}, lspOptions, {
+                    prefixCode: this.getPrefixCodeForFile(renamedFile, lspOptions.prefixCode),
+                    contentTransform: lspOptions.contentTransform
+                });
+                rebindLspForFile(renamedFile, fileLspOptions, this.monaco, adapter, oldUri);
                 this.registerWorkspaceFilesWithLsp(renamedFile.getLanguage(), null);
             }
 
@@ -4905,15 +6789,37 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
                     return;
                 }
 
-                // Check if it's a relative link (not external URL, not hash-only)
-                const isExternal = href.match(/^(https?:)?\/\//i);
+                // Treat anything with an explicit scheme, protocol-relative, or absolute path as external.
+                const hasScheme = /^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(href);
+                const isProtocolRelative = href.startsWith('//');
+                const isExternal = hasScheme || isProtocolRelative;
                 const isHashOnly = href.startsWith('#');
                 const isMailto = href.startsWith('mailto:');
                 const isTel = href.startsWith('tel:');
                 const isAbsolute = href.startsWith('/');
 
-                if (isExternal || isHashOnly || isMailto || isTel || isAbsolute) {
-                    // Let external links, hash links, mailto, tel, and absolute paths work normally
+                if (isExternal || isMailto || isTel || isAbsolute) {
+                    // Block navigation to external/absolute links inside preview
+                    e.preventDefault();
+                    e.stopPropagation();
+                    return;
+                }
+
+                // Hash-only: keep navigation inside the preview (avoid outer page hash updates)
+                if (isHashOnly) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    try {
+                        const target = iframeDoc.querySelector(href);
+                        if (target && typeof target.scrollIntoView === 'function') {
+                            target.scrollIntoView({behavior: 'smooth', block: 'start'});
+                        } else {
+                            // Fallback: update the iframe's hash
+                            iframeDoc.location.hash = href;
+                        }
+                    } catch (err2) {
+                        // Ignore failures; better than navigating the outer page.
+                    }
                     return;
                 }
 
@@ -4964,6 +6870,143 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
             this.loadPreviewFile(filepath, true);
             this.updateNavigationButtons();
         }
+    };
+
+    MonacoMultifileWrapper.prototype.setupInlineHrefNavigation = function() {
+        if (!this.editor || !this.monaco) {
+            return;
+        }
+
+        const findLinkTargetAtPosition = (lineText, columnZeroBased) => {
+            const regex = /\b(href|src)\s*=\s*["']([^"']+)["']/gi;
+            let match;
+            while ((match = regex.exec(lineText)) !== null) {
+                const full = match[0];
+                const attr = match[1];
+                const value = match[2];
+                const valueStart = match.index + full.indexOf(value);
+                const valueEnd = valueStart + value.length;
+                if (columnZeroBased >= valueStart && columnZeroBased <= valueEnd) {
+                    return { attr, value, start: valueStart, end: valueEnd };
+                }
+            }
+            return null;
+        };
+
+        // Handle mousedown first to prevent Monaco's default link handling for hash links
+        this.editor.onMouseDown((e) => {
+            if (!e || !e.target || !e.target.position || !this.activeFile) {
+                return;
+            }
+            if (!(e.event && (e.event.ctrlKey || e.event.metaKey))) {
+                return;
+            }
+            const model = this.editor.getModel();
+            if (!model) {
+                return;
+            }
+            const pos = e.target.position;
+            const lineText = model.getLineContent(pos.lineNumber);
+            const target = findLinkTargetAtPosition(lineText, pos.column - 1);
+            if (!target) {
+                return;
+            }
+            const href = target.value;
+
+            // If this is a hash link, prevent Monaco's default handling immediately
+            if (href.startsWith('#')) {
+                if (e.event) {
+                    if (typeof e.event.preventDefault === 'function') {
+                        e.event.preventDefault();
+                    }
+                    if (typeof e.event.stopPropagation === 'function') {
+                        e.event.stopPropagation();
+                    }
+                    if (typeof e.event.stopImmediatePropagation === 'function') {
+                        e.event.stopImmediatePropagation();
+                    }
+                }
+            }
+        });
+
+        this.editor.onMouseUp((e) => {
+            if (!e || !e.target || !e.target.position || !this.activeFile) {
+                return;
+            }
+            // Respect the usual Ctrl/Cmd-click gesture to avoid surprising users.
+            if (!(e.event && (e.event.ctrlKey || e.event.metaKey))) {
+                return;
+            }
+            const model = this.editor.getModel();
+            if (!model) {
+                return;
+            }
+            const pos = e.target.position;
+            const lineText = model.getLineContent(pos.lineNumber);
+            const target = findLinkTargetAtPosition(lineText, pos.column - 1);
+            if (!target) {
+                return;
+            }
+            const href = target.value;
+
+            // Ignore external/absolute targets; handle only VFS files.
+            const hasScheme = /^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(href);
+            const isProtocolRelative = href.startsWith('//');
+            const isAbsolute = href.startsWith('/');
+            const isHash = href.startsWith('#');
+            if (isHash) {
+                // Handle hash-links: jump to element with matching id in the current file
+                const hashTarget = href.substring(1); // Remove the '#'
+                if (!hashTarget) {
+                    return;
+                }
+
+                // Prevent Monaco's default link handling FIRST
+                if (e.event) {
+                    if (typeof e.event.preventDefault === 'function') {
+                        e.event.preventDefault();
+                    }
+                    if (typeof e.event.stopPropagation === 'function') {
+                        e.event.stopPropagation();
+                    }
+                    if (typeof e.event.stopImmediatePropagation === 'function') {
+                        e.event.stopImmediatePropagation();
+                    }
+                }
+
+                // Search for id attribute matching the hash target
+                const idPattern = new RegExp('id\\s*=\\s*["\']' + hashTarget.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '["\']', 'i');
+                const lineCount = model.getLineCount();
+
+                for (let i = 1; i <= lineCount; i++) {
+                    const lineContent = model.getLineContent(i);
+                    const match = idPattern.exec(lineContent);
+                    if (match) {
+                        // Found the target element - navigate to it
+                        const column = match.index + 1;
+                        this.editor.setPosition({ lineNumber: i, column: column });
+                        this.editor.revealLineInCenter(i);
+                        return;
+                    }
+                }
+
+                // No matching id found - do nothing
+                return;
+            }
+            if (hasScheme || isProtocolRelative || isAbsolute) {
+                return;
+            }
+
+            const resolved = this.resolvePath(this.activeFile.path, href);
+            const file = this.vfs.getFile(resolved);
+            if (file) {
+                // Prevent the default link handling.
+                if (e.event && typeof e.event.preventDefault === 'function') {
+                    e.event.preventDefault();
+                }
+                this.openFile(resolved);
+            }
+        });
     };
 
     MonacoMultifileWrapper.prototype.updateNavigationButtons = function() {
@@ -5033,37 +7076,353 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
     };
 
     MonacoMultifileWrapper.prototype.getLocalStorageKey = function() {
+        if (this.autosaveKeyInfo && this.autosaveKeyInfo.primary) {
+            return this.autosaveKeyInfo.primary;
+        }
         // Attempt to extract a more specific identifier from textareaId.
         // Expected format: id_q<questionid>_<field_name> or id_q<questionid>:<attemptid>_<field_name>
-        const textareaId = this.textarea.id;
+        const textareaId = this.textarea.id || '';
         let identifier = 'unknown';
+        let legacyIdentifier = null;
+        let questionId = null;
+        let attemptId = null;
 
+        // First, try to extract questionId and attemptId from textarea ID
         const match = textareaId.match(/id_q(\d+)(?::(\d+))?_/);
         if (match) {
-            const questionId = match[1];
-            const attemptId = match[2]; // This will be undefined if not present
+            questionId = match[1];
+            attemptId = match[2]; // This will be undefined if not present
+        }
 
-            if (questionId && attemptId) {
-                identifier = `${questionId}:${attemptId}`;
-            } else if (questionId) {
-                identifier = questionId;
+        // Check for data-questionid attribute (usually set by renderer)
+        const datasetQuestionId = this.textarea.dataset && this.textarea.dataset.questionid
+            ? this.textarea.dataset.questionid
+            : null;
+        if (datasetQuestionId) {
+            questionId = datasetQuestionId;
+        }
+
+        // Build identifier with attempt ID when available to isolate attempts
+        if (questionId) {
+            if (attemptId) {
+                // Include attempt ID for proper isolation between attempts
+                identifier = `q${questionId}_a${attemptId}`;
+                // Legacy key without attempt ID for migration
+                legacyIdentifier = `question_${questionId}`;
+            } else {
+                // No attempt ID available (e.g., question preview, authoring)
+                identifier = `question_${questionId}`;
             }
         }
 
-        return `coderunner_autosave_multifile_${identifier}`;
+        const primaryKey = `coderunner_autosave_multifile_${identifier}`;
+        const legacyKeys = [];
+        if (legacyIdentifier && legacyIdentifier !== identifier) {
+            legacyKeys.push(`coderunner_autosave_multifile_${legacyIdentifier}`);
+        }
+        this.autosaveKeyInfo = {
+            primary: primaryKey,
+            legacy: legacyKeys
+        };
+        return primaryKey;
+    };
+
+MonacoMultifileWrapper.prototype.getLegacyAutosaveKeys = function() {
+    if (!this.autosaveKeyInfo) {
+        this.getLocalStorageKey();
+    }
+    if (this.autosaveKeyInfo && Array.isArray(this.autosaveKeyInfo.legacy)) {
+        return this.autosaveKeyInfo.legacy;
+    }
+    return [];
+};
+
+    MonacoMultifileWrapper.prototype.loadLocalBackupData = function(options = {}) {
+        if (!window.localStorage) {
+            return null;
+        }
+        const opts = Object.assign({migrate: true}, options);
+        const primaryKey = this.getLocalStorageKey();
+        const keysToCheck = [primaryKey].concat(this.getLegacyAutosaveKeys());
+        for (let i = 0; i < keysToCheck.length; i++) {
+            const key = keysToCheck[i];
+            try {
+                const value = window.localStorage.getItem(key);
+                if (value) {
+                    if (opts.migrate && key !== primaryKey) {
+                        try {
+                            window.localStorage.setItem(primaryKey, value);
+                            window.localStorage.removeItem(key);
+                        } catch (err) {
+                            // Best effort migration.
+                        }
+                    }
+                    return value;
+                }
+            } catch (err) {
+                logWarn('Failed to load from localStorage', err);
+                return null;
+            }
+        }
+        return null;
+    };
+
+    MonacoMultifileWrapper.prototype.hasLocalBackup = function() {
+        return !!this.loadLocalBackupData({migrate: false});
+    };
+
+    MonacoMultifileWrapper.prototype.setAutosaveStatus = function(state, options = {}) {
+        if (!this.autosaveStatusText || !this.autosaveStatusBar) {
+            return;
+        }
+        const opts = options || {};
+        let message = '';
+        switch (state) {
+            case 'saving':
+                message = 'Saving to browser...';
+                break;
+            case 'saved':
+                {
+                    const timestamp = opts.timestamp || this.lastAutosaveTimestamp;
+                    message = timestamp ? `Saved at ${this.formatAutosaveTimestamp(timestamp)}` : 'Saved locally';
+                }
+                break;
+            case 'error':
+                message = opts.message || 'Autosave failed';
+                break;
+            case 'restored':
+                {
+                    const ts = opts.timestamp || this.lastAutosaveTimestamp;
+                    message = ts ? `Restored backup (${this.formatAutosaveTimestamp(ts)})` : 'Restored backup';
+                }
+                break;
+            case 'unavailable':
+                message = 'Autosave unavailable';
+                break;
+            default:
+                message = 'Autosave ready';
+        }
+        this.autosaveStatusText.text(message);
+        const isError = state === 'error';
+        if (this.autosaveStatusBar) {
+            const baseColor = this.autosaveStatusDefaultColor || AUTOSAVE_STATUS_DEFAULT_COLOR;
+            this.autosaveStatusBar.css('color', isError ? '#b3261e' : baseColor);
+        }
+        if (this.autosaveRestoreBtn) {
+            const shouldShowRestore = isError && this.hasLocalBackup();
+            this.autosaveRestoreBtn.css('display', shouldShowRestore ? 'inline-flex' : 'none');
+        }
+    };
+
+    MonacoMultifileWrapper.prototype.formatAutosaveTimestamp = function(timestamp) {
+        if (!timestamp) {
+            return '';
+        }
+        try {
+            const date = new Date(timestamp);
+            return date.toLocaleTimeString([], {
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit',
+                hour12: false,
+                hourCycle: 'h23'
+            });
+        } catch (err) {
+            return '';
+        }
+    };
+
+    MonacoMultifileWrapper.prototype.showAutosaveToast = function(message, severity = 'info') {
+        if (!message) {
+            return;
+        }
+        if (!this.autosaveToast) {
+            this.autosaveToast = $('<div class="monaco-autosave-toast" role="alert"></div>');
+            $('body').append(this.autosaveToast);
+        }
+        const palette = {
+            error: {bg: '#b3261e', color: '#ffffff'},
+            warning: {bg: '#f97316', color: '#111827'},
+            info: {bg: '#2563eb', color: '#ffffff'}
+        }[severity] || {bg: '#2563eb', color: '#ffffff'};
+        this.autosaveToast.css({
+            backgroundColor: palette.bg,
+            color: palette.color
+        });
+        this.autosaveToast.text(message);
+        this.autosaveToast.stop(true, true).fadeIn(150);
+        if (this.autosaveToastTimer) {
+            clearTimeout(this.autosaveToastTimer);
+        }
+        this.autosaveToastTimer = setTimeout(() => {
+            if (this.autosaveToast) {
+                this.autosaveToast.fadeOut(200);
+            }
+        }, 5000);
+    };
+
+    MonacoMultifileWrapper.prototype.restoreFromLocalBackup = function() {
+        // Never allow restore in author mode
+        if (this.authorMode) {
+            return;
+        }
+
+        // Don't allow restore if autosave is disabled
+        if (!this.params.autosave) {
+            return;
+        }
+
+        if (!window.localStorage) {
+            this.showAutosaveToast('Browser storage is not available.', 'error');
+            return;
+        }
+        const backupRaw = this.loadLocalBackupData();
+        if (!backupRaw) {
+            this.showAutosaveToast('No local backup to restore.', 'warning');
+            return;
+        }
+        let backupData = null;
+        try {
+            backupData = JSON.parse(backupRaw);
+        } catch (err) {
+            this.showAutosaveToast('Backup data is corrupted.', 'error');
+            return;
+        }
+        if (!backupData || !Array.isArray(backupData.files)) {
+            this.showAutosaveToast('Backup is missing file data.', 'error');
+            return;
+        }
+        if (!window.confirm('Restoring from backup will replace the current files. Continue?')) {
+            return;
+        }
+        this.replaceWorkspaceWithBackup(backupData);
+        this.lastAutosaveTimestamp = backupData.timestamp || Date.now();
+        this.setAutosaveStatus('restored', {timestamp: backupData.timestamp});
+        this.showAutosaveToast('Workspace restored from local backup.', 'info');
+    };
+
+    MonacoMultifileWrapper.prototype.replaceWorkspaceWithBackup = function(backupData) {
+        if (!backupData) {
+            return;
+        }
+        this.disposeCurrentLspBinding();
+        if (this.vfs) {
+            const existingFiles = this.vfs.getAllFiles();
+            existingFiles.forEach(file => {
+                if (file && file.lspRegistration && typeof file.lspRegistration.dispose === 'function') {
+                    try {
+                        file.lspRegistration.dispose();
+                    } catch (err) {}
+                }
+                if (file && file.editorBinding && typeof file.editorBinding.dispose === 'function') {
+                    try {
+                        file.editorBinding.dispose();
+                    } catch (err) {}
+                }
+                if (file && modelIsAlive(file.model)) {
+                    try {
+                        file.model.dispose();
+                    } catch (err) {}
+                }
+            });
+        }
+        this.vfs = VirtualFileSystem.fromJSON(
+            backupData,
+            this.params.allowed_extensions,
+            this.params.max_files
+        );
+        if (this.vfs.getAllFiles().length === 0) {
+            const defaultFile = new VirtualFile('index.html', '<h1>Hello World</h1>', false);
+            this.vfs.addFile(defaultFile);
+        }
+        this.activeFile = null;
+        this.openTabs = [];
+        this.pendingActivePath = null;
+        this.initialUiState = backupData && typeof backupData === 'object'
+            ? backupData.uiState || null
+            : null;
+        this.restoreInitialUiState();
+        this.renderFileTree();
+        this.renderTabs();
+        const files = this.vfs.getAllFiles();
+        let targetPath = null;
+        if (this.pendingActivePath) {
+            targetPath = this.pendingActivePath;
+        } else if (this.openTabs.length > 0) {
+            targetPath = this.openTabs[0];
+        } else if (files.length > 0) {
+            targetPath = files[0].path;
+        }
+        if (targetPath) {
+            this.openFile(targetPath);
+        }
+        this.pendingActivePath = null;
+        this.sync();
     };
 
     MonacoMultifileWrapper.prototype.syncToLocalStorage = function() {
+        // Never autosave in author mode (question authoring with id_answer or id_answerpreload)
+        if (this.authorMode) {
+            return;
+        }
+
+        // Check if autosave is enabled via UI parameter
+        if (!this.params.autosave) {
+            return;
+        }
+
+        if (!this.vfs) {
+            return;
+        }
         if (this.activeFile && modelIsAlive(this.activeFile.model)) {
             this.activeFile.content = this.activeFile.model.getValue();
         }
         const data = this.vfs.toJSON();
         data.uiState = this.getUiState();
         data.timestamp = new Date().getTime();
+        const payload = JSON.stringify(data);
+        if (!window.localStorage) {
+            this.setAutosaveStatus('unavailable');
+            if (!this.autosaveWarningShown) {
+                this.showAutosaveToast('Browser storage is not available. Autosave is disabled.', 'error');
+                this.autosaveWarningShown = true;
+            }
+            return;
+        }
+        this.setAutosaveStatus('saving');
         try {
-            window.localStorage.setItem(this.getLocalStorageKey(), JSON.stringify(data));
+            window.localStorage.setItem(this.getLocalStorageKey(), payload);
+            this.lastAutosaveTimestamp = data.timestamp;
+            this.setAutosaveStatus('saved', {timestamp: data.timestamp});
         } catch (e) {
             logWarn('Failed to save to localStorage', e);
+            this.setAutosaveStatus('error', {message: 'Autosave failed'});
+            this.showAutosaveToast('Autosave failed. Use "Restore backup" to recover previous work.', 'error');
+        }
+    };
+
+    MonacoMultifileWrapper.prototype.clearLocalBackupData = function() {
+        if (!window.localStorage) {
+            return;
+        }
+        try {
+            const key = this.getLocalStorageKey();
+            window.localStorage.removeItem(key);
+            this.lastAutosaveTimestamp = null;
+            this.setAutosaveStatus('ready');
+            // Also clear any legacy keys to ensure clean state
+            const legacyKeys = this.getLegacyAutosaveKeys();
+            if (legacyKeys && legacyKeys.length > 0) {
+                legacyKeys.forEach(legacyKey => {
+                    try {
+                        window.localStorage.removeItem(legacyKey);
+                    } catch (e) {
+                        // Ignore errors for legacy key cleanup
+                    }
+                });
+            }
+        } catch (e) {
+            logWarn('Failed to clear localStorage', e);
         }
     };
 
@@ -5085,8 +7444,8 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
         this.sync();
         this.disposeCurrentLspBinding();
 
-        if (this.documentEventNamespace && this.boundKeydownHandler) {
-            $(document).off('keydown' + this.documentEventNamespace, this.boundKeydownHandler);
+        if (this.boundKeydownHandler) {
+            document.removeEventListener('keydown', this.boundKeydownHandler, true);
         }
 
         if (this.themeListener && typeof this.themeListener.dispose === 'function') {
@@ -5099,8 +7458,12 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
             this.contextMenu = null;
         }
 
+        // Dispose all LSP bindings and models
+        // Note: There may be race conditions where LSP websocket messages arrive
+        // after disposal. These are caught and suppressed in the LSP event handlers.
         if (this.vfs) {
             this.vfs.getAllFiles().forEach(file => {
+                // Dispose LSP binding first
                 if (file && file.editorBinding && typeof file.editorBinding.dispose === 'function') {
                     try {
                         file.editorBinding.dispose();
@@ -5108,14 +7471,16 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
                         logWarn('Failed to dispose LSP binding during destroy for ' + file.path, err);
                     }
                 }
+                file.editorBinding = null;
+
+                // Then dispose the model
                 if (file && modelIsAlive(file.model)) {
                     try {
                         file.model.dispose();
                     } catch (err) {
-                        // Ignore.
+                        // Ignore - model may already be disposed
                     }
                 }
-                file.editorBinding = null;
                 file.model = null;
             });
         }
@@ -5141,6 +7506,20 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
             this.previewModal = null;
         }
 
+        if (this.markerChangeListener && typeof this.markerChangeListener.dispose === 'function') {
+            this.markerChangeListener.dispose();
+        }
+        this.markerChangeListener = null;
+
+        if (this.autosaveToast) {
+            this.autosaveToast.remove();
+            this.autosaveToast = null;
+        }
+        if (this.autosaveToastTimer) {
+            clearTimeout(this.autosaveToastTimer);
+            this.autosaveToastTimer = null;
+        }
+
         // Remove UI
         if (this.container && this.container.parentNode) {
             this.container.parentNode.removeChild(this.container);
@@ -5149,8 +7528,31 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
 
     MonacoMultifileWrapper.prototype.resize = function(width, height) {
         if (this.container) {
-            this.container.style.width = width + 'px';
+            // Set explicit width but constrain with maxWidth to prevent overflow
+            if (typeof width === 'number' && width > 0) {
+                this.container.style.width = width + 'px';
+            } else {
+                this.container.style.width = '100%';
+            }
+            this.container.style.maxWidth = '100%';
+            this.container.style.boxSizing = 'border-box';
             this.container.style.height = height + 'px';
+            // Ensure display: flex is maintained after fullscreen exit
+            this.container.style.display = 'flex';
+
+            // Ensure base container class is maintained
+            if (!this.container.classList.contains('monaco-multifile-container')) {
+                this.container.classList.add('monaco-multifile-container');
+            }
+
+            // Re-apply theme class to ensure CSS variables are maintained
+            if (this.currentTheme) {
+                this.applyThemeClass(this.currentTheme);
+            }
+
+            // Force CSS variable application by removing any inline background overrides
+            this.container.style.removeProperty('background-color');
+            this.container.style.removeProperty('background');
         }
         if (this.editor) {
             this.editor.layout();

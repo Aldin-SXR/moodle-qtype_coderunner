@@ -51,7 +51,7 @@
     },
     "rich_features": {
       "type": "boolean",
-      "default": false
+      "default": true
     },
     "disable_lsp_prefixes": {
       "type": "boolean",
@@ -91,11 +91,23 @@
     "label": "Disable new folders for students",
     "help": "If enabled, students cannot create new folders (authors are unaffected)"
   },
-  "use_vscode_icons": {
+  "autosave": {
     "type": "boolean",
-    "default": true,
-    "label": "Use VS Code icons",
-    "help": "Display VS Code file and folder icons where possible, falling back to Devicon/Codicon otherwise"
-  }
+    "default": false,
+    "label": "Enable autosave to browser storage",
+    "help": "If enabled, student code is periodically backed up to browser storage."
+  },
+    "use_vscode_icons": {
+      "type": "boolean",
+      "default": true,
+      "label": "Use VS Code icons",
+      "help": "Display VS Code file and folder icons where possible, falling back to Devicon/Codicon otherwise"
+    },
+    "semantic_highlighting": {
+      "type": "boolean",
+      "default": false,
+      "label": "Enable semantic highlighting",
+      "help": "Enable LSP semantic highlighting (token coloring) when supported. Disabled by default."
+    }
   }
 }

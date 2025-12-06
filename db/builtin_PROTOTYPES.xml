@@ -116,7 +116,7 @@ int main() {
     <answerboxcolumns>100</answerboxcolumns>
     <answerpreload></answerpreload>
     <globalextra></globalextra>
-    <useace>0</useace>
+    <useace>1</useace>
     <resultcolumns></resultcolumns>
     <template><![CDATA[
 import json
@@ -1094,6 +1094,167 @@ console.log(SEPARATOR);
     </testcases>
   </question>
 
+<!-- question: TYPESCRIPT  -->
+  <question type="coderunner">
+    <name>
+      <text>BUILTIN_PROTOTYPE_typescript</text>
+    </name>
+    <questiontext format="html">
+      <text><![CDATA[<p>Built-in prototypes are documented in the language strings.</p>]]></text>
+    </questiontext>
+    <generalfeedback format="html">
+      <text></text>
+    </generalfeedback>
+    <defaultgrade>1.0000000</defaultgrade>
+    <penalty>0.0000000</penalty>
+    <hidden>0</hidden>
+    <idnumber></idnumber>
+    <coderunnertype>typescript</coderunnertype>
+    <prototypetype>1</prototypetype>
+    <allornothing>1</allornothing>
+    <penaltyregime>33.3, 66.7, ...</penaltyregime>
+    <precheck>0</precheck>
+    <hidecheck>0</hidecheck>
+    <showsource>0</showsource>
+    <answerboxlines>18</answerboxlines>
+    <answerboxcolumns>100</answerboxcolumns>
+    <answerpreload></answerpreload>
+    <globalextra></globalextra>
+    <useace>1</useace>
+    <resultcolumns></resultcolumns>
+    <template><![CDATA[import subprocess
+import sys
+import json
+
+student_answer = """{{ STUDENT_ANSWER }}"""
+
+typescript_program = """// Helper function to check if a variable has explicit type annotation
+function checkExplicitType(varName: string, expectedType?: string): boolean {
+    const studentCode = """ + json.dumps(student_answer) + """;
+
+    // Regex to match variable declarations with type annotations
+    // Matches: let varName: type = ... or const varName: type = ...
+    const pattern = new RegExp(
+        '\\\\b(let|const|var)\\\\s+' + varName + '\\\\s*:\\\\s*([^=;]+?)\\\\s*[=;]',
+        'g'
+    );
+
+    const match = pattern.exec(studentCode);
+
+    if (!match) {
+        throw new Error('Variable "' + varName + '" must have explicit type annotation');
+    }
+
+    if (expectedType) {
+        const actualType = match[2].trim();
+        if (actualType !== expectedType) {
+            throw new Error('Variable "' + varName + '" type annotation must be "' + expectedType + '", got "' + actualType + '"');
+        }
+    }
+
+    return true;
+}
+
+// Helper function to check if a method has explicit return type annotation
+function checkExplicitReturnType(methodName: string, expectedReturnType?: string): boolean {
+    const studentCode = """ + json.dumps(student_answer) + """;
+
+    // Regex to match method or function declarations with return type annotations
+    // Matches: methodName(...) : ReturnType { ... }, function methodName(...) : ReturnType { ... },
+    // or arrow functions: const methodName = (...) : ReturnType => { ... }
+    const functionPattern = new RegExp(
+        '\\\\b(?:function\\\\s+)?' + methodName + '\\\\s*\\\\([^)]*\\\\)\\\\s*:\\\\s*([^\\\\s{=]+)',
+        'g'
+    );
+
+    const arrowPattern = new RegExp(
+        '\\\\b(?:(?:const|let|var)\\\\s+)?' + methodName + '\\\\s*=\\\\s*(?:async\\\\s+)?\\\\([^)]*\\\\)\\\\s*:\\\\s*([^\\\\s=]+)\\\\s*=>',
+        'g'
+    );
+
+    const match = functionPattern.exec(studentCode) || arrowPattern.exec(studentCode);
+
+    if (!match) {
+        throw new Error('Method "' + methodName + '" must have explicit return type annotation');
+    }
+
+    if (expectedReturnType) {
+        const actualReturnType = match[1].trim();
+        if (actualReturnType !== expectedReturnType) {
+            throw new Error('Method "' + methodName + '" return type must be "' + expectedReturnType + '", got "' + actualReturnType + '"');
+        }
+    }
+
+    return true;
+}
+
+""" + student_answer + """
+
+{{ TEST.testcode }}
+"""
+
+with open('__student__.ts', 'w', encoding='utf-8') as f:
+    f.write(typescript_program)
+
+compile_proc = subprocess.run(
+    ['tsc', '__student__.ts', '--target', 'ES2020', '--lib', 'ES2020,DOM', '--strict', '--noEmitOnError', '--skipLibCheck'],
+    capture_output=True,
+    text=True,
+    timeout=10
+)
+
+if compile_proc.returncode != 0:
+    print("TypeScript compilation failed:")
+    print(compile_proc.stdout, end='')
+    print(compile_proc.stderr, end='')
+    sys.exit(0)
+
+run_proc = subprocess.run(
+    ['node', '__student__.js'],
+    capture_output=True,
+    text=True,
+    timeout=5
+)
+
+print(run_proc.stdout, end='')
+if run_proc.stderr:
+    print(run_proc.stderr, file=sys.stderr)
+
+sys.exit(run_proc.returncode)
+]]></template>
+    <iscombinatortemplate>0</iscombinatortemplate>
+    <allowmultiplestdins>0</allowmultiplestdins>
+    <answer></answer>
+    <validateonsave>0</validateonsave>
+    <testsplitterre></testsplitterre>
+    <language>python3</language>
+    <acelang>typescript</acelang>
+    <sandbox></sandbox>
+    <grader>EqualityGrader</grader>
+    <cputimelimitsecs></cputimelimitsecs>
+    <memlimitmb>2048</memlimitmb>
+    <sandboxparams><![CDATA[{"sourcefilename": "__tester__.py"}]]></sandboxparams>
+    <templateparams></templateparams>
+    <hoisttemplateparams>0</hoisttemplateparams>
+    <extractcodefromjson>1</extractcodefromjson>
+    <templateparamslang>twig</templateparamslang>
+    <templateparamsevalpertry>0</templateparamsevalpertry>
+    <templateparamsevald></templateparamsevald>
+    <twigall>0</twigall>
+    <uiplugin>ace</uiplugin>
+    <uiparameters></uiparameters>
+    <attachments>0</attachments>
+    <attachmentsrequired>0</attachmentsrequired>
+    <maxfilesize>0</maxfilesize>
+    <filenamesregex></filenamesregex>
+    <filenamesexplain></filenamesexplain>
+    <displayfeedback>0</displayfeedback>
+    <giveupallowed>0</giveupallowed>
+    <prototypeextra></prototypeextra>
+    <testcases>
+    </testcases>
+  </question>
+
 <!-- question: 32453  -->
   <question type="coderunner">
     <name>
@@ -1935,10 +2096,12 @@ except Exception as e:
     <resultcolumns></resultcolumns>
     <template><![CDATA[import pymongo
 from pymongo import MongoClient
+from pymongo.command_cursor import CommandCursor
 from bson import ObjectId
 import sys
 import json
 from datetime import datetime
+import re
 
 # Get MongoDB connection parameters from template parameters
 mongodb_config = {
@@ -1972,6 +2135,7 @@ if _Collection is not None and not hasattr(_Collection, 'count'):
             filter = {}
         return self.count_documents(filter, **kwargs)
     _Collection.count = _legacy_count
+
 
 def serialize_structure(value, indent=0, max_list_items=MAX_LIST_ITEMS):
     """Recursively serialize MongoDB documents to pretty JSON-like text."""
@@ -2012,6 +2176,7 @@ def serialize_structure(value, indent=0, max_list_items=MAX_LIST_ITEMS):
 
     return json.dumps(value)
 
+
 def format_documents(results, max_docs=MAX_DISPLAY_DOCS):
     """Build a readable JSON-formatted string representation of documents."""
     if not results:
@@ -2034,7 +2199,48 @@ def format_documents(results, max_docs=MAX_DISPLAY_DOCS):
     truncated += f"\n... (output truncated to stay within display limits, {len(output) - MAX_OUTPUT_LENGTH} chars omitted)"
     return truncated
 
-def execute_mongodb_query(db, collection, code):
+def normalize_student_code(code: str) -> str:
+    """
+    Normalize Mongo shell–style code so it becomes valid Python:
+    - remove trailing semicolons
+    - quote unquoted object keys like $group, _id, totalBooks, $sum, $sort, etc.
+    - convert true/false/null -> True/False/None
+    """
+    code = code.strip()
+
+    # Remove trailing semicolons (common in Mongo shell)
+    while code.endswith(';'):
+        code = code[:-1].rstrip()
+
+    # Quote unquoted keys in object literals:
+    # Matches { key: ... } or , key: ...  where key is not quoted
+    pattern = re.compile(r'(\{|,)(\s*)([A-Za-z_$][A-Za-z0-9_$]*)\s*:')
+
+    def replacer(match):
+        opener = match.group(1)      # { or ,
+        spaces = match.group(2)      # whitespace
+        key = match.group(3)         # key like $group, _id, totalBooks
+        return f'{opener}{spaces}"{key}":'
+
+    code = pattern.sub(replacer, code)
+
+    # Replace Mongo shell boolean/null with Python equivalents
+    # Only when they appear as standalone tokens, not inside strings or identifiers
+    code = re.sub(r'(?<![A-Za-z0-9_"])\btrue\b(?![A-Za-z0-9_"])', 'True', code)
+    code = re.sub(r'(?<![A-Za-z0-9_"])\bfalse\b(?![A-Za-z0-9_"])', 'False', code)
+    code = re.sub(r'(?<![A-Za-z0-9_"])\bnull\b(?![A-Za-z0-9_"])', 'None', code)
+
+    return code
+
+def pipeline_has_sort(code: str) -> bool:
+    """
+    Detect whether the student's aggregation pipeline has a $sort stage.
+    Works on shell-style or normalized Python syntax.
+    """
+    cleaned = re.sub(r'\s+', '', code)
+    return '"$sort"' in cleaned or '$sort' in cleaned
+
+def execute_mongodb_query(db, collection, code, normalize=True):
     """Execute MongoDB query string and return results (like MySQL cursor.execute)."""
     namespace = {
         'db': db,
@@ -2044,7 +2250,8 @@ def execute_mongodb_query(db, collection, code):
         'pymongo': pymongo
     }
     try:
-        result = eval(code, namespace)
+        prepared_code = normalize_student_code(code) if normalize else code
+        result = eval(prepared_code, namespace)
         return result
     except Exception as e:
         raise Exception(f"MongoDB query error: {e}")
@@ -2075,19 +2282,37 @@ try:
 
     # Execute extra setup code if provided
     if extra.strip():
-        exec(extra, {'db': db, 'collection': collection, 'ObjectId': ObjectId, 'datetime': datetime})
+        exec(
+            extra,
+            {
+                'db': db,
+                'collection': collection,
+                'ObjectId': ObjectId,
+                'datetime': datetime,
+                'pymongo': pymongo
+            }
+        )
 
-    # Execute student's answer (the query)
-    result = execute_mongodb_query(db, collection, student_answer)
+    # Execute student's answer (the query) - normalize shell-style syntax
+    result = execute_mongodb_query(db, collection, student_answer, normalize=True)
 
-    # Execute test code to get expected result (if provided)
+    # Execute test code to get expected result (if provided) - teacher code is already Python
     if testcode.strip():
-        execute_mongodb_query(db, collection, testcode)
+        execute_mongodb_query(db, collection, testcode, normalize=False)
 
     # Display the result
     if result is not None:
-        if isinstance(result, pymongo.cursor.Cursor):
+        if isinstance(result, (pymongo.cursor.Cursor, CommandCursor)):
             docs = list(result)
+
+            # Auto-sort by _id ASC if no $sort stage in student's answer
+            if not pipeline_has_sort(student_answer):
+                try:
+                    docs.sort(key=lambda d: d.get("_id"))
+                except Exception:
+                    # If _id missing or unsortable, just leave original order
+                    pass
+
             print(format_documents(docs))
         elif isinstance(result, list):
             print(format_documents(result))
@@ -2122,7 +2347,8 @@ except pymongo.errors.PyMongoError as err:
     sys.exit(1)
 except Exception as e:
     print(f"Error: {e}", file=sys.stderr)
-    sys.exit(1)]]></template>
+    sys.exit(1)
+]]></template>
     <iscombinatortemplate>1</iscombinatortemplate>
     <allowmultiplestdins>0</allowmultiplestdins>
     <answer></answer>
@@ -2309,6 +2535,17 @@ from neo4j import GraphDatabase
 from neo4j.exceptions import Neo4jError
 from neo4j.graph import Node, Relationship, Path
 
+# Try to import Neo4j temporal types (Date, DateTime, Time)
+try:
+    from neo4j.time import Date as Neo4jDate, DateTime as Neo4jDateTime, Time as Neo4jTime
+    NEO4J_TEMPORAL_TYPES = (Neo4jDate, Neo4jDateTime, Neo4jTime)
+except Exception:
+    # Fallback if the driver version doesn't expose neo4j.time
+    NEO4J_TEMPORAL_TYPES = ()
+
+# Unified tuple of temporal types we treat the same way
+TEMPORAL_TYPES = (datetime, date, time) + NEO4J_TEMPORAL_TYPES
+
 neo4j_config = {
     'protocol': '{{ QUESTION.parameters.neo4j_protocol | default("neo4j+s") }}',
     'host': '{{ QUESTION.parameters.neo4j_host | default("localhost") }}',
@@ -2391,8 +2628,15 @@ class Neo4jEncoder(json.JSONEncoder):
                 "nodes": list(obj.nodes),
                 "relationships": list(obj.relationships)
             }
-        elif isinstance(obj, (datetime, date, time)):
-            return obj.isoformat()
+        # Handle Python + Neo4j temporal types
+        elif isinstance(obj, TEMPORAL_TYPES):
+            # Prefer isoformat if available
+            if hasattr(obj, "isoformat"):
+                return obj.isoformat()
+            # Some Neo4j types also expose iso_format()
+            if hasattr(obj, "iso_format"):
+                return obj.iso_format()
+            return str(obj)
         return super().default(obj)
 
 def serialize_value(value):
@@ -2421,8 +2665,13 @@ def serialize_value(value):
         return truncate_sequence(value)
     if isinstance(value, dict):
         return {k: serialize_value(v) for k, v in value.items()}
-    if isinstance(value, (datetime, date, time)):
-        return value.isoformat()
+    # Handle Python + Neo4j temporal types
+    if isinstance(value, TEMPORAL_TYPES):
+        if hasattr(value, "isoformat"):
+            return value.isoformat()
+        if hasattr(value, "iso_format"):
+            return value.iso_format()
+        return str(value)
     return value
 
 def serialize_records(records):
@@ -2433,7 +2682,10 @@ def serialize_records(records):
     sections = []
     for idx, record in enumerate(display_records, start=1):
         converted = {key: serialize_value(val) for key, val in record.items()}
-        sections.append(f"Record {idx}:\n{json.dumps(converted, indent=2, ensure_ascii=False, cls=Neo4jEncoder)}")
+        sections.append(
+            f"Record {idx}:\n"
+            f"{json.dumps(converted, indent=2, ensure_ascii=False, cls=Neo4jEncoder)}"
+        )
     if len(records) > MAX_DISPLAY_RECORDS:
         sections.append(f"... ({len(records) - MAX_DISPLAY_RECORDS} more records not shown)")
     return '\n'.join(sections)
@@ -2442,7 +2694,7 @@ def format_query_output(statement, result):
     """Render the result of a Cypher execution."""
     records = result.data()
     summary = result.consume()
-    output_parts = [f"Cypher: {statement.strip()}"]
+    output_parts = []
     if records:
         output_parts.append(serialize_records(records))
     else:
@@ -2475,7 +2727,11 @@ def clamp_output(text):
     """Limit output length to avoid Moodle truncation."""
     if len(text) <= MAX_OUTPUT_LENGTH:
         return text
-    return f"{text[:MAX_OUTPUT_LENGTH]}\n... (output truncated to stay within display limits, {len(text) - MAX_OUTPUT_LENGTH} chars omitted)"
+    return (
+        f"{text[:MAX_OUTPUT_LENGTH]}\n"
+        f"... (output truncated to stay within display limits, {len(text) - MAX_OUTPUT_LENGTH} chars omitted)"
+    )
+
 
 def execute_cypher_block(tx, cypher_code, collect_output=False):
     """Execute one or more Cypher statements within a transaction."""
@@ -3040,13 +3296,16 @@ class _ElementCollector(HTMLParser):
     def handle_starttag(self, tag, attrs):
         attr_dict = {k.lower(): v for k, v in attrs}
         classes = attr_dict.get('class', '')
+        parent = self._stack[-1] if self._stack else None
         element = {
             'tag': tag.lower(),
             'attrs': attr_dict,
             'classes': set(filter(None, re.split(r'\s+', classes.strip()))) if classes else set(),
             'id': attr_dict.get('id'),
             'text': '',
-            'line': self.getpos()[0]
+            'line': self.getpos()[0],
+            'parent': parent,
+            'ancestors': self._stack.copy()
         }
         self.elements.append(element)
         self._stack.append(element)
@@ -3093,8 +3352,9 @@ def _element_matches(element, criteria):
             return False
     attrs = criteria.get('attributes') or {}
     for key, expected in attrs.items():
-        actual = element['attrs'].get(key.lower())
+        key_lower = key.lower()
         if isinstance(expected, dict):
+            actual = element['attrs'].get(key_lower)
             regex = expected.get('regex')
             equals = expected.get('equals')
             contains = expected.get('contains')
@@ -3105,8 +3365,15 @@ def _element_matches(element, criteria):
                 return False
             elif contains and (not actual or contains not in actual):
                 return False
-        elif actual != expected:
-            return False
+        elif expected is True:
+            # Attribute presence check: just verify attribute exists in the dict
+            # (HTMLParser sets boolean attributes to None, so we check key existence)
+            if key_lower not in element['attrs']:
+                return False
+        else:
+            actual = element['attrs'].get(key_lower)
+            if actual != expected:
+                return False
     text_contains = criteria.get('text_contains')
     if text_contains:
         haystack = element['text'] or ''
@@ -3123,7 +3390,7 @@ def _element_matches(element, criteria):
 CSS_COMMENT_RE = re.compile(r'/\*.*?\*/', re.S)
 
 
-def _parse_css_rules(content):
+def _parse_css_rules(content, offset_line=0):
     stripped = CSS_COMMENT_RE.sub('', content)
     rules = []
     i = 0
@@ -3138,6 +3405,8 @@ def _parse_css_rules(content):
         if i >= length:
             break
         selector_text = stripped[selector_start:i].strip()
+        relative_line = stripped.count('\n', 0, selector_start) + 1
+        line_number = offset_line + relative_line
         i += 1
         depth = 1
         block_start = i
@@ -3148,9 +3417,12 @@ def _parse_css_rules(content):
             elif char == '}':
                 depth -= 1
             i += 1
+        if depth > 0:
+            raise ValueError(f"Unclosed CSS block for selector '{selector_text}' at line {line_number}")
         block = stripped[block_start:i - 1]
         if selector_text.startswith('@'):
-            nested = _parse_css_rules(block)
+            nested_offset = offset_line + stripped.count('\n', 0, block_start)
+            nested = _parse_css_rules(block, offset_line=nested_offset)
             rules.extend(nested)
             continue
         selectors = [s.strip() for s in selector_text.split(',') if s.strip()]
@@ -3164,7 +3436,7 @@ def _parse_css_rules(content):
             if prop:
                 declarations[prop] = value
         for selector in selectors:
-            rules.append({'selector': selector, 'properties': dict(declarations)})
+            rules.append({'selector': selector, 'properties': dict(declarations), 'line': line_number})
     return rules
 
 
@@ -3262,6 +3534,8 @@ class StructuredTestRunner:
         custom = spec.get('success_message') if isinstance(spec, dict) else None
         if custom:
             return custom
+        if desc:
+            return desc
         return 'PASS'
 
     def _fail_message(self, spec, detail, file_path=None, line_number=None):
@@ -3290,7 +3564,14 @@ class StructuredTestRunner:
 
     def _css_doc(self, path):
         if path not in self._css_cache:
-            self._css_cache[path] = _parse_css_rules(self.project.get_content(path, ''))
+            try:
+                self._css_cache[path] = _parse_css_rules(self.project.get_content(path, ''))
+            except ValueError as e:
+                import re
+                match = re.search(r'at line (\d+)', str(e))
+                line_number = int(match.group(1)) if match else None
+                error_message = re.sub(r' at line \d+', '', str(e))
+                self._css_cache[path] = {'error': error_message, 'line': line_number}
         return self._css_cache[path]
 
     def run(self, spec):
@@ -3310,7 +3591,11 @@ class StructuredTestRunner:
                     merged['mode'] = merged.get('language') or merged.get('type') or spec.get('step_mode') or spec.get('step_language')
                 result = self.run_single(merged)
                 if not result.success:
-                    detail = f"Step {index} failed ({result.message})"
+                    # Strip "FAIL: " prefix from result.message to avoid double prefix
+                    inner_message = result.message
+                    if inner_message.startswith('FAIL: '):
+                        inner_message = inner_message[6:]  # Remove "FAIL: " prefix
+                    detail = f"Step {index} failed ({inner_message})"
                     return TestResult(False, self._fail_message(spec, detail))
             return TestResult(True, self._pass_message(spec))
         return self.run_single(spec)
@@ -3338,26 +3623,39 @@ class StructuredTestRunner:
                 files = self._resolve_scope(check, default_ext=['html', 'htm']) or files
             selector = check.get('selector')
             criteria = dict(check)
-            if selector and 'tag' not in criteria:
-                parsed = self._parse_selector(selector)
-                selector_tag = parsed.get('tag')
-                selector_id = parsed.get('id')
-                selector_classes = parsed.get('classes')
-            else:
-                selector_tag = selector_id = None
-                selector_classes = None
+            parsed_selector = None
+            is_complex = False
 
-            base_criteria = {}
-            if selector_tag:
-                base_criteria['tag'] = selector_tag
-            if selector_id:
-                base_criteria['id'] = selector_id
-            if selector_classes:
-                base_criteria['classes'] = selector_classes
-            if 'tag' in criteria:
-                base_criteria['tag'] = criteria.pop('tag')
-            if 'id' in criteria:
-                base_criteria['id'] = criteria.pop('id')
+            if selector and 'tag' not in criteria:
+                parsed_selector = self._parse_selector(selector)
+                is_complex = parsed_selector.get('complex', False)
+
+            if is_complex:
+                # Complex selector with combinators
+                base_criteria = parsed_selector
+            else:
+                # Simple selector
+                if parsed_selector:
+                    selector_tag = parsed_selector.get('tag')
+                    selector_id = parsed_selector.get('id')
+                    selector_classes = parsed_selector.get('classes')
+                    selector_attrs = parsed_selector.get('attributes')
+                else:
+                    selector_tag = selector_id = selector_classes = selector_attrs = None
+
+                base_criteria = {}
+                if selector_tag:
+                    base_criteria['tag'] = selector_tag
+                if selector_id:
+                    base_criteria['id'] = selector_id
+                if selector_classes:
+                    base_criteria['classes'] = selector_classes
+                if selector_attrs:
+                    base_criteria['attributes'] = selector_attrs
+                if 'tag' in criteria:
+                    base_criteria['tag'] = criteria.pop('tag')
+                if 'id' in criteria:
+                    base_criteria['id'] = criteria.pop('id')
 
             property_fields = {}
             for field in ('classes', 'attributes', 'text_contains'):
@@ -3378,15 +3676,20 @@ class StructuredTestRunner:
             matches = []
             for file in files:
                 doc = self._html_doc(file['path'])
-                for element in doc.find(**base_criteria):
-                    matches.append((file['path'], element))
+                if is_complex:
+                    for element in doc.elements:
+                        if self._matches_complex_selector(element, base_criteria):
+                            matches.append((file['path'], element))
+                else:
+                    for element in doc.find(**base_criteria):
+                        matches.append((file['path'], element))
             target_label = self._format_target_label(check, base_criteria)
 
             if not matches:
-                message = check.get('message') or f"Required element '{target_label}' not found."
-                if forbid:
-                    # If forbidding, no matches is success.
+                # No matches found - this is success if forbidding or if max=0
+                if forbid or max_requirement == 0:
                     continue
+                message = check.get('message') or f"Element '{target_label}': not found."
                 return TestResult(False, self._fail_message(spec, message, default_files[0]['path'] if default_files else None))
 
             if forbid:
@@ -3423,7 +3726,7 @@ class StructuredTestRunner:
                 if not property_matches:
                     default_reason = property_error or 'required properties were missing.'
                     prop_message = (check.get('property_message') or check.get('message') or
-                                    f"Element '{target_label}' {default_reason}")
+                                    f"Element '{target_label}': {default_reason}")
                     return TestResult(False, self._fail_message(spec, prop_message, property_error_path, property_error_line))
                 matches = property_matches
 
@@ -3438,7 +3741,7 @@ class StructuredTestRunner:
                     invalid_line = element.get('line')
             if not structure_matches:
                 structure_message = (check.get('structure_message') or check.get('message') or
-                                     f"Element '{target_label}' found, but markup is malformed.")
+                                     f"Element '{target_label}': markup is malformed.")
                 return TestResult(False, self._fail_message(spec, structure_message, invalid_path, invalid_line))
             matches = structure_matches
 
@@ -3447,18 +3750,77 @@ class StructuredTestRunner:
             sample_path = structure_matches[0][0] if structure_matches else None
             sample_line = structure_matches[0][1].get('line') if structure_matches else None
             if count_requirement is not None and match_count != count_requirement:
-                message = f"{target_label}: expected {count_requirement} matches, found {match_count}."
+                message = f"Element '{target_label}': expected {count_requirement} matches, found {match_count}."
                 return TestResult(False, self._fail_message(spec, message, sample_path, sample_line))
             if min_requirement is not None and match_count < min_requirement:
-                message = f"{target_label}: expected at least {min_requirement} matches, found {match_count}."
+                message = f"Element '{target_label}': expected at least {min_requirement} matches, found {match_count}."
                 return TestResult(False, self._fail_message(spec, message, sample_path, sample_line))
             if max_requirement is not None and match_count > max_requirement:
-                message = f"{target_label}: found {match_count} matches but maximum is {max_requirement}."
+                if max_requirement == 0:
+                    message = f"Element '{target_label}': should not exist, but found {match_count}."
+                else:
+                    message = f"Element '{target_label}': found {match_count} matches but maximum is {max_requirement}."
                 return TestResult(False, self._fail_message(spec, message, sample_path, sample_line))
         return TestResult(True, self._pass_message(spec))
 
     def _parse_selector(self, selector):
+        """Parse a CSS selector into a list of selector parts with combinators.
+
+        Returns a list of dicts, where each dict represents a selector part.
+        For simple selectors like 'a.button', returns a single-item list.
+        For complex selectors like 'nav > a', returns multiple items with combinator info.
+        """
         selector = selector.strip()
+
+        # Split by combinators while preserving them
+        # Handle: '>' (child), ' ' (descendant), '+' (adjacent sibling), '~' (general sibling)
+        parts = []
+        current = ''
+        i = 0
+        while i < len(selector):
+            ch = selector[i]
+            if ch == '>':
+                if current.strip():
+                    parts.append({'selector': current.strip(), 'combinator': '>'})
+                current = ''
+            elif ch in ['+', '~']:
+                if current.strip():
+                    parts.append({'selector': current.strip(), 'combinator': ch})
+                current = ''
+            elif ch == ' ':
+                # Only treat as combinator if not inside brackets
+                in_brackets = current.count('[') > current.count(']')
+                if not in_brackets and current.strip():
+                    parts.append({'selector': current.strip(), 'combinator': ' '})
+                    current = ''
+                    # Skip additional spaces
+                    while i + 1 < len(selector) and selector[i + 1] == ' ':
+                        i += 1
+                elif in_brackets:
+                    current += ch
+                # else skip leading spaces
+            else:
+                current += ch
+            i += 1
+
+        if current.strip():
+            parts.append({'selector': current.strip(), 'combinator': None})
+
+        # If no combinators found, treat as simple selector
+        if len(parts) == 1 and parts[0]['combinator'] is None:
+            return self._parse_simple_selector(parts[0]['selector'])
+
+        # Parse each part
+        parsed_parts = []
+        for part in parts:
+            parsed = self._parse_simple_selector(part['selector'])
+            parsed['combinator'] = part['combinator']
+            parsed_parts.append(parsed)
+
+        return {'complex': True, 'parts': parsed_parts}
+
+    def _parse_simple_selector(self, selector):
+        """Parse a simple selector (no combinators) into criteria."""
         result = {'classes': []}
         tag_match = re.match(r'^([a-zA-Z][\w-]*)', selector)
         if tag_match:
@@ -3469,7 +3831,92 @@ class StructuredTestRunner:
         class_matches = re.findall(r'\.([\w-]+)', selector)
         if class_matches:
             result['classes'] = class_matches
+        # Parse attribute selectors like [href='/home'] or [data-link]
+        # Match: [attr], [attr=value], [attr="value"], [attr='value']
+        attr_matches = re.findall(r'\[([a-zA-Z][\w-]*)(?:([~|^$*]?=)(?:"([^"]*)"|\'([^\']*)\'|([^\]]*)))?\]', selector)
+        if attr_matches:
+            attributes = {}
+            for match in attr_matches:
+                attr_name = match[0].lower()
+                operator = match[1]
+                # Get the value from whichever capture group matched (double-quoted, single-quoted, or unquoted)
+                attr_value = match[2] or match[3] or match[4] or ''
+                attr_value = attr_value.strip()
+
+                if not operator:
+                    # Attribute presence check: [data-link]
+                    attributes[attr_name] = True
+                elif operator == '=':
+                    # Exact match: [href='/home']
+                    attributes[attr_name] = attr_value
+                elif operator == '*=':
+                    # Contains: [class*='btn']
+                    attributes[attr_name] = {'contains': attr_value}
+                elif operator == '^=':
+                    # Starts with: [href^='/']
+                    attributes[attr_name] = {'regex': f'^{re.escape(attr_value)}'}
+                elif operator == '$=':
+                    # Ends with: [href$='.html']
+                    attributes[attr_name] = {'regex': f'{re.escape(attr_value)}$'}
+                elif operator == '~=':
+                    # Word match: [class~='active']
+                    attributes[attr_name] = {'regex': rf'\b{re.escape(attr_value)}\b'}
+                elif operator == '|=':
+                    # Starts with word: [lang|='en']
+                    attributes[attr_name] = {'regex': f'^{re.escape(attr_value)}(-|$)'}
+            result['attributes'] = attributes
         return result
+
+    def _matches_complex_selector(self, element, parsed_selector):
+        """Check if an element matches a complex selector with combinators."""
+        if not parsed_selector.get('complex'):
+            return False
+
+        parts = parsed_selector['parts']
+        if not parts:
+            return False
+
+        # Start from the last part (rightmost) and work backwards
+        # The last part must match the element itself
+        last_part = parts[-1]
+        if not _element_matches(element, last_part):
+            return False
+
+        # If only one part, we're done
+        if len(parts) == 1:
+            return True
+
+        # Work backwards through the parts
+        current_element = element
+        for i in range(len(parts) - 2, -1, -1):
+            part = parts[i]
+            combinator = parts[i + 1].get('combinator')
+
+            if combinator == '>':
+                # Direct child: parent must match
+                if not current_element.get('parent'):
+                    return False
+                if not _element_matches(current_element['parent'], part):
+                    return False
+                current_element = current_element['parent']
+            elif combinator == ' ':
+                # Descendant: any ancestor must match
+                found = False
+                for ancestor in current_element.get('ancestors', []):
+                    if _element_matches(ancestor, part):
+                        current_element = ancestor
+                        found = True
+                        break
+                if not found:
+                    return False
+            elif combinator == '+':
+                # Adjacent sibling: not implemented yet
+                return False
+            elif combinator == '~':
+                # General sibling: not implemented yet
+                return False
+
+        return True
 
     def _format_target_label(self, check, base_criteria):
         selector = check.get('selector')
@@ -3616,6 +4063,19 @@ class StructuredTestRunner:
             detail = f"Element '{target_label}' must not exist."
         return detail
 
+    def _describe_css_forbidden_reason(self, selector, properties, check):
+        if properties:
+            prop_names = [prop for prop in properties.keys()]
+            if prop_names:
+                return (check.get('forbid_message') or
+                        f"Selector '{selector}' must not include properties: {', '.join(prop_names)}.")
+            else:
+                return (check.get('forbid_message') or
+                        f"Selector '{selector}' must not exist.")
+        else:
+            return (check.get('forbid_message') or
+                    f"Selector '{selector}' must not exist.")
+
     def _parse_start_tag_attributes(self, tag, snippet):
         parser = _SingleTagParser()
         try:
@@ -3682,10 +4142,46 @@ class StructuredTestRunner:
     def _run_css(self, spec):
         checks = spec.get('checks')
         if not checks:
-            return TestResult(False, self._fail_message(spec, 'No CSS checks supplied.', files[0]['path'] if files else None))
-        files = self._resolve_scope(spec, default_ext=['css'])
+            return TestResult(False, self._fail_message(spec, 'No CSS checks supplied.'))
+
+        files = self._resolve_scope(spec, default_ext=['css', 'html'])
         if not files:
-            return TestResult(False, self._fail_message(spec, 'No CSS files matched the provided scope.'))
+            return TestResult(False, self._fail_message(spec, 'No CSS or HTML files matched the provided scope.'))
+
+        all_rules = []
+        for file in files:
+            content = self.project.get_content(file['path'], '')
+            if not content:
+                continue
+
+            if file['extension'] == 'html':
+                doc = self._html_doc(file['path'])
+                style_elements = doc.find(tag='style')
+                for style_element in style_elements:
+                    style_content = style_element.get('text', '')
+                    start_line = style_element.get('line', 1)
+                    if style_content:
+                        try:
+                            rules = _parse_css_rules(style_content, offset_line=start_line - 1)
+                            for rule in rules:
+                                rule['path'] = file['path']
+                            all_rules.extend(rules)
+                        except ValueError as e:
+                            return TestResult(False, self._fail_message(spec, f"CSS parsing error in {file['path']}: {e}", file['path'], start_line))
+            elif file['extension'] == 'css':
+                try:
+                    rules = self._css_doc(file['path'])
+                    if isinstance(rules, dict) and 'error' in rules:
+                        return TestResult(False, self._fail_message(spec, rules['error'], file['path'], rules.get('line')))
+                    for rule in rules:
+                        rule['path'] = file['path']
+                    all_rules.extend(rules)
+                except ValueError as e:
+                    return TestResult(False, self._fail_message(spec, f"CSS parsing error: {e}", file['path']))
+
+        if not all_rules:
+            return TestResult(False, self._fail_message(spec, 'No CSS rules found in the specified files.'))
+
         for check in checks:
             selector = check.get('selector')
             selector_regex = check.get('selector_regex')
@@ -3694,48 +4190,75 @@ class StructuredTestRunner:
             if single_property and single_property not in properties:
                 value = check.get('value') or check.get('equals')
                 properties[single_property] = value
+            forbid = bool(str(check.pop('forbid', check.pop('disallow', check.pop('prohibit', '')))).lower() in ('1,', 'true', 'yes'))
             min_requirement = check.get('min')
             max_requirement = check.get('max')
             matches = []
-            for file in files:
-                for rule in self._css_doc(file['path']):
-                    if selector and rule['selector'] != selector:
-                        continue
-                    if selector_regex and not re.search(selector_regex, rule['selector']):
-                        continue
-                    matches.append((file['path'], rule))
+
+            for rule in all_rules:
+                if selector and rule['selector'] != selector:
+                    continue
+                if selector_regex and not re.search(selector_regex, rule['selector']):
+                    continue
+                matches.append((rule.get('path', 'inline'), rule))
+
+            if forbid:
+                if not properties:
+                    if matches:
+                        sample_path = matches[0][0] if matches else None
+                        line_number = matches[0][1].get('line') if matches else None
+                        reason = self._describe_css_forbidden_reason(selector, properties, check)
+                        return TestResult(False, self._fail_message(spec, reason, sample_path, line_number))
+                else:
+                    for file_path, rule in matches:
+                        for property_name, expected in properties.items():
+                            property_name = property_name.lower()
+                            if rule['properties'].get(property_name) is not None:
+                                line_number = rule.get('line')
+                                reason = self._describe_css_forbidden_reason(selector, {property_name: expected}, check)
+                                return TestResult(False, self._fail_message(spec, reason, file_path, line_number))
+                continue
+
             if not matches:
-                message = check.get('message') or 'Selector not found.'
+                message = check.get('message') or f"Selector '{selector}': not found."
                 scope_path = files[0]['path'] if files else None
                 return TestResult(False, self._fail_message(spec, message, scope_path))
+
             match_count = len(matches)
             if min_requirement is not None and match_count < min_requirement:
                 sample_path = matches[0][0] if matches else None
-                message = f'Expected at least {min_requirement} selector matches, found {match_count}.'
-                return TestResult(False, self._fail_message(spec, message, sample_path))
+                sample_line = matches[0][1].get('line') if matches else None
+                message = f"Selector '{selector}': expected at least {min_requirement} matches, found {match_count}."
+                return TestResult(False, self._fail_message(spec, message, sample_path, sample_line))
             if max_requirement is not None and match_count > max_requirement:
                 sample_path = matches[0][0] if matches else None
-                message = f'Too many selector matches ({match_count}).'
-                return TestResult(False, self._fail_message(spec, message, sample_path))
+                sample_line = matches[0][1].get('line') if matches else None
+                message = f"Selector '{selector}': found {match_count} matches but maximum is {max_requirement}."
+                return TestResult(False, self._fail_message(spec, message, sample_path, sample_line))
+
             for property_name, expected in properties.items():
                 property_name = property_name.lower()
-                ok, property_path = self._check_css_property(matches, property_name, expected)
+                ok, property_path, failure_reason, line_number = self._check_css_property(matches, property_name, expected)
                 if not ok:
-                    detail = check.get('message') or f"Missing property '{property_name}'."
-                    return TestResult(False, self._fail_message(spec, detail, property_path))
+                    if failure_reason == 'missing':
+                        detail = check.get('message') or f"Selector '{selector}': missing property '{property_name}'."
+                    else:
+                        detail = check.get('message') or f"Selector '{selector}': property '{property_name}' has wrong value."
+                    return TestResult(False, self._fail_message(spec, detail, property_path, line_number))
+
         return TestResult(True, self._pass_message(spec))
 
     def _check_css_property(self, matches, property_name, expected):
         fallback_path = matches[0][0] if matches else None
+        first_match_line = matches[0][1].get('line') if matches else None
         for file_path, rule in matches:
             actual = rule['properties'].get(property_name)
             if actual is None:
                 continue
             if self._compare_values(actual, expected):
-                return True, file_path
-            if fallback_path is None:
-                fallback_path = file_path
-        return False, fallback_path
+                return True, file_path, None, rule.get('line') # ok, file_path, failure_reason, line_number
+            return False, file_path, 'wrong_value', rule.get('line') # Property exists but is wrong
+        return False, fallback_path, 'missing', first_match_line # Property is missing in all rules
 
     @staticmethod
     def _compare_values(actual, expected):
@@ -3875,9 +4398,11 @@ class StructuredTestRunner:
         test_code = spec.get('jsTest') or spec.get('test') or js_spec.get('test') or js_spec.get('code')
         regex_checks = self._collect_js_regex_checks(spec, js_spec)
         if not test_code and not regex_checks:
-            return TestResult(False, self._fail_message(spec, 'JavaScript test: missing a test body.'))
+            return TestResult(False, self._fail_message(spec, 'JavaScript test: missing a test body or regex checks.'))
+
         setup_code = spec.get('jsSetup') or js_spec.get('setup') or ''
         timeout = spec.get('timeout') or js_spec.get('timeout') or 5
+        
         files = self._resolve_scope(spec, default_ext=['js', 'html'])
         if not files:
             return TestResult(False, self._fail_message(spec, 'JavaScript test: No files matched the provided scope.'))
@@ -3897,7 +4422,7 @@ class StructuredTestRunner:
                             'path': f"{file['path']}_inline_script_{i+1}.js",
                             'content': script_content,
                             'original_path': file['path'],
-                            'offset_line': start_line - 1
+                            'offset_line': start_line -1
                         })
 
         if not js_files:
@@ -3911,9 +4436,394 @@ class StructuredTestRunner:
                 return regex_result
 
         outcome = self._execute_js(js_files, test_code, setup_code, timeout, js_spec)
-        if outcome.success:
-            return TestResult(True, self._pass_message(spec))
-        return TestResult(False, self._fail_message(spec, outcome.message))
+
+        if not outcome.get('ok'):
+            original_message = outcome.get('message') or 'JavaScript assertion failed.'
+            # Extract file and line information from the error stack trace
+            file_path, line_number = self._extract_student_file_location(original_message, js_files)
+
+            # Clean up the error message to remove Node.js internals
+            cleaned_message = self._clean_test_js_error(original_message, js_files)
+
+            # If no student file in stack trace, at least show which file(s) are being tested
+            if not file_path and js_files:
+                # First try to get regular student files (not inline scripts)
+                student_files = [f['path'] for f in js_files if not f.get('original_path')]
+                if student_files:
+                    file_path = student_files[0]
+                else:
+                    # Fall back to inline scripts - show the HTML file they came from
+                    inline_files = [f.get('original_path') for f in js_files if f.get('original_path')]
+                    if inline_files:
+                        file_path = inline_files[0]
+
+            # If we have a file but no line number, try to find the relevant function/code location
+            # Pass both original message and test code to extract function name
+            if file_path and not line_number:
+                line_number = self._find_relevant_js_line(original_message, test_code, js_files, file_path)
+
+            # Check if cleaned message already contains a stack trace with the file reference
+            # If so, don't append file:line again (avoids duplication)
+            has_stack_trace_with_file = False
+            if file_path and line_number:
+                # Check for stack trace patterns:
+                # Format 1: "at functionName (file.js:5:1)"
+                # Format 2: "at file.js:5:1"
+                escaped_path = re.escape(file_path)
+                pattern1 = rf'at .+?\({escaped_path}:{line_number}[:\)]'
+                pattern2 = rf'at {escaped_path}:{line_number}[:\)]'
+                if re.search(pattern1, cleaned_message) or re.search(pattern2, cleaned_message):
+                    has_stack_trace_with_file = True
+
+            # Only append file:line if it's not already in a stack trace
+            final_file = file_path if not has_stack_trace_with_file else None
+            final_line = line_number if not has_stack_trace_with_file else None
+
+            return TestResult(False, self._fail_message(spec, cleaned_message, final_file, final_line))
+
+        expected_logs = spec.get('expectedLogs')
+        if expected_logs is not None:
+            actual_logs = outcome.get('logs', [])
+            if actual_logs != expected_logs:
+                message = f"Expected logs: {expected_logs}, but got: {actual_logs}"
+                return TestResult(False, self._fail_message(spec, message))
+
+        return TestResult(True, self._pass_message(spec))
+
+    def _rewrite_js_stack_trace(self, message, files):
+        lines = message.split('\n')
+        new_lines = []
+        file_map = {f['path']: f for f in files if 'original_path' in f}
+
+        for line in lines:
+            # Try to match first line format: "file.js:12" (without "at" prefix)
+            # This appears at the start of Node.js error messages
+            if ':' in line and not line.strip().startswith('at ') and not line.strip().startswith('//'):
+                match = re.search(r'^(.*?):(\d+)\s*$', line.strip())
+                if match:
+                    script_path = match.group(1)
+                    line_num = int(match.group(2))
+
+                    found_file = None
+                    for file_path_key in file_map:
+                        if script_path.endswith(file_path_key) or script_path == file_path_key:
+                            found_file = file_map[file_path_key]
+                            break
+
+                    if found_file:
+                        original_path = found_file['original_path']
+                        offset_line = found_file['offset_line']
+                        new_line_num = offset_line + line_num
+                        # Preserve any leading/trailing whitespace from original
+                        indent = len(line) - len(line.lstrip())
+                        new_line = ' ' * indent + f"{original_path}:{new_line_num}"
+                        new_lines.append(new_line)
+                        continue
+
+            # Try to match "at functionName (/path/to/file.js:5:1)"
+            match = re.search(r'at (.*?) \((.*?):(\d+):(\d+)\)', line)
+            if match:
+                function_name = match.group(1)
+                script_path = match.group(2)
+                line_num = int(match.group(3))
+                col_num = int(match.group(4))
+
+                found_file = None
+                for file_path_key in file_map:
+                    if script_path.endswith(file_path_key):
+                        found_file = file_map[file_path_key]
+                        break
+                
+                if found_file:
+                    original_path = found_file['original_path']
+                    offset_line = found_file['offset_line']
+                    new_line_num = offset_line + line_num
+                    new_line = f"    at {function_name} ({original_path}:{new_line_num}:{col_num})"
+                    new_lines.append(new_line)
+                else:
+                    new_lines.append(line)
+                continue
+
+            # Try to match "at /path/to/file.js:5:1"
+            match = re.search(r'at (.*?):(\d+):(\d+)', line)
+            if match:
+                script_path = match.group(1)
+                line_num = int(match.group(2))
+                col_num = int(match.group(3))
+                
+                found_file = None
+                for file_path_key in file_map:
+                    if script_path.endswith(file_path_key):
+                        found_file = file_map[file_path_key]
+                        break
+
+                if found_file:
+                    original_path = found_file['original_path']
+                    offset_line = found_file['offset_line']
+                    new_line_num = offset_line + line_num
+                    new_line = f"    at {original_path}:{new_line_num}:{col_num}"
+                    new_lines.append(new_line)
+                else:
+                    new_lines.append(line)
+                continue
+
+            new_lines.append(line)
+
+        return '\n'.join(new_lines)
+
+    def _extract_student_file_location(self, message, files):
+        """Extract the first student file reference from a JS error stack trace.
+
+        Returns a tuple (file_path, line_number) or (None, None) if no student file found.
+        Skips test.js, test-setup.js, and internal Node.js files.
+        """
+        lines = message.split('\n')
+        student_file_paths = set(f['path'] for f in files)
+
+        # Also check for original_path (inline scripts from HTML)
+        for f in files:
+            if 'original_path' in f:
+                student_file_paths.add(f['original_path'])
+
+        for line in lines:
+            # Match "at functionName (file.js:5:1)" or "at file.js:5:1"
+            match = re.search(r'at (?:.*? \()?(.*?):(\d+):(\d+)\)?', line)
+            if match:
+                file_path = match.group(1)
+                line_num = int(match.group(2))
+
+                # Skip test files and Node internals
+                if file_path in ('test.js', 'test-setup.js') or file_path.startswith('node:'):
+                    continue
+
+                # Check if this is a student file
+                if any(file_path.endswith(student_path) or file_path == student_path
+                       for student_path in student_file_paths):
+                    return (file_path, line_num)
+
+            # Also check first line format: "file.js:1" at the start of error
+            if ':' in line and not line.strip().startswith('at '):
+                match = re.search(r'^(.*?):(\d+)\s*$', line.strip())
+                if match:
+                    file_path = match.group(1)
+                    line_num = int(match.group(2))
+
+                    # Check if this is a student file (not test.js)
+                    if file_path not in ('test.js', 'test-setup.js'):
+                        if any(file_path.endswith(student_path) or file_path == student_path
+                               for student_path in student_file_paths):
+                            return (file_path, line_num)
+
+        return (None, None)
+
+    def _find_relevant_js_line(self, error_message, test_code, js_files, target_file_path):
+        """Try to find a relevant line number in student code based on the error message.
+
+        For ReferenceError/TypeError, tries to find where the referenced function/variable is defined.
+        For AssertionError, tries to find the function being tested.
+        """
+        # Extract function/variable name from the error
+        function_name = None
+
+        # Try to extract from ReferenceError: "X is not defined"
+        match = re.search(r'ReferenceError:\s+(\w+)\s+is not defined', error_message)
+        if match:
+            function_name = match.group(1)
+
+        # Try to extract from the test code itself (e.g., "assert.strictEqual(cube(5), 125)")
+        if not function_name and test_code:
+            match = re.search(r'assert\.\w+\((\w+)\s*\(', test_code)
+            if match:
+                function_name = match.group(1)
+
+        # Try to extract from assertion in error message
+        if not function_name:
+            match = re.search(r'assert\.\w+\((\w+)\s*\(', error_message)
+            if match:
+                function_name = match.group(1)
+
+        # Try to extract from assertion error message mentioning a function call
+        if not function_name:
+            match = re.search(r'Expected.*?\n.*?(\w+)\s*\(', error_message)
+            if match:
+                function_name = match.group(1)
+
+        if not function_name:
+            return None
+
+        # Find the file content
+        file_content = None
+        offset_line = 0
+        for f in js_files:
+            # Check if this is the target file
+            if f['path'] == target_file_path or f.get('original_path') == target_file_path:
+                file_content = f.get('content', '')
+                offset_line = f.get('offset_line', 0)
+                break
+
+        if not file_content:
+            # Try loading from project
+            file_content = self.project.get_content(target_file_path, '')
+
+        if not file_content:
+            return None
+
+        # Search for function definition
+        lines = file_content.split('\n')
+        patterns = [
+            rf'^\s*function\s+{re.escape(function_name)}\s*\(',  # function name()
+            rf'^\s*const\s+{re.escape(function_name)}\s*=',      # const name =
+            rf'^\s*let\s+{re.escape(function_name)}\s*=',        # let name =
+            rf'^\s*var\s+{re.escape(function_name)}\s*=',        # var name =
+            rf'^\s*{re.escape(function_name)}\s*:\s*function',   # name: function
+            rf'^\s*{re.escape(function_name)}\s*\(',             # name() in object
+        ]
+
+        function_start_line = None
+        for i, line in enumerate(lines):
+            for pattern in patterns:
+                if re.search(pattern, line):
+                    function_start_line = i
+                    break
+            if function_start_line is not None:
+                break
+
+        if function_start_line is None:
+            return None
+
+        # Found the function - now look for the return statement within it
+        # Search forward from function definition, looking for return statement
+        brace_count = 0
+        in_function = False
+        return_line = None
+
+        for i in range(function_start_line, len(lines)):
+            line = lines[i]
+
+            # Track braces to know when we've exited the function
+            if '{' in line:
+                brace_count += line.count('{')
+                in_function = True
+            if '}' in line:
+                brace_count -= line.count('}')
+                if in_function and brace_count <= 0:
+                    break  # Exited the function
+
+            # Look for return statement
+            if in_function and re.search(r'^\s*return\b', line):
+                return_line = i
+                break
+
+        # If we found a return statement, use that line; otherwise use function definition
+        target_line = return_line if return_line is not None else function_start_line
+        return offset_line + target_line + 1  # +1 for 1-indexed line numbers
+
+    def _clean_test_js_error(self, message, files):
+        """Clean up error messages by removing unhelpful Node.js internals and test.js noise.
+
+        Returns just the error message and relevant stack trace lines from student files.
+        """
+        lines = message.split('\n')
+        if not lines:
+            return message
+
+        student_file_paths = set(f['path'] for f in files)
+        for f in files:
+            if 'original_path' in f:
+                student_file_paths.add(f['original_path'])
+
+        # Find the line with the actual error type (e.g., "ReferenceError:", "AssertionError:")
+        error_line_idx = None
+        for i, line in enumerate(lines):
+            stripped = line.strip()
+            # Look for error type declarations
+            if any(err in stripped for err in [
+                'Error:', 'AssertionError', 'TypeError', 'ReferenceError',
+                'SyntaxError', 'RangeError'
+            ]) and not stripped.startswith('at '):
+                error_line_idx = i
+                break
+
+        if error_line_idx is None:
+            return message
+
+        result_lines = []
+
+        # Add the error message and any detail lines (but skip node:assert:, test.js: prefixes)
+        for i in range(error_line_idx, len(lines)):
+            line = lines[i]
+            stripped = line.strip()
+
+            # Skip node:assert:, node:vm:, test.js: prefixes before the error message
+            if stripped and ':' in stripped and not stripped.startswith('at '):
+                # Check if this is a node: or test.js: prefix line (appears before actual error)
+                if any(skip in stripped for skip in ['node:assert:', 'node:vm:', 'node:internal:']):
+                    continue
+                # Skip test.js:N at the very start (code snippet location, not helpful)
+                if stripped.startswith('test.js:') and i < error_line_idx + 3:
+                    continue
+
+            # Stop collecting non-stack lines once we hit stack traces
+            if stripped.startswith('at '):
+                break
+
+            result_lines.append(line)
+
+        # Now collect relevant stack trace lines (only student files, skip test.js and node internals)
+        for i in range(error_line_idx, len(lines)):
+            line = lines[i]
+            stripped = line.strip()
+
+            if not stripped.startswith('at '):
+                continue
+
+            # Filter out ALL unhelpful stack frames
+            if any(skip in stripped for skip in [
+                'test.js:', 'test-setup.js:',
+                'node:vm:', 'node:internal/', 'node:assert:',
+                'runner.js:', 'Module._compile', 'Module.load',
+                'Function._load', 'TracingChannel', 'wrapModuleLoad',
+                'Object..js', 'diagnostics_channel', 'Script.runInContext',
+                'Object.runInContext'
+            ]):
+                continue
+
+            # Only keep student file references
+            if any(student_path in stripped for student_path in student_file_paths):
+                result_lines.append(line)
+
+        return '\n'.join(result_lines)
+
+    def _rewrite_js_syntax_error(self, message, files):
+        lines = message.split('\n')
+        if not lines:
+            return message
+
+        first_line = lines[0]
+        file_map = {f['path']: f for f in files if 'original_path' in f}
+
+        found_file = None
+        offending_script_path = None
+        for file_path_key in file_map:
+            if file_path_key in first_line:
+                found_file = file_map[file_path_key]
+                offending_script_path = file_path_key
+                break
+        
+        if found_file:
+            match = re.search(re.escape(offending_script_path) + r':(\d+)', first_line)
+            if match:
+                line_num = int(match.group(1))
+                original_path = found_file['original_path']
+                offset_line = found_file['offset_line']
+                new_line_num = offset_line + line_num
+                
+                # Reconstruct the first line
+                new_first_line = first_line.replace(match.group(0), f"{original_path}:{new_line_num}", 1)
+                lines[0] = new_first_line
+                return '\n'.join(lines)
+
+        return message
 
     def _execute_js(self, files, test_code, setup_code, timeout, js_spec):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -3939,20 +4849,28 @@ class StructuredTestRunner:
                     timeout=max(1, min(30, int(timeout)))
                 )
             except FileNotFoundError:
-                return TestResult(False, 'Node.js runtime is unavailable on the grading server.')
+                return {'ok': False, 'message': 'Node.js runtime is unavailable on the grading server.'}
             except subprocess.TimeoutExpired:
-                return TestResult(False, 'JavaScript test exceeded the allotted time limit.')
+                return {'ok': False, 'message': 'JavaScript test exceeded the allotted time limit.'}
+
             if completed.returncode != 0:
                 stderr = completed.stderr.strip() or completed.stdout.strip() or 'Unknown Node.js error.'
-                return TestResult(False, stderr)
+                if completed.returncode == 2:
+                    return {'ok': False, 'message': f'Node.js harness failed: {stderr}'}
+                
+                new_stderr = self._rewrite_js_syntax_error(stderr, files)
+                return {'ok': False, 'message': new_stderr}
+
             if not os.path.exists(output_path):
-                return TestResult(False, 'JavaScript harness did not produce a result file.')
+                return {'ok': False, 'message': 'JavaScript harness did not produce a result file.'}
             with open(output_path, 'r', encoding='utf-8') as handle:
                 data = json.load(handle)
-            if data.get('ok'):
-                return TestResult(True, 'PASS')
-            message = data.get('message') or 'JavaScript assertion failed.'
-            return TestResult(False, message)
+
+            if not data.get('ok'):
+                message = data.get('message', '')
+                new_message = self._rewrite_js_stack_trace(message, files)
+                data['message'] = new_message
+            return data
 
 
 def _normalise_css_value(value):

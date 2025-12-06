@@ -52,6 +52,8 @@ $string['monacoui_use_simple_lsp_descr'] = 'Use the built-in lightweight LSP cli
 $string['monacoui_rich_features_descr'] = 'Enable extra Monaco providers (definitions, references, formatting, rename, folding) using the simple LSP transport.';
 $string['monacoui_disable_lsp_prefixes_descr'] = 'Disable automatic inclusion of template prefix code for LSP. When enabled, the LSP will only see the student code without template scaffolding.';
 $string['monacoui_lsp_workspace_config_descr'] = 'JSON configuration string sent to the LSP server via workspace/configuration requests. Useful for SQL LSP servers that need database connection details.';
+$string['monacoui_semantic_highlighting_descr'] = 'Enable LSP semantic highlighting (token coloring) when supported by the server. Default is off.';
+$string['monacoui_autosave_descr'] = 'Automatically back up student code to browser storage while editing.';
 $string['monaco_multifileui_import_from_scratchpad_descr'] = 'True to allow the Monaco editor to extract the answer code from Scratchpad JSON answers. Leave true unless you explicitly need to edit the raw JSON.';
 $string['monaco_multifileui_font_size_descr'] = 'Monaco editor font size (in points).';
 $string['monaco_multifileui_theme_descr'] = 'Optional Monaco editor theme identifier (for example "vs" or "vs-dark"). Leave blank to use automatic detection.';
@@ -75,6 +77,8 @@ $string['monaco_multifileui_template_files_descr'] = 'JSON structure describing 
 $string['monaco_multifileui_disable_new_files_descr'] = 'If enabled, students cannot create new files in the multifile explorer.';
 $string['monaco_multifileui_disable_new_folders_descr'] = 'If enabled, students cannot create new folders in the multifile explorer.';
 $string['monaco_multifileui_use_vscode_icons_descr'] = 'Use VS Code-style file and folder icons instead of the default Devicon set.';
+$string['monaco_multifileui_semantic_highlighting_descr'] = 'Enable LSP semantic highlighting (token coloring) when supported by the server. Default is off.';
+$string['monaco_multifileui_autosave_descr'] = 'Automatically back up student code to browser storage while editing.';
 $string['monaco_ui_notready'] = 'The Monaco editor could not be initialised.';
 $string['monaco_aria_label'] = 'Monaco code editor';
 $string['ui_monaco_multifile'] = 'Monaco (multi-file)';
@@ -783,6 +787,14 @@ test cases, a separate test run will be done for each test case.</p><p>
 If there is a risk of side-effects from a test case affecting later test cases
 you can add standard input to any one of the test cases to force the one-run-per-test-case
 mode.</p>';
+
+$string['qtype_typescript'] = '<p>A TypeScript question type with strict type checking.
+The student code is compiled using the TypeScript compiler (tsc) with strict mode enabled,
+then executed using Node.js. The test program consists of the student answer followed
+by each of the test case codes in turn, with a separator string being printed between them.
+</p><p>Compilation errors from type checking will be shown to students, helping them learn
+proper TypeScript type usage. The question type is useful for teaching type-safe programming
+with interfaces, type aliases, and explicit type annotations.</p>';
 
 $string['qtype_octave_function'] = '<p>A question type that specifies an
 Octave function, which the student has to submit in its entirety. Each test

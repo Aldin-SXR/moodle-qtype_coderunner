@@ -592,6 +592,18 @@ body#page-question-type-coderunner div[id^=fitem_id_extra_] {
     --mm-preview-console-muted: #4a5160;
     --mm-preview-scrollbar-track: rgba(0, 0, 0, 0.03);
     --mm-preview-scrollbar-thumb: rgba(0, 0, 0, 0.25);
+    --mm-autosave-color: #475569;
+    --mm-activity-bar-bg: #f3f3f3;
+    --mm-activity-bar-border: #d0d0d0;
+    --mm-activity-tab-color: #6c6c6c;
+    --mm-activity-tab-hover-color: #2c2c2c;
+    --mm-activity-tab-active-color: #2c2c2c;
+    --mm-activity-tab-active-bg: rgba(0, 0, 0, 0.04);
+    --mm-activity-tab-active-border: #0078d4;
+    --mm-activity-tab-hover-bg: rgba(0, 0, 0, 0.02);
+    --mm-search-text-color: #333333;
+    --mm-search-text-muted: #666666;
+    --mm-search-placeholder-color: #888888;
 }
 
 .monaco-multifile-container.monaco-multifile-theme-dark {
@@ -638,10 +650,23 @@ body#page-question-type-coderunner div[id^=fitem_id_extra_] {
     --mm-preview-console-muted: #a0a0a0;
     --mm-preview-scrollbar-track: rgba(255, 255, 255, 0.04);
     --mm-preview-scrollbar-thumb: rgba(255, 255, 255, 0.22);
+    --mm-autosave-color: #d9dce3;
+    --mm-activity-bar-bg: #333333;
+    --mm-activity-bar-border: #3e3e42;
+    --mm-activity-tab-color: #858585;
+    --mm-activity-tab-hover-color: #ffffff;
+    --mm-activity-tab-active-color: #ffffff;
+    --mm-activity-tab-active-bg: rgba(255, 255, 255, 0.1);
+    --mm-activity-tab-active-border: #3794ff;
+    --mm-activity-tab-hover-bg: rgba(255, 255, 255, 0.05);
+    --mm-search-text-color: #e0e0e0;
+    --mm-search-text-muted: #b0b0b0;
+    --mm-search-placeholder-color: #808080;
 }
 
 .monaco-multifile-container.monaco-multifile-theme-light {
     --mm-border-container: #d0d0d0;
+    --mm-autosave-color: #475569;
 }
 
 .monaco-multifile-container.monaco-multifile-theme-one-dark {
@@ -688,6 +713,18 @@ body#page-question-type-coderunner div[id^=fitem_id_extra_] {
     --mm-preview-console-muted: #aab3c0;
     --mm-preview-scrollbar-track: rgba(255, 255, 255, 0.05);
     --mm-preview-scrollbar-thumb: rgba(255, 255, 255, 0.25);
+    --mm-autosave-color: #daddf0;
+    --mm-activity-bar-bg: var(--mm-header-bg);
+    --mm-activity-bar-border: var(--mm-border-sidebar);
+    --mm-activity-tab-color: #6b717d;
+    --mm-activity-tab-hover-color: #abb2bf;
+    --mm-activity-tab-active-color: #ffffff;
+    --mm-activity-tab-active-bg: rgba(82, 139, 255, 0.15);
+    --mm-activity-tab-active-border: #528bff;
+    --mm-activity-tab-hover-bg: rgba(255, 255, 255, 0.08);
+    --mm-search-text-color: #d7dae0;
+    --mm-search-text-muted: #aab3c0;
+    --mm-search-placeholder-color: #6b717d;
 }
 
 .monaco-multifile-container.monaco-multifile-theme-one-light {
@@ -734,6 +771,18 @@ body#page-question-type-coderunner div[id^=fitem_id_extra_] {
     --mm-preview-console-muted: #526079;
     --mm-preview-scrollbar-track: rgba(0, 0, 0, 0.04);
     --mm-preview-scrollbar-thumb: rgba(0, 0, 0, 0.25);
+    --mm-autosave-color: #475569;
+    --mm-activity-bar-bg: #f2f3f7;
+    --mm-activity-bar-border: #dcdfe7;
+    --mm-activity-tab-color: #6b717d;
+    --mm-activity-tab-hover-color: #2c313a;
+    --mm-activity-tab-active-color: #1b3a73;
+    --mm-activity-tab-active-bg: #e5f0ff;
+    --mm-activity-tab-active-border: #528bff;
+    --mm-activity-tab-hover-bg: rgba(82, 139, 255, 0.08);
+    --mm-search-text-color: #2c313a;
+    --mm-search-text-muted: #526079;
+    --mm-search-placeholder-color: #6b717d;
 }
 
 .monaco-multifile-sidebar {
@@ -744,6 +793,46 @@ body#page-question-type-coderunner div[id^=fitem_id_extra_] {
     flex-direction: column;
     height: 100%;
     overflow: auto;
+}
+
+/* VSCode-like scrollbar styling for sidebar - invisible until hover on sidebar */
+.monaco-multifile-sidebar::-webkit-scrollbar {
+    width: 14px;
+    height: 14px;
+}
+
+.monaco-multifile-sidebar::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.monaco-multifile-sidebar::-webkit-scrollbar-thumb {
+    background-color: transparent;
+    border: 4px solid transparent;
+    border-radius: 8px;
+    background-clip: padding-box;
+    transition: background-color 0.2s ease;
+}
+
+/* Show scrollbar when hovering over the entire sidebar area */
+.monaco-multifile-sidebar:hover::-webkit-scrollbar-thumb {
+    background-color: rgba(121, 121, 121, 0.4);
+}
+
+.monaco-multifile-sidebar::-webkit-scrollbar-thumb:hover {
+    background-color: rgba(121, 121, 121, 0.7);
+}
+
+.monaco-multifile-sidebar::-webkit-scrollbar-corner {
+    background: transparent;
+}
+
+/* Dark theme scrollbar */
+.monaco-multifile-container.monaco-multifile-theme-dark .monaco-multifile-sidebar:hover::-webkit-scrollbar-thumb {
+    background-color: rgba(121, 121, 121, 0.4);
+}
+
+.monaco-multifile-container.monaco-multifile-theme-dark .monaco-multifile-sidebar::-webkit-scrollbar-thumb:hover {
+    background-color: rgba(191, 191, 191, 0.7);
 }
 
 .monaco-multifile-active textarea.edit_code {
@@ -834,6 +923,63 @@ body#page-question-type-coderunner div[id^=fitem_id_extra_] {
     height: 35px;
 }
 
+.monaco-sidebar-status {
+    margin-top: auto;
+    padding: 4px 6px;
+    border-top: 1px solid var(--mm-border-sidebar);
+    font-size: 10.5px;
+    color: var(--mm-autosave-color, #475569);
+    background-color: var(--mm-bg-sidebar);
+    min-height: 24px;
+    text-align: center;
+}
+
+.monaco-sidebar-status .monaco-autosave-status {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    align-items: center;
+    text-align: center;
+    position: relative;
+    width: 100%;
+}
+
+.monaco-autosave-text {
+    line-height: 1.2;
+}
+
+.monaco-autosave-restore {
+    margin-top: 0;
+    padding: 0;
+    border: none;
+    background: none;
+    font-size: 11px;
+    color: #1d4ed8;
+    text-decoration: underline;
+    cursor: pointer;
+    display: none;
+    text-align: left;
+}
+
+.monaco-autosave-restore:hover,
+.monaco-autosave-restore:focus-visible {
+    text-decoration: none;
+}
+
+.monaco-autosave-toast {
+    position: fixed;
+    right: 24px;
+    bottom: 24px;
+    padding: 10px 14px;
+    border-radius: 6px;
+    box-shadow: 0 4px 14px rgba(15, 23, 42, 0.25);
+    z-index: 9999;
+    font-size: 13px;
+    display: none;
+    background-color: #2563eb;
+    color: #ffffff;
+}
+
 .monaco-theme-control {
     position: relative;
     height: 100%;
@@ -907,6 +1053,7 @@ body#page-question-type-coderunner div[id^=fitem_id_extra_] {
     transition: background-color 0.1s ease;
     user-select: none;
     color: var(--mm-item-color);
+    position: relative;
 }
 
 .monaco-file-item.locked {
@@ -980,24 +1127,27 @@ body#page-question-type-coderunner div[id^=fitem_id_extra_] {
     opacity: 0.9;
 }
 
-.monaco-console-output-container {
-    scrollbar-width: thin;
-    scrollbar-color: var(--mm-preview-scrollbar-thumb) var(--mm-preview-scrollbar-track);
-}
-
+/* VSCode-like scrollbar for console output */
 .monaco-console-output-container::-webkit-scrollbar {
-    width: 8px;
-    height: 8px;
+    width: 10px;
+    height: 10px;
 }
 
 .monaco-console-output-container::-webkit-scrollbar-track {
-    background: var(--mm-preview-scrollbar-track);
-    border-radius: 4px;
+    background: transparent;
 }
 
 .monaco-console-output-container::-webkit-scrollbar-thumb {
-    background-color: var(--mm-preview-scrollbar-thumb);
-    border-radius: 4px;
+    background: rgba(121, 121, 121, 0.4);
+    border-radius: 5px;
+}
+
+.monaco-console-output-container::-webkit-scrollbar-thumb:hover {
+    background: rgba(100, 100, 100, 0.7);
+}
+
+.monaco-console-output-container::-webkit-scrollbar-corner {
+    background: transparent;
 }
 
 .monaco-folder-item:hover,
@@ -1032,6 +1182,42 @@ body#page-question-type-coderunner div[id^=fitem_id_extra_] {
     overflow-x: auto;
     overflow-y: hidden;
     height: 35px;
+    position: relative;
+    scrollbar-gutter: stable;
+}
+
+.monaco-multifile-tabs::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+}
+
+.monaco-multifile-tabs::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.monaco-multifile-tabs::-webkit-scrollbar-thumb {
+    background-color: transparent;
+    border: 4px solid transparent;
+    border-radius: 8px;
+    background-clip: padding-box;
+    transition: background-color 0.2s ease;
+    position: absolute;
+}
+
+.monaco-multifile-tabs:hover::-webkit-scrollbar-thumb {
+    background-color: rgba(121, 121, 121, 0.4);
+}
+
+.monaco-multifile-tabs::-webkit-scrollbar-thumb:hover {
+    background-color: rgba(121, 121, 121, 0.7);
+}
+
+.monaco-multifile-container.monaco-multifile-theme-dark .monaco-multifile-tabs:hover::-webkit-scrollbar-thumb {
+    background-color: rgba(121, 121, 121, 0.4);
+}
+
+.monaco-multifile-container.monaco-multifile-theme-dark .monaco-multifile-tabs::-webkit-scrollbar-thumb:hover {
+    background-color: rgba(191, 191, 191, 0.7);
 }
 
 .monaco-tab {
@@ -1209,6 +1395,29 @@ body#page-question-type-coderunner div[id^=fitem_id_extra_] {
     overflow: auto;
     background-color: #fff;
     position: relative;
+}
+
+/* VSCode-like scrollbar for preview iframe container */
+.monaco-preview-iframe-container::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+}
+
+.monaco-preview-iframe-container::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.monaco-preview-iframe-container::-webkit-scrollbar-thumb {
+    background: rgba(121, 121, 121, 0.4);
+    border-radius: 5px;
+}
+
+.monaco-preview-iframe-container::-webkit-scrollbar-thumb:hover {
+    background: rgba(100, 100, 100, 0.7);
+}
+
+.monaco-preview-iframe-container::-webkit-scrollbar-corner {
+    background: transparent;
 }
 
 .monaco-preview-loading {
@@ -1432,4 +1641,452 @@ body#page-question-type-coderunner div[id^=fitem_id_extra_] {
 .coderunner-diff-modal .coderunner-diff-host {
     flex: 1;
     min-height: 0;
+}
+
+/* Activity Bar Styles */
+.monaco-activity-bar {
+    width: 42px;
+    background-color: var(--mm-activity-bar-bg);
+    border-right: 1px solid var(--mm-activity-bar-border);
+    display: flex;
+    flex-direction: column;
+    flex-shrink: 0;
+    z-index: 5;
+}
+
+.monaco-activity-tabs {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+}
+
+.monaco-activity-actions {
+    margin-top: auto;
+    display: flex;
+    flex-direction: column;
+}
+
+.monaco-activity-tab {
+    width: 42px;
+    height: 42px;
+    background: none;
+    border: none;
+    border-left: 2px solid transparent;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+    color: var(--mm-activity-tab-color);
+    padding: 0;
+}
+
+.monaco-activity-tab:hover {
+    background-color: var(--mm-activity-tab-hover-bg);
+    color: var(--mm-activity-tab-hover-color);
+}
+
+.monaco-activity-tab.active {
+    background-color: var(--mm-activity-tab-active-bg);
+    color: var(--mm-activity-tab-active-color);
+    border-left-color: var(--mm-activity-tab-active-border);
+}
+
+.monaco-activity-tab .codicon {
+    font-size: 20px !important;
+    line-height: 1;
+}
+
+.monaco-activity-tab:focus-visible {
+    outline: 2px solid var(--mm-activity-tab-active-border);
+    outline-offset: -2px;
+}
+
+/* Sidebar modifications for collapsible behavior */
+.monaco-multifile-sidebar {
+    transition: width 0.15s ease, min-width 0.15s ease;
+}
+
+.monaco-multifile-sidebar.collapsed {
+    width: 0 !important;
+    min-width: 0 !important;
+    overflow: hidden !important;
+    border-right: none !important;
+}
+
+/* Outline Panel Styles */
+.monaco-multifile-outline-panel {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    overflow: hidden;
+}
+
+.monaco-outline-tree {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    overflow-x: auto;
+}
+
+/* Vertical scrollbar for outline tree (original) */
+.monaco-outline-tree::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+}
+
+.monaco-outline-tree::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.monaco-outline-tree::-webkit-scrollbar-thumb {
+    background: rgba(121, 121, 121, 0.4);
+    border-radius: 5px;
+}
+
+.monaco-outline-tree::-webkit-scrollbar-thumb:hover {
+    background: rgba(100, 100, 100, 0.7);
+}
+
+.monaco-outline-tree::-webkit-scrollbar-corner {
+    background: transparent;
+}
+
+.monaco-multifile-container.monaco-multifile-theme-dark .monaco-outline-tree::-webkit-scrollbar-thumb {
+    background: rgba(121, 121, 121, 0.4);
+}
+
+.monaco-multifile-container.monaco-multifile-theme-dark .monaco-outline-tree::-webkit-scrollbar-thumb:hover {
+    background: rgba(191, 191, 191, 0.7);
+}
+
+.monaco-multifile-outline-panel::-webkit-scrollbar-corner {
+    background: transparent;
+}
+
+.monaco-multifile-container.monaco-multifile-theme-dark .monaco-multifile-outline-panel::-webkit-scrollbar-thumb {
+    background: rgba(121, 121, 121, 0.4);
+}
+
+.monaco-multifile-container.monaco-multifile-theme-dark .monaco-multifile-outline-panel::-webkit-scrollbar-thumb:hover {
+    background: rgba(191, 191, 191, 0.7);
+}
+
+.monaco-symbol-item {
+    transition: background-color 0.1s ease;
+    border-radius: 3px;
+    margin: 0 4px 1px 4px;
+    position: relative;
+}
+
+.monaco-symbol-item:hover {
+    background-color: var(--mm-item-hover-bg);
+}
+
+.monaco-symbol-item .monaco-tree-icon {
+    flex-shrink: 0;
+}
+
+/* Symbol icon colors (VSCode-like) */
+.monaco-symbol-icon[data-symbol-kind="0"],  /* File */
+.monaco-symbol-icon[data-symbol-kind="1"] { /* Module */
+    color: #6c6c6c;
+}
+
+.monaco-symbol-icon[data-symbol-kind="4"],  /* Class */
+.monaco-symbol-icon[data-symbol-kind="22"] { /* Struct */
+    color: #ee9d28;
+}
+
+.monaco-symbol-icon[data-symbol-kind="5"],  /* Method */
+.monaco-symbol-icon[data-symbol-kind="11"] { /* Function */
+    color: #b180d7;
+}
+
+.monaco-symbol-icon[data-symbol-kind="6"],  /* Property */
+.monaco-symbol-icon[data-symbol-kind="7"] { /* Field */
+    color: var(--mm-icon-color);
+}
+
+.monaco-symbol-icon[data-symbol-kind="8"] { /* Constructor */
+    color: #b180d7;
+}
+
+.monaco-symbol-icon[data-symbol-kind="9"],  /* Enum */
+.monaco-symbol-icon[data-symbol-kind="21"] { /* Enum Member */
+    color: #ee9d28;
+}
+
+.monaco-symbol-icon[data-symbol-kind="10"] { /* Interface */
+    color: #75beff;
+}
+
+.monaco-symbol-icon[data-symbol-kind="12"] { /* Variable */
+    color: #75beff;
+}
+
+.monaco-symbol-icon[data-symbol-kind="13"] { /* Constant */
+    color: #4fc1ff;
+}
+
+.monaco-symbol-icon[data-symbol-kind="23"] { /* Event */
+    color: #ee9d28;
+}
+
+.monaco-symbol-icon[data-symbol-kind="100"] { /* CSS Selector */
+    color: #E79428;
+}
+
+/* Dark theme adjustments for symbol icons */
+.monaco-multifile-container.monaco-multifile-theme-dark .monaco-symbol-icon[data-symbol-kind="0"],
+.monaco-multifile-container.monaco-multifile-theme-dark .monaco-symbol-icon[data-symbol-kind="1"] {
+    color: #cccccc;
+}
+
+/* Indent guides for symbol hierarchy */
+.monaco-symbol-indent-guide {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 1px;
+    background-color: rgba(128, 128, 128, 0.2);
+    pointer-events: none;
+}
+
+.monaco-multifile-container.monaco-multifile-theme-dark .monaco-symbol-indent-guide {
+    background-color: rgba(255, 255, 255, 0.1);
+}
+
+/* Indent guides for Explorer folder hierarchy */
+.monaco-folder-indent-guide {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 1px;
+    background-color: rgba(128, 128, 128, 0.2);
+    pointer-events: none;
+}
+
+.monaco-multifile-container.monaco-multifile-theme-dark .monaco-folder-indent-guide {
+    background-color: rgba(255, 255, 255, 0.1);
+}
+
+.monaco-symbol-name {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.monaco-symbol-detail {
+    font-style: italic;
+    flex-shrink: 0;
+}
+
+.monaco-outline-empty {
+    padding: 8px;
+    font-style: italic;
+    text-align: center;
+    user-select: none;
+}
+
+/* Problems Panel */
+.monaco-multifile-problems-panel {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    overflow: hidden;
+}
+
+.monaco-problems-list {
+    flex: 1;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding: 4px 0;
+}
+
+/* VSCode-like scrollbar styling for problems list & search results */
+.monaco-problems-list::-webkit-scrollbar,
+.monaco-search-results::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+}
+
+.monaco-problems-list::-webkit-scrollbar-track,
+.monaco-search-results::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.monaco-problems-list::-webkit-scrollbar-thumb,
+.monaco-search-results::-webkit-scrollbar-thumb {
+    background: rgba(121, 121, 121, 0.4);
+    border-radius: 5px;
+}
+
+.monaco-problems-list::-webkit-scrollbar-thumb:hover,
+.monaco-search-results::-webkit-scrollbar-thumb:hover {
+    background: rgba(100, 100, 100, 0.7);
+}
+
+.monaco-problems-list::-webkit-scrollbar-corner,
+.monaco-search-results::-webkit-scrollbar-corner {
+    background: transparent;
+}
+
+/* Dark theme scrollbar */
+.monaco-multifile-container.monaco-multifile-theme-dark .monaco-problems-list::-webkit-scrollbar-thumb,
+.monaco-multifile-container.monaco-multifile-theme-dark .monaco-search-results::-webkit-scrollbar-thumb {
+    background: rgba(121, 121, 121, 0.4);
+}
+
+.monaco-multifile-container.monaco-multifile-theme-dark .monaco-problems-list::-webkit-scrollbar-thumb:hover,
+.monaco-multifile-container.monaco-multifile-theme-dark .monaco-search-results::-webkit-scrollbar-thumb:hover {
+    background: rgba(191, 191, 191, 0.7);
+}
+
+/* Search Panel */
+.monaco-multifile-search-panel {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    overflow: hidden;
+}
+
+.monaco-search-results {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    overflow-x: auto;
+}
+
+.monaco-problem-group {
+    font-size: 12px;
+    font-weight: 600;
+    margin: 6px 8px 2px 8px;
+    color: var(--mm-item-color);
+    text-transform: none;
+}
+
+.monaco-problem-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 4px 8px;
+    margin: 0 4px 2px 4px;
+    border-radius: 3px;
+    cursor: pointer;
+    transition: background-color 0.1s ease;
+}
+
+.monaco-problem-item:hover {
+    background-color: var(--mm-item-hover-bg);
+}
+
+.monaco-problem-icon {
+    font-size: 16px;
+    line-height: 16px;
+    margin-top: 3px;
+}
+
+.monaco-problem-content {
+    flex: 1;
+    min-width: 0;
+}
+
+.monaco-problem-message {
+    font-size: 13px;
+    color: var(--mm-item-color);
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.monaco-problem-meta {
+    font-size: 11px;
+    color: var(--mm-search-text-muted);
+}
+
+.monaco-problems-empty {
+    padding: 8px;
+    text-align: center;
+    font-style: italic;
+    color: var(--mm-search-text-muted);
+}
+
+.monaco-problem-filter-row {
+    padding: 8px;
+    border-bottom: 1px solid rgba(0,0,0,0.05);
+}
+
+.monaco-problem-filter-group {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(80px, 1fr));
+    gap: 8px;
+}
+
+.monaco-problem-filter {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 11px;
+    color: var(--mm-item-color);
+    cursor: pointer;
+    padding: 2px 10px;
+    border-radius: 10px;
+    border: 1px solid rgba(0,0,0,0.15);
+    min-height: 22px;
+    justify-content: center;
+    text-align: center;
+    box-sizing: border-box;
+    background-color: rgba(0,0,0,0.03);
+    width: 100%;
+}
+
+.monaco-problem-filter.active {
+    border-color: rgba(59,130,246,0.4);
+    color: var(--mm-item-color);
+    background-color: rgba(59,130,246,0.08);
+}
+
+.monaco-problem-filter .codicon {
+    font-size: 12px !important;
+    line-height: 12px;
+}
+
+.monaco-problem-filter input {
+    margin: 0;
+}
+
+/* Color filter icons to match problem severity */
+.monaco-problem-filter[data-severity="error"] .codicon {
+    color: #dc2626;
+}
+
+.monaco-problem-filter[data-severity="warning"] .codicon {
+    color: #d97706;
+}
+
+.monaco-problem-filter[data-severity="info"] .codicon {
+    color: #0284c7;
+}
+
+.monaco-problem-filter[data-severity="hint"] .codicon {
+    color: #16a34a;
+}
+
+/* Problem item icon colors */
+.monaco-problem-error .monaco-problem-icon {
+    color: #dc2626;
+}
+
+.monaco-problem-warning .monaco-problem-icon {
+    color: #d97706;
+}
+
+.monaco-problem-info .monaco-problem-icon {
+    color: #0284c7;
+}
+
+.monaco-problem-hint .monaco-problem-icon {
+    color: #16a34a;
 }

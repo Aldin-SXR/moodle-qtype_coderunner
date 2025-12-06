@@ -47,6 +47,10 @@ define(['jquery'], function($) {
                 uiWrapper = studentAnswer.get(0).current_ui_wrapper;
                 if (uiWrapper && uiWrapper.uiInstance) {
                     // If the textarea has a UI wrapper, and it's active.
+                    // Clear autosave data BEFORE stopping to avoid null reference
+                    if (typeof uiWrapper.uiInstance.clearLocalBackupData === 'function') {
+                        uiWrapper.uiInstance.clearLocalBackupData();
+                    }
                     uiWrapper.stop();
                     studentAnswer.val(reloadText);
                     uiWrapper.restart();

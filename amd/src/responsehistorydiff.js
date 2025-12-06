@@ -114,9 +114,12 @@ define(['core/modal', 'core/modal_events'], function(Modal, ModalEvents) {
         });
     }
 
-    function renderDiff(previous, current, title, language, previousLabel, currentLabel) {
+    function renderDiff(previous, current, title, language, previousLabel, currentLabel, returnElement) {
         ensureMonacoLoaded().then(function(monaco) {
             getModal(title).then(function(modal) {
+                if (returnElement) {
+                    modal.setReturnElement(returnElement);
+                }
                 const container = modal.getBody().find('.coderunner-diff-host').get(0);
                 if (!container) {
                     return;
@@ -172,7 +175,7 @@ define(['core/modal', 'core/modal_events'], function(Modal, ModalEvents) {
         const language = (link.dataset.language || 'plaintext').toLowerCase();
         const previousLabel = link.dataset.prevlabel || '';
         const currentLabel = link.dataset.currentlabel || '';
-        renderDiff(previous, current, title, language, previousLabel, currentLabel);
+        renderDiff(previous, current, title, language, previousLabel, currentLabel, link);
     }
 
     function init() {

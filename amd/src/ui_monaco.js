@@ -42,8 +42,10 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'core/str'], function(adap
         lsp_url: '',
         lsp_base_url: '',
         use_simple_lsp: true,
+        semantic_highlighting: false,
         disable_lsp_prefixes: false,
-        lsp_workspace_config: ''
+        lsp_workspace_config: '',
+        autosave: false
     };
 
     const LANGUAGE_MAP = {
@@ -118,6 +120,7 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'core/str'], function(adap
         cypher: 'cypher',
         hbase: 'hbase',
         solidity: 'sol',
+        sol: 'sol',  // Monaco language ID for Solidity
         html: 'html',
         css: 'css',
         json: 'json',
@@ -467,7 +470,9 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'core/str'], function(adap
 
         const disableLspPrefixes = normaliseBoolean(appliedParams.disable_lsp_prefixes, DEFAULTS.disable_lsp_prefixes);
         const prefixCode = disableLspPrefixes ? '' : (appliedParams.lsp_prefix_code || '');
+        const semanticHighlighting = normaliseBoolean(appliedParams.semantic_highlighting, DEFAULTS.semantic_highlighting || false);
         const workspaceConfig = appliedParams.lsp_workspace_config || DEFAULTS.lsp_workspace_config;
+        const readOnly = !!this.textarea.readOnly;
 
         const optionsForAdapter = {
             language: monacoLang,
@@ -478,11 +483,11 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'core/str'], function(adap
             useSimpleLsp: lspConfig.enabled ? lspConfig.useSimple : useSimple,
             lspEnabled: lspConfig.enabled,
             richFeatures: richFeatures,
+            semanticHighlighting: semanticHighlighting,
             workspaceConfig: workspaceConfig,
-            path: buildModelUri(textareaId, monacoLang)
+            path: buildModelUri(textareaId, monacoLang),
+            enableInlayHints: !readOnly
         };
-
-        const readOnly = !!this.textarea.readOnly;
         const fontSize = parseNumber(appliedParams.font_size, DEFAULTS.font_size);
         const tabSize = parseNumber(appliedParams.tab_size, DEFAULTS.tab_size);
         const minimapEnabled = normaliseBoolean(appliedParams.minimap, DEFAULTS.minimap);
@@ -511,12 +516,16 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'core/str'], function(adap
                     fixedOverflowWidgets: true,
                     scrollBeyondLastLine: false,
                     scrollBeyondLastColumn: 0,
+                    'semanticHighlighting.enabled': semanticHighlighting,
                     links: true,
                     codeLens: true,
                     lightbulb: {
                         enabled: true
                     },
-                    stickyScroll: { enabled: false }
+                    stickyScroll: { enabled: false },
+                    inlayHints: {
+                        enabled: !readOnly
+                    }
                 });
 
                 const theme = resolveTheme(appliedParams);
