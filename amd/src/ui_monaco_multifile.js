@@ -1860,8 +1860,16 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
         const problemsTab = $('<button type="button" class="monaco-activity-tab" data-view="problems"></button>');
         problemsTab.attr('title', 'Problems (Ctrl+Shift+M)');
         problemsTab.attr('aria-label', 'Problems');
-        problemsTab.append('<span class="codicon codicon-issues"></span>');
+        const problemsIconContainer = $('<span class="monaco-icon-with-badge"></span>');
+        problemsIconContainer.append('<span class="codicon codicon-issues"></span>');
+        const problemsBadge = $('<span class="monaco-activity-badge"></span>');
+        problemsBadge.hide();
+        problemsIconContainer.append(problemsBadge);
+        problemsTab.append(problemsIconContainer);
         problemsTab.on('click', () => this.toggleView('problems'));
+
+        this.problemsTab = problemsTab;
+        this.problemsBadge = problemsBadge;
 
         activityTabs.append(explorerTab, searchTab, outlineTab, problemsTab);
 
@@ -3086,8 +3094,23 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
             return a.startColumn - b.startColumn;
         });
         this.currentProblems = problems;
+        this.updateProblemsBadge();
         if (forceRender || this.activeView === 'problems') {
             this.renderProblemsList();
+        }
+    };
+
+    MonacoMultifileWrapper.prototype.updateProblemsBadge = function() {
+        if (!this.problemsBadge) {
+            return;
+        }
+        // Count only errors (severity.key === 'error')
+        const errorCount = this.currentProblems.filter(p => p.severity && p.severity.key === 'error').length;
+        if (errorCount > 0) {
+            this.problemsBadge.text(errorCount > 99 ? '99+' : errorCount.toString());
+            this.problemsBadge.show();
+        } else {
+            this.problemsBadge.hide();
         }
     };
 

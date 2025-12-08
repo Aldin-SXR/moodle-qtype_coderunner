@@ -1703,6 +1703,28 @@ body#page-question-type-coderunner div[id^=fitem_id_extra_] {
     outline-offset: -2px;
 }
 
+.monaco-icon-with-badge {
+    position: relative;
+    display: inline-block;
+}
+
+.monaco-activity-badge {
+    position: absolute;
+    top: -6px;
+    right: -8px;
+    background-color: #f48771;
+    color: white;
+    border-radius: 50%;
+    padding: 0 2px;
+    font-size: 9px;
+    font-weight: 600;
+    min-width: 16px;
+    height: 16px;
+    line-height: 16px;
+    text-align: center;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+
 /* Sidebar modifications for collapsible behavior */
 .monaco-multifile-sidebar {
     transition: width 0.15s ease, min-width 0.15s ease;
