@@ -5462,7 +5462,7 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
         try {
             this.vfs.renameFile(file.path, newPath, {allowLocked: this.authorMode});
         } catch (err) {
-            alert(err.message);
+            this.showToast(err.message, 'error');
             return;
         }
 
@@ -5518,10 +5518,61 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
         const settings = Object.assign({locked: false}, options || {});
         this.hideContextMenu();
         if (!this.authorMode && this.params.disable_new_files) {
-            alert('Creating new files is disabled for this question.');
+            this.showToast('Creating new files is disabled for this question.', 'warning');
             return;
         }
-        const filename = prompt('Enter new file name (with extension):');
+
+        // Find the target element to show inline input
+        let targetElement = null;
+        if (folderPath) {
+            // Find the folder item in the tree
+            this.fileTree.find('.monaco-folder-item').each((i, elem) => {
+                const $elem = $(elem);
+                const folderLabel = $elem.find('span').last().text();
+                const expectedName = folderPath.split('/').pop();
+                if (folderLabel === expectedName) {
+                    targetElement = $elem;
+                    return false; // Break the loop
+                }
+            });
+        } else {
+            // Add to root - use the file tree itself
+            targetElement = this.fileTree;
+        }
+
+        if (!targetElement) {
+            // Fallback to prompt if we can't find the element
+            const filename = prompt('Enter new file name (with extension):');
+            if (!filename) {
+                return;
+            }
+            this.createNewFile(folderPath, filename, settings);
+            return;
+        }
+
+        // Show inline input
+        this.showInlineInput(
+            targetElement,
+            'filename.ext',
+            '',
+            (filename) => {
+                this.createNewFile(folderPath, filename, settings);
+            },
+            () => {
+                // Cancelled - do nothing
+            },
+            'codicon-file',
+            false
+        );
+    };
+
+    /**
+     * Create a new file with validation
+     * @param {string} folderPath - The folder path to create the file in
+     * @param {string} filename - The filename
+     * @param {Object} settings - File settings (e.g., locked)
+     */
+    MonacoMultifileWrapper.prototype.createNewFile = function(folderPath, filename, settings) {
         if (!filename) {
             return;
         }
@@ -5535,19 +5586,19 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
             String(this.params.allowed_extensions || '');
         if (!this.vfs.isExtensionAllowed(fullPath)) {
             const label = ext ? `.${ext}` : '(none)';
-            alert(`File extension ${label} is not allowed. Allowed: ${allowedList}`);
+            this.showToast(`File extension ${label} is not allowed. Allowed: ${allowedList}`, 'error');
             return;
         }
 
         // Check if file already exists
         if (this.vfs.getFile(fullPath)) {
-            alert('File already exists');
+            this.showToast('File already exists', 'error');
             return;
         }
 
         // Check file limit
         if (!this.vfs.canAddFile(filename)) {
-            alert(`Cannot add more files. Maximum: ${this.params.max_files}`);
+            this.showToast(`Cannot add more files. Maximum: ${this.params.max_files}`, 'error');
             return;
         }
 
@@ -5575,10 +5626,60 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
     MonacoMultifileWrapper.prototype.promptNewFolder = function(parentPath) {
         this.hideContextMenu();
         if (!this.authorMode && this.params.disable_new_folders) {
-            alert('Creating new folders is disabled for this question.');
+            this.showToast('Creating new folders is disabled for this question.', 'warning');
             return;
         }
-        const foldername = prompt('Enter new folder name:');
+
+        // Find the target element to show inline input
+        let targetElement = null;
+        if (parentPath) {
+            // Find the folder item in the tree
+            this.fileTree.find('.monaco-folder-item').each((i, elem) => {
+                const $elem = $(elem);
+                const folderLabel = $elem.find('span').last().text();
+                const expectedName = parentPath.split('/').pop();
+                if (folderLabel === expectedName) {
+                    targetElement = $elem;
+                    return false; // Break the loop
+                }
+            });
+        } else {
+            // Add to root - use the file tree itself
+            targetElement = this.fileTree;
+        }
+
+        if (!targetElement) {
+            // Fallback to prompt if we can't find the element
+            const foldername = prompt('Enter new folder name:');
+            if (!foldername) {
+                return;
+            }
+            this.createNewFolder(parentPath, foldername);
+            return;
+        }
+
+        // Show inline input
+        this.showInlineInput(
+            targetElement,
+            'folder name',
+            '',
+            (foldername) => {
+                this.createNewFolder(parentPath, foldername);
+            },
+            () => {
+                // Cancelled - do nothing
+            },
+            'codicon-folder',
+            false
+        );
+    };
+
+    /**
+     * Create a new folder with validation
+     * @param {string} parentPath - The parent folder path
+     * @param {string} foldername - The folder name
+     */
+    MonacoMultifileWrapper.prototype.createNewFolder = function(parentPath, foldername) {
         if (!foldername) {
             return;
         }
@@ -5593,7 +5694,7 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
             this.renderFileTree();
             this.sync();
         } catch (err) {
-            alert(err.message);
+            this.showToast(err.message, 'error');
         }
     };
 
@@ -5603,13 +5704,62 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
             return;
         }
         if (this.isReadOnlyMode || (this.isFileLocked(file) && !this.authorMode)) {
-            alert('Cannot rename files in read-only mode');
+            this.showToast('Cannot rename files in read-only mode', 'warning');
             return;
         }
 
         const oldName = file.getName();
-        const newName = prompt('Rename file:', oldName);
-        if (!newName || newName === oldName) {
+
+        // Find the file item in the tree
+        let targetElement = null;
+        this.fileTree.find('.monaco-file-item').each((i, elem) => {
+            const $elem = $(elem);
+            const fileLabel = $elem.find('span').last().text();
+            if (fileLabel === oldName) {
+                // Check if this is the right file by matching path
+                const fileIcon = $elem.find('.monaco-tree-icon');
+                if (fileIcon.length > 0) {
+                    targetElement = $elem;
+                    return false; // Break the loop
+                }
+            }
+        });
+
+        if (!targetElement) {
+            // Fallback to prompt if we can't find the element
+            const newName = prompt('Rename file:', oldName);
+            if (!newName || newName === oldName) {
+                return;
+            }
+            this.performFileRename(oldPath, newName);
+            return;
+        }
+
+        // Show inline input
+        this.showInlineInput(
+            targetElement,
+            'new filename',
+            oldName,
+            (newName) => {
+                if (newName && newName !== oldName) {
+                    this.performFileRename(oldPath, newName);
+                }
+            },
+            () => {
+                // Cancelled - do nothing
+            },
+            'codicon-edit'
+        );
+    };
+
+    /**
+     * Perform the actual file rename operation
+     * @param {string} oldPath - The old file path
+     * @param {string} newName - The new file name
+     */
+    MonacoMultifileWrapper.prototype.performFileRename = function(oldPath, newName) {
+        const file = this.vfs.getFile(oldPath);
+        if (!file) {
             return;
         }
 
@@ -5651,23 +5801,27 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
             }
             this.sync();
         } catch (err) {
-            alert(err.message);
+            this.showToast(err.message, 'error');
         }
     };
 
     MonacoMultifileWrapper.prototype.deleteFolder = function(folderPath) {
         this.hideContextMenu();
-        if (!confirm(`Delete folder "${folderPath}"?`)) {
-            return;
-        }
 
-        try {
-            this.vfs.removeFolder(folderPath);
-            this.renderFileTree();
-            this.sync();
-        } catch (err) {
-            alert(err.message);
-        }
+        this.showConfirmModal(
+            'Delete Folder',
+            `Are you sure you want to delete the folder "${folderPath}" and all its contents?`,
+            () => {
+                try {
+                    this.vfs.removeFolder(folderPath);
+                    this.renderFileTree();
+                    this.sync();
+                } catch (err) {
+                    this.showToast(err.message, 'error');
+                }
+            },
+            null // onCancel - do nothing
+        );
     };
 
     MonacoMultifileWrapper.prototype.deleteFile = function(path) {
@@ -5678,11 +5832,27 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
         }
 
         if (this.isReadOnlyMode || (this.isFileLocked(file) && !this.authorMode)) {
-            alert('Cannot delete files in read-only mode');
+            this.showToast('Cannot delete files in read-only mode', 'warning');
             return;
         }
 
-        if (!confirm(`Delete ${file.getName()}?`)) {
+        this.showConfirmModal(
+            'Delete File',
+            `Are you sure you want to delete "${file.getName()}"?`,
+            () => {
+                this.performFileDelete(path);
+            },
+            null // onCancel - do nothing
+        );
+    };
+
+    /**
+     * Perform the actual file deletion
+     * @param {string} path - The file path to delete
+     */
+    MonacoMultifileWrapper.prototype.performFileDelete = function(path) {
+        const file = this.vfs.getFile(path);
+        if (!file) {
             return;
         }
 
@@ -6202,14 +6372,14 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
         // Find main HTML file
         const mainFile = this.findMainHtmlFile();
         if (!mainFile) {
-            alert('No HTML file found to preview. Please create an index.html or main.html file.');
+            this.showToast('No HTML file found to preview. Please create an index.html or main.html file.', 'warning');
             return;
         }
 
         // Build preview HTML
         const previewHTML = this.buildPreviewHTML(mainFile);
         if (!previewHTML) {
-            alert('Failed to build preview.');
+            this.showToast('Failed to build preview.', 'error');
             return;
         }
 
@@ -7267,6 +7437,292 @@ MonacoMultifileWrapper.prototype.getLegacyAutosaveKeys = function() {
         }
     };
 
+    /**
+     * Show a general-purpose toast notification
+     * @param {string} message - The message to display
+     * @param {string} severity - 'error', 'warning', or 'info'
+     * @param {number} duration - Duration in milliseconds (default: 5000)
+     */
+    MonacoMultifileWrapper.prototype.showToast = function(message, severity = 'info', duration = 5000) {
+        if (!message) {
+            return;
+        }
+
+        // Create toast container if it doesn't exist
+        if (!this.toastContainer) {
+            this.toastContainer = $('<div class="monaco-toast-container"></div>');
+            $('body').append(this.toastContainer);
+        }
+
+        const palette = {
+            error: {bg: '#b3261e', color: '#ffffff', icon: '\u26a0'},  // Warning sign
+            warning: {bg: '#f97316', color: '#111827', icon: '\u26a0'},  // Warning sign
+            info: {bg: '#2563eb', color: '#ffffff', icon: '\u2139'}  // Info symbol
+        }[severity] || {bg: '#2563eb', color: '#ffffff', icon: '\u2139'};
+
+        // Create individual toast
+        const toast = $('<div class="monaco-toast" role="alert"></div>');
+        toast.css({
+            backgroundColor: palette.bg,
+            color: palette.color
+        });
+
+        const iconSpan = $('<span class="monaco-toast-icon"></span>').text(palette.icon);
+        const messageSpan = $('<span class="monaco-toast-message"></span>').text(message);
+
+        toast.append(iconSpan).append(messageSpan);
+        this.toastContainer.append(toast);
+
+        // Fade in
+        toast.hide().fadeIn(200);
+
+        // Auto-remove after duration
+        setTimeout(() => {
+            toast.fadeOut(200, function() {
+                $(this).remove();
+            });
+        }, duration);
+    };
+
+    /**
+     * Show an inline input field for creating/renaming files or folders
+     * @param {jQuery} parentElement - The element to insert the input after
+     * @param {string} placeholder - Placeholder text
+     * @param {string} defaultValue - Default input value
+     * @param {function} onConfirm - Callback when user confirms (Enter key)
+     * @param {function} onCancel - Callback when user cancels (Esc key or blur)
+     * @param {string} iconClass - Optional codicon class for the icon (e.g., 'codicon-file', 'codicon-folder')
+     * @param {boolean} overlayExisting - If true, overlay on the parent element line (for rename). If false, render as a new inline row.
+     */
+    MonacoMultifileWrapper.prototype.showInlineInput = function(parentElement, placeholder, defaultValue,
+        onConfirm, onCancel, iconClass, overlayExisting = true) {
+        // Remove any existing inline input
+        this.cancelInlineInput();
+
+        const paddingLeft = parentElement.css('padding-left') || '0px';
+        const paddingRight = parentElement.css('padding-right') || '0px';
+        const isTreeItem = overlayExisting && (parentElement.hasClass('monaco-file-item') || parentElement.hasClass('monaco-folder-item'));
+        const inputContainer = $('<div class="monaco-inline-input-container"></div>');
+
+        if (isTreeItem) {
+            const originalPosition = parentElement.css('position');
+            parentElement.addClass('monaco-inline-editing');
+            parentElement.children().addClass('monaco-inline-hidden');
+            if (!originalPosition || originalPosition === 'static') {
+                parentElement.data('monaco-inline-original-position', originalPosition);
+                parentElement.css('position', 'relative');
+            }
+            inputContainer.addClass('monaco-inline-input-overlay');
+            inputContainer.css({
+                paddingLeft: paddingLeft,
+                paddingRight: paddingRight
+            });
+            parentElement.append(inputContainer);
+        } else {
+            inputContainer.css({
+                paddingLeft: paddingLeft,
+                paddingRight: paddingRight,
+                paddingTop: '4px',
+                paddingBottom: '4px',
+                display: 'flex',
+                alignItems: 'center',
+                marginBottom: '2px'
+            });
+            parentElement.after(inputContainer);
+        }
+
+        // Add icon if provided
+        if (iconClass) {
+            const icon = $(`<span class="codicon ${iconClass} monaco-inline-icon"></span>`);
+            icon.css({
+                marginRight: '6px',
+                fontSize: '14px',
+                flexShrink: '0'
+            });
+            inputContainer.append(icon);
+        }
+
+        const input = $('<input type="text" class="monaco-inline-input" />');
+        input.attr('placeholder', placeholder);
+        input.val(defaultValue || '');
+        input.css({
+            flex: '1',
+            fontSize: '13px',
+            padding: '2px 6px',
+            border: '1px solid #007acc',
+            borderRadius: '2px',
+            outline: 'none',
+            backgroundColor: 'var(--vscode-input-background, #3c3c3c)',
+            color: 'var(--vscode-input-foreground, #cccccc)'
+        });
+
+        inputContainer.append(input);
+
+        // Keep clicks inside the editor row from bubbling (prevents collapsing/opening)
+        inputContainer.on('mousedown click', (e) => {
+            e.stopPropagation();
+        });
+        input.on('mousedown click', (e) => {
+            e.stopPropagation();
+        });
+
+        // Store reference for cleanup
+        this.activeInlineInput = {
+            container: inputContainer,
+            input: input,
+            onCancel: onCancel,
+            parentElement: isTreeItem ? parentElement : null,
+            hiddenChildren: isTreeItem ? parentElement.children('.monaco-inline-hidden') : null,
+            originalPosition: isTreeItem ? parentElement.data('monaco-inline-original-position') : null
+        };
+
+        // Handle Enter key (confirm)
+        input.on('keydown', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                const value = input.val().trim();
+                this.cancelInlineInput();
+                if (value && onConfirm) {
+                    onConfirm(value);
+                } else if (onCancel) {
+                    onCancel();
+                }
+            } else if (e.key === 'Escape') {
+                e.preventDefault();
+                this.cancelInlineInput();
+                if (onCancel) {
+                    onCancel();
+                }
+            }
+        });
+
+        // Handle blur (cancel)
+        input.on('blur', () => {
+            // Use setTimeout to allow click events to fire first
+            setTimeout(() => {
+                if (this.activeInlineInput && this.activeInlineInput.input[0] === input[0]) {
+                    this.cancelInlineInput();
+                    if (onCancel) {
+                        onCancel();
+                    }
+                }
+            }, 150);
+        });
+
+        // Focus and select the text
+        input.focus();
+        if (defaultValue) {
+            // Select filename without extension for rename
+            const dotIndex = defaultValue.lastIndexOf('.');
+            if (dotIndex > 0) {
+                input[0].setSelectionRange(0, dotIndex);
+            } else {
+                input.select();
+            }
+        }
+    };
+
+    /**
+     * Cancel and remove any active inline input
+     */
+    MonacoMultifileWrapper.prototype.cancelInlineInput = function() {
+        if (this.activeInlineInput) {
+            if (this.activeInlineInput.hiddenChildren) {
+                this.activeInlineInput.hiddenChildren.removeClass('monaco-inline-hidden');
+            }
+            if (this.activeInlineInput.parentElement) {
+                this.activeInlineInput.parentElement.removeClass('monaco-inline-editing');
+                const originalPosition = this.activeInlineInput.originalPosition;
+                if (typeof originalPosition !== 'undefined') {
+                    this.activeInlineInput.parentElement.css('position', originalPosition);
+                }
+            }
+            this.activeInlineInput.container.remove();
+            this.activeInlineInput = null;
+        }
+    };
+
+    /**
+     * Show a custom confirmation modal (replaces window.confirm)
+     * @param {string} title - The modal title
+     * @param {string} message - The confirmation message
+     * @param {function} onConfirm - Callback when user confirms
+     * @param {function} onCancel - Callback when user cancels
+     */
+    MonacoMultifileWrapper.prototype.showConfirmModal = function(title, message, onConfirm, onCancel) {
+        // Remove any existing modal
+        if (this.confirmModal) {
+            this.confirmModal.remove();
+            this.confirmModal = null;
+        }
+
+        // Create modal backdrop
+        const backdrop = $('<div class="monaco-modal-backdrop"></div>');
+
+        // Create modal
+        const modal = $('<div class="monaco-modal"></div>');
+
+        // Modal header
+        const header = $('<div class="monaco-modal-header"></div>');
+        const titleEl = $('<h3 class="monaco-modal-title"></h3>').text(title);
+        header.append(titleEl);
+
+        // Modal body
+        const body = $('<div class="monaco-modal-body"></div>');
+        const messageEl = $('<p class="monaco-modal-message"></p>').text(message);
+        body.append(messageEl);
+
+        // Modal footer
+        const footer = $('<div class="monaco-modal-footer"></div>');
+        const cancelBtn = $('<button class="monaco-modal-btn monaco-modal-btn-cancel">Cancel</button>');
+        const confirmBtn = $('<button class="monaco-modal-btn monaco-modal-btn-confirm">Delete</button>');
+
+        footer.append(cancelBtn, confirmBtn);
+
+        // Assemble modal
+        modal.append(header, body, footer);
+        backdrop.append(modal);
+        $('body').append(backdrop);
+
+        this.confirmModal = backdrop;
+
+        // Handle confirm
+        confirmBtn.on('click', () => {
+            backdrop.remove();
+            this.confirmModal = null;
+            if (onConfirm) {
+                onConfirm();
+            }
+        });
+
+        // Handle cancel
+        const handleCancel = () => {
+            backdrop.remove();
+            this.confirmModal = null;
+            if (onCancel) {
+                onCancel();
+            }
+        };
+
+        cancelBtn.on('click', handleCancel);
+        backdrop.on('click', (e) => {
+            if (e.target === backdrop[0]) {
+                handleCancel();
+            }
+        });
+
+        // Handle Escape key
+        $(document).on('keydown.confirmModal', (e) => {
+            if (e.key === 'Escape') {
+                $(document).off('keydown.confirmModal');
+                handleCancel();
+            }
+        });
+
+        // Focus confirm button
+        confirmBtn.focus();
+    };
+
     MonacoMultifileWrapper.prototype.showAutosaveToast = function(message, severity = 'info') {
         if (!message) {
             return;
@@ -7327,13 +7783,18 @@ MonacoMultifileWrapper.prototype.getLegacyAutosaveKeys = function() {
             this.showAutosaveToast('Backup is missing file data.', 'error');
             return;
         }
-        if (!window.confirm('Restoring from backup will replace the current files. Continue?')) {
-            return;
-        }
-        this.replaceWorkspaceWithBackup(backupData);
-        this.lastAutosaveTimestamp = backupData.timestamp || Date.now();
-        this.setAutosaveStatus('restored', {timestamp: backupData.timestamp});
-        this.showAutosaveToast('Workspace restored from local backup.', 'info');
+
+        this.showConfirmModal(
+            'Restore from Backup',
+            'Restoring from backup will replace the current files. Do you want to continue?',
+            () => {
+                this.replaceWorkspaceWithBackup(backupData);
+                this.lastAutosaveTimestamp = backupData.timestamp || Date.now();
+                this.setAutosaveStatus('restored', {timestamp: backupData.timestamp});
+                this.showAutosaveToast('Workspace restored from local backup.', 'info');
+            },
+            null // onCancel - do nothing
+        );
     };
 
     MonacoMultifileWrapper.prototype.replaceWorkspaceWithBackup = function(backupData) {
