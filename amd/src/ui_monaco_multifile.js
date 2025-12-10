@@ -1275,10 +1275,14 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
         this.authorMode = isAnswerPreload || authorAttr === '1' || (authorAttr && String(authorAttr).toLowerCase() === 'true');
         const lockAttr = this.textarea.getAttribute('data-lockable');
         const lockable = lockAttr === '1' || (lockAttr && String(lockAttr).toLowerCase() === 'true');
+
+        // Check if textarea is readonly (e.g., when reviewing student answers)
+        this.isReadOnlyMode = !!this.textarea.readOnly;
+
         this.lockUiEnabled = this.authorMode && lockable;
         this.lockingEnabled = !this.authorMode || lockable;
-        this.allowNewFiles = this.authorMode || !this.params.disable_new_files;
-        this.allowNewFolders = this.authorMode || !this.params.disable_new_folders;
+        this.allowNewFiles = !this.isReadOnlyMode && (this.authorMode || !this.params.disable_new_files);
+        this.allowNewFolders = !this.isReadOnlyMode && (this.authorMode || !this.params.disable_new_folders);
         this.safeTextareaId = String(this.textareaId || 'answer').replace(/[^a-zA-Z0-9_.-]/g, '_');
         // Add an instance token so multiple editors on the same page (e.g., answer + answerpreload)
         // and concurrent student sessions never share the same workspace path.
@@ -2982,9 +2986,8 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
                 fontSize: '11px',
                 fontStyle: 'italic',
                 color: 'var(--mm-search-text-muted)',
-                position: 'absolute',
-                right: '8px',
-                paddingLeft: '4px'
+                paddingLeft: '4px',
+                whiteSpace: 'nowrap'
             });
             symbolItem.append(symbolDetail);
         }
@@ -3058,10 +3061,19 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
         }
         const markers = this.monaco.editor.getModelMarkers({});
         const problems = [];
+        const workspacePrefix = '/' + this.workspaceRoot + '/';
         for (let i = 0; i < markers.length; i++) {
             const marker = markers[i];
             if (!marker) {
                 continue;
+            }
+            // Filter out markers that don't belong to this editor's workspace
+            if (marker.resource && marker.resource.path) {
+                const markerPath = marker.resource.path;
+                if (markerPath.indexOf(workspacePrefix) !== 0) {
+                    // This marker belongs to a different editor instance, skip it
+                    continue;
+                }
             }
             const info = this.getSeverityInfo(marker.severity);
             const startLine = marker.startLineNumber || 1;
@@ -4639,7 +4651,7 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
 
             fileItem.append(fileIcon, fileName);
 
-            const draggable = this.authorMode || !locked;
+            const draggable = !this.isReadOnlyMode && (this.authorMode || !locked);
             fileItem.prop('draggable', draggable);
 
             if (locked) {
@@ -4650,7 +4662,7 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
             fileItem.on('click', () => this.openFile(file.path));
 
             fileItem.on('contextmenu', (e) => {
-                if (locked && !this.authorMode) {
+                if (this.isReadOnlyMode || (locked && !this.authorMode)) {
                     return;
                 }
                 e.preventDefault();
@@ -4846,8 +4858,8 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
         }
         this.editor.focus();
 
-        // Set read-only for students when file is locked
-        const isReadOnly = this.isFileLocked(file) && !this.authorMode;
+        // Set read-only for students when file is locked OR when in readonly mode (e.g., reviewing)
+        const isReadOnly = this.isReadOnlyMode || (this.isFileLocked(file) && !this.authorMode);
         this.editor.updateOptions({ readOnly: isReadOnly });
 
         this.addOpenTab(file.path); // Track tab by click order
@@ -5362,7 +5374,7 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
                 return;
             }
             const locked = this.isFileLocked(file);
-            const canModifyStructure = this.authorMode || !locked;
+            const canModifyStructure = !this.isReadOnlyMode && (this.authorMode || !locked);
             if (canModifyStructure) {
                 addMenuItem('<span class="codicon codicon-edit"></span>', 'Rename', () => this.renameFile(target));
                 addMenuItem('<span class="codicon codicon-trash"></span>', 'Delete', () => this.deleteFile(target));
@@ -5424,7 +5436,7 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
         if (!file) {
             return;
         }
-        if (this.isFileLocked(file) && !this.authorMode) {
+        if (this.isReadOnlyMode || (this.isFileLocked(file) && !this.authorMode)) {
             this.draggedFilePath = null;
             this.clearDragIndicators();
             return;
@@ -5494,7 +5506,7 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
         this.hideContextMenu();
         file.locked = !!locked;
         if (this.activeFile && this.activeFile.path === path && this.editor) {
-            const isReadOnly = this.isFileLocked(file) && !this.authorMode;
+            const isReadOnly = this.isReadOnlyMode || (this.isFileLocked(file) && !this.authorMode);
             this.editor.updateOptions({readOnly: isReadOnly});
         }
         this.renderFileTree();
@@ -5590,8 +5602,8 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
         if (!file) {
             return;
         }
-        if (this.isFileLocked(file) && !this.authorMode) {
-            alert('Cannot rename locked files');
+        if (this.isReadOnlyMode || (this.isFileLocked(file) && !this.authorMode)) {
+            alert('Cannot rename files in read-only mode');
             return;
         }
 
@@ -5665,8 +5677,8 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
             return;
         }
 
-        if (this.isFileLocked(file) && !this.authorMode) {
-            alert('Cannot delete locked files');
+        if (this.isReadOnlyMode || (this.isFileLocked(file) && !this.authorMode)) {
+            alert('Cannot delete files in read-only mode');
             return;
         }
 
