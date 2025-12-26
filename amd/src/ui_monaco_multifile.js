@@ -1337,6 +1337,16 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
         this.outlineTreeContainer = null;
         this.problemsPanel = null;
         this.problemsListContainer = null;
+        this.apiTesterPanel = null;
+        this.rightPanel = null;
+        this.tabBarContainer = null;
+        this.requestBuilderContainer = null;
+        this.responseViewerContainer = null;
+        this.queryParamsContainer = null;
+        this.bodyEditor = null;
+        this.bodyType = 'json';
+        this.currentRoutes = null;
+        this.selectedRoute = null;
         this.currentOutlineSymbols = [];
         this.problemFilters = {
             error: true,
@@ -1346,7 +1356,7 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
         };
         this.currentProblems = [];
         this.markerChangeListener = null;
-        this.activeView = 'explorer'; // 'explorer', 'search', 'outline', or 'problems'
+        this.activeView = 'explorer'; // 'explorer', 'search', 'outline', 'problems', or 'api-tester'
         this.sidebarCollapsed = false;
         this.userSelectedTheme = readStoredThemePreference();
         this.currentTheme = resolveTheme(this.params);
@@ -1439,6 +1449,29 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
         if (this.form) {
             this.form.addEventListener('submit', () => {
                 this.sync(true);
+            });
+
+            // Hook "Finish attempt..." link to sync before navigation
+            document.addEventListener('click', (e) => {
+                const target = e.target.closest('a.endtestlink');
+                if (target) {
+                    e.preventDefault();
+                    this.sync(false);
+                    // Trigger form submission to save state before navigating
+                    const finishInput = document.createElement('input');
+                    finishInput.type = 'hidden';
+                    finishInput.name = 'next';
+                    finishInput.value = '1';
+                    this.form.appendChild(finishInput);
+
+                    const pageInput = document.createElement('input');
+                    pageInput.type = 'hidden';
+                    pageInput.name = 'thispage';
+                    pageInput.value = '-1';
+                    this.form.appendChild(pageInput);
+
+                    this.form.submit();
+                }
             });
         }
 
@@ -1658,6 +1691,7 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
             alignItems: 'center',
             marginBottom: '5px'
         });
+        this.tabBarContainer = tabBarContainer;
 
         // Tab bar
         this.tabBar = $('<div class="monaco-multifile-tabs"></div>');
@@ -1687,12 +1721,15 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
         const themeIcon = $('<span class="codicon codicon-color-mode"></span>');
         themeBtn.append(themeIcon);
         themeBtn.attr('aria-label', 'Select theme');
-        themeBtn.on('click', (e) => {
+        const themeBtnHandler = (e) => {
             e.preventDefault();
             e.stopPropagation();
+            e.stopImmediatePropagation();
             this.toggleThemeMenu();
-        });
+        };
+        themeBtn.on('click', themeBtnHandler);
         this.themeButton = themeBtn;
+        this.themeBtnHandler = themeBtnHandler;
 
         this.themeMenu = $('<div class="monaco-theme-menu" role="menu"></div>');
         this.themeMenu.hide();
@@ -1708,13 +1745,20 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
         const previewIcon = $('<span class="codicon codicon-preview"></span>');
         const previewLabel = $('<span class="monaco-preview-label">Preview</span>');
         previewBtn.append(previewIcon, previewLabel);
-        previewBtn.on('click', () => {
+        const previewBtnHandler = (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            e.stopImmediatePropagation();
             this.hideThemeMenu();
             this.showPreview();
-        });
+        };
+        previewBtn.on('click', previewBtnHandler);
+        this.previewBtnHandler = previewBtnHandler;
 
         tabControls.append(previewBtn);
         tabControls.append(this.themeControl);
+        this.previewBtn = previewBtn;
+        this.tabControls = tabControls;
         this.autosaveStatusBar = $('<div class="monaco-autosave-status" role="status" aria-live="polite"></div>');
         this.autosaveStatusText = $('<span class="monaco-autosave-text"></span>');
         this.autosaveRestoreBtn = $('<button type="button" class="monaco-autosave-restore">Restore backup</button>');
@@ -1732,6 +1776,7 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
 
         tabBarContainer.append(this.tabBar);
         tabBarContainer.append(tabControls);
+        this.tabBarContainer = tabBarContainer;
         this.refreshThemeMenu();
         this.updateThemeButtonState();
         this.setAutosaveStatus('idle');
@@ -1746,6 +1791,15 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
 
         rightPanel.append(tabBarContainer);
         rightPanel.append(this.editorContainer);
+        this.rightPanel = rightPanel;
+
+        if (this.isFlightQuestion()) {
+            this.createApiTesterPanel();
+            if (this.apiTesterPanel) {
+                this.apiTesterPanel.hide();
+                this.rightPanel.append(this.apiTesterPanel);
+            }
+        }
 
         this.container.style.position = 'relative';
 
@@ -1835,6 +1889,110 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
         this.sidebarStatusBar.append(this.autosaveStatusBar);
     };
 
+    MonacoMultifileWrapper.prototype.showMainEditorLayout = function() {
+        if (this.sidebar) {
+            this.sidebar.show();
+            this.sidebar.removeClass('collapsed');
+            this.sidebarCollapsed = false;
+        }
+        if (this.tabBarContainer) {
+            this.tabBarContainer.show();
+        }
+        if (this.editorContainer) {
+            this.editorContainer.show();
+        }
+        if (this.apiTesterPanel) {
+            this.apiTesterPanel.hide();
+        }
+        if (this.apiTesterTopBar) {
+            this.apiTesterTopBar.hide();
+        }
+        this.attachSharedControlsToMainBar();
+    };
+
+    MonacoMultifileWrapper.prototype.showApiTesterLayout = function() {
+        if (this.sidebar) {
+            this.sidebar.hide();
+            this.sidebar.addClass('collapsed');
+            this.sidebarCollapsed = true;
+        }
+        if (this.tabBarContainer) {
+            this.tabBarContainer.hide();
+        }
+        if (this.editorContainer) {
+            this.editorContainer.hide();
+        }
+        if (this.apiTesterPanel) {
+            this.apiTesterPanel.show();
+        }
+        if (this.apiTesterTopBar) {
+            this.apiTesterTopBar.show();
+        }
+        this.attachSharedControlsToApiTopBar();
+    };
+
+    MonacoMultifileWrapper.prototype.attachSharedControlsToApiTopBar = function() {
+        if (!this.apiTesterControls) {
+            return;
+        }
+        if (this.previewBtn && this.previewBtn.parent()[0] !== this.apiTesterControls[0]) {
+            this.previewBtn.detach();
+            this.apiTesterControls.append(this.previewBtn);
+            // Re-bind event handler to ensure context is correct
+            if (this.previewBtnHandler) {
+                this.previewBtn.off('click').on('click', this.previewBtnHandler);
+            }
+        } else if (this.previewBtn) {
+            if (this.previewBtnHandler) {
+                this.previewBtn.off('click').on('click', this.previewBtnHandler);
+            }
+        }
+        if (this.themeControl && this.themeControl.parent()[0] !== this.apiTesterControls[0]) {
+            this.themeControl.detach();
+            this.apiTesterControls.append(this.themeControl);
+            // Re-bind event handler to ensure context is correct
+            if (this.themeBtnHandler && this.themeButton) {
+                this.themeButton.off('click').on('click', this.themeBtnHandler);
+            }
+        } else if (this.themeControl) {
+            if (this.themeBtnHandler && this.themeButton) {
+                this.themeButton.off('click').on('click', this.themeBtnHandler);
+            }
+        }
+    };
+
+    MonacoMultifileWrapper.prototype.attachSharedControlsToMainBar = function() {
+        if (!this.tabControls) {
+            return;
+        }
+        if (this.previewBtn && this.previewBtn.parent()[0] !== this.tabControls[0]) {
+            this.previewBtn.detach();
+            this.tabControls.append(this.previewBtn);
+            // Re-bind event handler to ensure context is correct
+            if (this.previewBtnHandler) {
+                this.previewBtn.off('click').on('click', this.previewBtnHandler);
+            }
+        }
+        if (this.themeControl && this.themeControl.parent()[0] !== this.tabControls[0]) {
+            this.themeControl.detach();
+            this.tabControls.append(this.themeControl);
+            // Re-bind event handler to ensure context is correct
+            if (this.themeBtnHandler && this.themeButton) {
+                this.themeButton.off('click').on('click', this.themeBtnHandler);
+            }
+        }
+    };
+
+    MonacoMultifileWrapper.prototype.isFlightQuestion = function() {
+        const hasLspUrl = this.params && this.params.lsp_base_url && this.params.lsp_base_url.trim() !== '';
+        if (!hasLspUrl || !this.vfs) {
+            return false;
+        }
+        return this.vfs.getAllFiles().some(function(file) {
+            return file.path && file.path.toLowerCase().endsWith('.php');
+        });
+    };
+
     MonacoMultifileWrapper.prototype.createActivityBar = function() {
         const activityBar = $('<div class="monaco-activity-bar"></div>');
 
@@ -1875,7 +2033,19 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
         this.problemsTab = problemsTab;
         this.problemsBadge = problemsBadge;
 
-        activityTabs.append(explorerTab, searchTab, outlineTab, problemsTab);
+        const tabsToAdd = [explorerTab, searchTab, outlineTab, problemsTab];
+
+        // API Tester tab (Flight questions only)
+        if (this.isFlightQuestion()) {
+            const apiTesterTab = $('<button type="button" class="monaco-activity-tab" data-view="api-tester"></button>');
+            apiTesterTab.attr('title', 'API Tester');
+            apiTesterTab.attr('aria-label', 'API Tester');
+            apiTesterTab.append('<span class="codicon codicon-debug-console"></span>');
+            apiTesterTab.on('click', () => this.toggleView('api-tester'));
+            tabsToAdd.push(apiTesterTab);
+        }
+
+        activityTabs.append(tabsToAdd);
 
         // Future: Activity actions at bottom
         const activityActions = $('<div class="monaco-activity-actions"></div>');
@@ -1887,6 +2057,13 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
     };
 
     MonacoMultifileWrapper.prototype.toggleView = function(viewName) {
+        if (viewName === 'api-tester') {
+            if (this.activeView === 'api-tester') {
+                return;
+            }
+            this.switchToView(viewName);
+            return;
+        }
         // If clicking active view, toggle sidebar collapse
         if (this.activeView === viewName && !this.sidebarCollapsed) {
             this.collapseSidebar();
@@ -1930,7 +2107,8 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
             'explorer': 'Explorer',
             'search': 'Search',
             'outline': 'Outline',
-            'problems': 'Problems'
+            'problems': 'Problems',
+            'api-tester': 'API Tester'
         };
         const title = titleMap[viewName] || 'Explorer';
         this.sidebar.find('.monaco-sidebar-title').text(title);
@@ -1944,10 +2122,13 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
             this.showOutlineView();
         } else if (viewName === 'problems') {
             this.showProblemsView();
+        } else if (viewName === 'api-tester') {
+            this.showApiTesterView();
         }
     };
 
     MonacoMultifileWrapper.prototype.showExplorerView = function() {
+        this.showMainEditorLayout();
         // Hide search panel
         if (this.searchPanel) {
             this.searchPanel.hide();
@@ -1960,6 +2141,9 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
         if (this.problemsPanel) {
             this.problemsPanel.hide();
         }
+        if (this.apiTesterPanel) {
+            this.apiTesterPanel.hide();
+        }
 
         // Show file tree
         if (this.fileTree) {
@@ -1971,6 +2155,7 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
     };
 
     MonacoMultifileWrapper.prototype.showSearchView = function() {
+        this.showMainEditorLayout();
         // Hide file tree
         if (this.fileTree) {
             this.fileTree.hide();
@@ -1982,6 +2167,9 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
         }
         if (this.problemsPanel) {
             this.problemsPanel.hide();
+        }
+        if (this.apiTesterPanel) {
+            this.apiTesterPanel.hide();
         }
 
         // Show search panel
@@ -2001,6 +2189,7 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
     };
 
     MonacoMultifileWrapper.prototype.showOutlineView = function() {
+        this.showMainEditorLayout();
         // Hide file tree
         if (this.fileTree) {
             this.fileTree.hide();
@@ -2012,6 +2201,9 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
         }
         if (this.problemsPanel) {
             this.problemsPanel.hide();
+        }
+        if (this.apiTesterPanel) {
+            this.apiTesterPanel.hide();
         }
 
         // Show outline panel
@@ -2025,6 +2217,7 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
     };
 
     MonacoMultifileWrapper.prototype.showProblemsView = function() {
+        this.showMainEditorLayout();
         if (this.fileTree) {
             this.fileTree.hide();
         }
@@ -2038,7 +2231,21 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
             this.problemsPanel.show();
             this.refreshProblems();
         }
+        if (this.apiTesterPanel) {
+            this.apiTesterPanel.hide();
+        }
         this.updateSidebarActions('problems');
+    };
+
+    MonacoMultifileWrapper.prototype.showApiTesterView = function() {
+        if (!this.apiTesterPanel) {
+            // Fallback if not available
+            this.showExplorerView();
+            return;
+        }
+        this.showApiTesterLayout();
+        this.renderApiTesterPanel();
+        this.updateSidebarActions('api-tester');
     };
 
     MonacoMultifileWrapper.prototype.refreshOutline = function() {
@@ -2059,8 +2266,16 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
 
         const self = this;
 
-        // Collect symbols from all files
-        const filesToProcess = this.vfs.getAllFiles();
+        // Collect symbols from all files (excluding hidden files for students)
+        let filesToProcess = this.vfs.getAllFiles();
+
+        // Filter out hidden files for students
+        if (!this.authorMode) {
+            filesToProcess = filesToProcess.filter(function(file) {
+                const isHidden = file.hidden || (file.path && file.path.match(/^\/?_[^\/]+\.php$/));
+                return !isHidden;
+            });
+        }
 
         // Process each file and collect symbols
         const fileSymbolPromises = filesToProcess.map(function(file) {
@@ -3075,12 +3290,27 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
                     continue;
                 }
             }
+
+            const relativePath = this.getRelativePathFromUri(marker.resource);
+
+            // Skip problems from hidden files for students
+            if (!this.authorMode && relativePath) {
+                const isHidden = relativePath.match(/^\/?_[^\/]+\.php$/);
+                if (isHidden) {
+                    continue;
+                }
+                // Also check if the file is marked as hidden in VFS
+                const file = this.vfs.getFile(relativePath);
+                if (file && file.hidden) {
+                    continue;
+                }
+            }
+
             const info = this.getSeverityInfo(marker.severity);
             const startLine = marker.startLineNumber || 1;
             const startColumn = marker.startColumn || 1;
             const endLine = marker.endLineNumber || startLine;
             const endColumn = marker.endColumn || startColumn;
-            const relativePath = this.getRelativePathFromUri(marker.resource);
             problems.push({
                 message: marker.message || '',
                 severity: info,
@@ -3486,6 +3716,28 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
         this.problemsPanel = panel;
     };
 
+    MonacoMultifileWrapper.prototype.createApiTesterPanel = function() {
+        if (this.apiTesterPanel) {
+            return;
+        }
+        const panel = $('<div class="monaco-api-tester-panel"></div>');
+        panel.css({
+            display: 'none',
+            flex: '1',
+            overflow: 'visible',
+            minHeight: 0
+        });
+        const topBar = $('<div class="monaco-multifile-tabbar-container monaco-api-topbar"></div>');
+        const topBarTitle = $('<div class="monaco-api-topbar-title"></div>').text('API Tester');
+        const topBarControls = $('<div class="monaco-api-topbar-controls"></div>');
+        topBar.append(topBarTitle, topBarControls);
+        this.apiTesterTopBar = topBar;
+        this.apiTesterControls = topBarControls;
+        panel.append(topBar);
+
+        this.apiTesterPanel = panel;
+    };
+
     MonacoMultifileWrapper.prototype.createContextMenu = function() {
         this.contextMenu = $('<div class="monaco-multifile-context-menu"></div>');
         this.contextMenu.css({
@@ -3627,6 +3879,15 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
             if (results.length >= MAX_SEARCH_RESULTS) {
                 break;
             }
+
+            // Skip hidden files in search (unless in author mode)
+            if (!this.authorMode) {
+                const isHidden = file.hidden || (file.path && file.path.match(/^\/?_[^\/]+\.php$/));
+                if (isHidden) {
+                    continue;
+                }
+            }
+
             const content = file.model ? file.model.getValue() : (file.content || '');
             if (!content) {
                 continue;
@@ -4611,7 +4872,24 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
         const files = this.vfs.getFilesInFolder(folderPath);
         files.sort((a, b) => a.getName().localeCompare(b.getName()));
 
-        files.forEach(file => {
+        // Filter out hidden files for students (show them to authors)
+        const visibleFiles = files.filter(file => {
+            // In author mode, show all files
+            if (this.authorMode) {
+                return true;
+            }
+            // For students, hide files marked as hidden or stub files
+            if (file.hidden) {
+                return false;
+            }
+            const fileName = file.getName();
+            if (fileName.match(/^_[^\/]+\.php$/)) {
+                return false;
+            }
+            return true;
+        });
+
+        visibleFiles.forEach(file => {
             const fileItem = $('<div class="monaco-file-item"></div>');
             fileItem.css({
                 padding: '4px 8px',
@@ -4635,11 +4913,21 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
             }
 
             const locked = this.isFileLocked(file);
+            const isHidden = file.hidden || (file.path && file.path.match(/^\/?_[^\/]+\.php$/));
+
             if (this.activeFile && this.activeFile.path === file.path) {
                 fileItem.addClass('active');
             }
             if (locked) {
                 fileItem.addClass('locked');
+            }
+            if (isHidden) {
+                fileItem.addClass('hidden-stub');
+                // Add subtle visual styling for hidden stub files in author mode
+                fileItem.css({
+                    opacity: '0.6',
+                    fontStyle: 'italic'
+                });
             }
 
             const iconDescriptor = this.getIconDescriptorForFile(file);
@@ -4657,6 +4945,22 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
             if (locked) {
                 const lockIcon = $('<span class="monaco-lock-icon codicon codicon-lock" title="Locked file"></span>');
                 fileItem.append(lockIcon);
+            }
+
+            // Add hidden indicator badge for authors
+            if (isHidden && this.authorMode) {
+                const hiddenBadge = $('<span class="monaco-hidden-badge" title="Hidden from students (type stubs)"></span>');
+                hiddenBadge.text('stub');
+                hiddenBadge.css({
+                    fontSize: '9px',
+                    padding: '1px 4px',
+                    backgroundColor: '#666',
+                    color: '#fff',
+                    borderRadius: '2px',
+                    marginLeft: '4px',
+                    fontStyle: 'normal'
+                });
+                fileItem.append(hiddenBadge);
             }
 
             fileItem.on('click', () => this.openFile(file.path));
@@ -6050,10 +6354,62 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
         return dirParts.join('/');
     };
 
+    MonacoMultifileWrapper.prototype.getFlightUrl = function() {
+        // Get the Flight server HTTP URL from the WebSocket lsp_base_url
+        if (!this.isFlightQuestion()) {
+            return null;
+        }
+
+        const lspBaseUrl = this.params.lsp_base_url;
+        if (!lspBaseUrl || !this.workspaceInstanceId) {
+            return null;
+        }
+
+        // Convert WSS to HTTPS for HTTP URL
+        const httpBaseUrl = lspBaseUrl.replace(/^wss:/, 'https:').replace(/^ws:/, 'http:');
+
+        // Format: https://[flight-server]/cr/[workspace-id]/
+        return httpBaseUrl.replace(/\/$/, '') + '/cr/' + this.workspaceInstanceId + '/';
+    };
+
+    MonacoMultifileWrapper.prototype.replaceLocalhostWithFlightUrl = function(html, flightUrl) {
+        if (!flightUrl) {
+            return html;
+        }
+
+        // Remove trailing slash from Flight URL for replacement
+        const flightUrlNoSlash = flightUrl.replace(/\/$/, '');
+
+        // Comprehensive localhost replacement patterns
+        // Pattern 1: http://localhost with optional port
+        html = html.replace(/http:\/\/localhost(?::[\d]+)?/gi, flightUrlNoSlash);
+
+        // Pattern 2: https://localhost with optional port
+        html = html.replace(/https:\/\/localhost(?::[\d]+)?/gi, flightUrlNoSlash);
+
+        // Pattern 3: //localhost (protocol-relative URLs)
+        html = html.replace(/\/\/localhost(?::[\d]+)?/gi, '//' + flightUrlNoSlash.replace(/^https?:\/\//, ''));
+
+        // Pattern 4: 'localhost' or "localhost" in quotes (common in fetch/ajax calls)
+        // This must be done carefully to avoid breaking relative paths
+        html = html.replace(/(['"])localhost\b/gi, '$1' + flightUrlNoSlash);
+
+        return html;
+    };
+
     MonacoMultifileWrapper.prototype.findMainHtmlFile = function() {
         // Find the main HTML file to preview
-        // Priority: index.html > main.html > first .html file
+        // Priority: frontend/index.html (Flight only) > index.html > main.html > first .html file
         const files = this.vfs.getAllFiles();
+
+        // NEW: For Flight questions, check frontend/index.html first
+        if (this.isFlightQuestion()) {
+            let mainFile = files.find(f => f.path === 'frontend/index.html');
+            if (mainFile) {
+                return mainFile;
+            }
+            // Fall through to standard logic if frontend/index.html doesn't exist
+        }
 
         // Check for index.html
         let mainFile = files.find(f => f.getName().toLowerCase() === 'index.html');
@@ -6236,11 +6592,32 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
     };
 
     function safeStringify(arg) {
-        if (typeof arg === 'object') {
+        if (typeof arg === 'object' && arg !== null) {
+            // Handle Response objects specially
+            if (arg.constructor && arg.constructor.name === 'Response') {
+                return 'Response { status: ' + arg.status + ', ok: ' + arg.ok + ', url: "' + arg.url + '" }';
+            }
+            // Handle Promise objects
+            if (arg.constructor && arg.constructor.name === 'Promise') {
+                return 'Promise { <pending> }';
+            }
+            // Try JSON.stringify for regular objects
             try {
                 return JSON.stringify(arg, null, 2);
             } catch (e) {
-                return String(arg);
+                // Fallback: create a custom object representation
+                try {
+                    const keys = Object.keys(arg);
+                    if (keys.length === 0) {
+                        return arg.toString();
+                    }
+                    const props = keys.slice(0, 5).map(function(k) {
+                        return k + ': ' + arg[k];
+                    }).join(', ');
+                    return '{ ' + props + (keys.length > 5 ? ', ...' : '') + ' }';
+                } catch (e2) {
+                    return String(arg);
+                }
             }
         }
         return String(arg);
@@ -6365,10 +6742,59 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
             html = injectedScript + html;
         }
 
+        // NEW: Replace localhost references with Flight URL for Flight questions
+        if (this.isFlightQuestion()) {
+            const flightUrl = this.getFlightUrl();
+            if (flightUrl) {
+                html = this.replaceLocalhostWithFlightUrl(html, flightUrl);
+            }
+        }
+
         return html;
     };
 
     MonacoMultifileWrapper.prototype.showPreview = function() {
+        // For Flight questions, deploy to server first (so backend is running)
+        // but then render frontend HTML directly instead of showing iframe to Flight server
+        if (this.isFlightQuestion()) {
+            // Show preview modal immediately with loading state
+            if (!this.previewModal) {
+                this.createPreviewModal();
+            }
+            this.previewModal.css('display', 'flex');
+            if (this.previewLoadingOverlay) {
+                this.previewLoadingOverlay.css('display', 'flex');
+                // Update loading text to show deployment status
+                const loadingText = this.previewLoadingOverlay.find('.monaco-loading-text');
+                if (loadingText.length) {
+                    loadingText.text('Deploying to server...');
+                }
+            }
+
+            // Deploy silently (no success toast)
+            this.deployToFlightServer(true).then(() => {
+                // Update loading text
+                if (this.previewLoadingOverlay) {
+                    const loadingText = this.previewLoadingOverlay.find('.monaco-loading-text');
+                    if (loadingText.length) {
+                        loadingText.text('Loading preview...');
+                    }
+                }
+                this.showDirectHtmlPreview();
+            }).catch(err => {
+                if (this.previewLoadingOverlay) {
+                    this.previewLoadingOverlay.css('display', 'none');
+                }
+                this.showToast('Failed to deploy to Flight server: ' + (err.message || err), 'error');
+            });
+            return;
+        }
+
+        // For non-Flight questions, show preview directly
+        this.showDirectHtmlPreview();
+    };
+
+    MonacoMultifileWrapper.prototype.showDirectHtmlPreview = function() {
         // Find main HTML file
         const mainFile = this.findMainHtmlFile();
         if (!mainFile) {
@@ -6376,7 +6802,7 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
             return;
         }
 
-        // Build preview HTML
+        // Build preview HTML (with Flight URL replacement if applicable)
         const previewHTML = this.buildPreviewHTML(mainFile);
         if (!previewHTML) {
             this.showToast('Failed to build preview.', 'error');
@@ -6402,6 +6828,704 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
 
         // Show modal using CSS instead of jQuery's show()
         this.previewModal.css('display', 'flex');
+    };
+
+    MonacoMultifileWrapper.prototype.deployToFlightServer = function(silent) {
+        const lspBaseUrl = this.params.lsp_base_url;
+        if (!lspBaseUrl) {
+            return Promise.reject(new Error('LSP base URL not configured'));
+        }
+
+        // Get workspace ID (already generated in constructor)
+        const workspaceId = this.workspaceInstanceId;
+
+        // Show loading toast only if not silent
+        if (!silent) {
+            this.showToast('Deploying to Flight server...', 'info');
+        }
+
+        // Prepare deployment payload
+        const files = [];
+        this.vfs.getAllFiles().forEach(f => {
+            // Skip hidden files (stub files starting with underscore or marked as hidden)
+            if (f.hidden) {
+                return; // Skip files marked as hidden
+            }
+            if (f.path && f.path.match(/^\/?_[^\/]+\.php$/)) {
+                return; // Skip PHP stub files starting with underscore
+            }
+
+            const content = f.model && modelIsAlive(f.model) ? f.model.getValue() : f.content;
+            files.push({
+                path: f.path,
+                content: content || '',
+                locked: false,
+                uid: 'null'
+            });
+        });
+
+        const payload = {
+            folderName: workspaceId,
+            files: files,
+            folders: {},
+            uiState: { openTabs: [], activeFile: '' },
+            timestamp: Date.now()
+        };
+
+        // Convert WSS to HTTPS for deployment endpoint
+        const httpBaseUrl = lspBaseUrl.replace(/^wss:/, 'https:').replace(/^ws:/, 'http:');
+        const deployUrl = httpBaseUrl.replace(/\/$/, '') + '/api/workspace/create';
+
+        return fetch(deployUrl, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(payload)
+        }).then(response => {
+            if (!response.ok) {
+                throw new Error('Deployment failed: ' + response.statusText);
+            }
+            return response.json();
+        }).then(data => {
+            // Show success toast only if not silent
+            if (!silent) {
+                this.showToast('Successfully deployed to Flight server', 'success');
+            }
+            return data;
+        });
+    };
+
+    MonacoMultifileWrapper.prototype.showFlightPreview = function() {
+        // Create preview modal if it doesn't exist
+        if (!this.previewModal) {
+            this.createPreviewModal();
+        }
+
+        // Build preview URL pointing to deployed workspace
+        const lspBaseUrl = this.params.lsp_base_url;
+        const workspaceId = this.workspaceInstanceId;
+        // Convert WSS to HTTPS for preview URL
+        const httpBaseUrl = lspBaseUrl.replace(/^wss:/, 'https:').replace(/^ws:/, 'http:');
+        const previewUrl = httpBaseUrl.replace(/\/$/, '') + '/cr/' + workspaceId + '/';
+
+        // Show loading indicator
+        if (this.previewLoadingOverlay) {
+            this.previewLoadingOverlay.css('display', 'flex');
+        }
+
+        // Clear previous preview content and create iframe
+        const previewArea = this.previewModal.find('.monaco-preview-iframe-container');
+        previewArea.empty();
+
+        const iframe = $('<iframe></iframe>');
+        iframe.attr('src', previewUrl);
+        iframe.css({
+            width: '100%',
+            height: '100%',
+            border: 'none'
+        });
+
+        // Handle iframe load
+        iframe.on('load', () => {
+            if (this.previewLoadingOverlay) {
+                this.previewLoadingOverlay.css('display', 'none');
+            }
+        });
+
+        previewArea.append(iframe);
+
+        // Show modal using CSS instead of jQuery's show()
+        this.previewModal.css('display', 'flex');
+    };
+
+    MonacoMultifileWrapper.prototype.deployToFlightWorkspace = async function() {
+        await this.deployToFlightServer();
+        const lspBaseUrl = this.params.lsp_base_url;
+        const httpBaseUrl = lspBaseUrl.replace(/^wss:/, 'https:').replace(/^ws:/, 'http:');
+        return httpBaseUrl.replace(/\/$/, '') + '/cr/' + this.workspaceInstanceId;
+    };
+
+    MonacoMultifileWrapper.prototype.scanForRoutes = function() {
+        if (!this.vfs) {
+            return [];
+        }
+
+        const routes = [];
+        const files = this.vfs.getAllFiles();
+
+        files.forEach((file) => {
+            if (!file || !file.path || !file.path.toLowerCase().endsWith('.php')) {
+                return;
+            }
+            if (file.hidden || (file.path && file.path.match(/^\/?_[^\/]+\.php$/))) {
+                return;
+            }
+
+            const content = file.model && modelIsAlive(file.model) ? file.model.getValue() : (file.content || '');
+
+            // Pattern 1: Flight::route('METHOD /path', callback)
+            const routePattern = /Flight::route\s*\(\s*['"]([A-Z]+)\s+(\/[^'"]*)['"]/g;
+            let match;
+            while ((match = routePattern.exec(content)) !== null) {
+                routes.push({
+                    method: match[1],
+                    path: match[2],
+                    file: file.path,
+                    type: 'Flight::route'
+                });
+            }
+
+            // Pattern 2: Flight::get('/path', callback)
+            const getPattern = /Flight::get\s*\(\s*['"]([^'"]+)['"]/g;
+            while ((match = getPattern.exec(content)) !== null) {
+                routes.push({
+                    method: 'GET',
+                    path: match[1],
+                    file: file.path,
+                    type: 'Flight::get'
+                });
+            }
+
+            // Pattern 3: Flight::post, put, patch, delete
+            ['post', 'put', 'patch', 'delete'].forEach(method => {
+                const pattern = new RegExp(`Flight::${method}\\s*\\(\\s*['"]([^'"]+)['"]`, 'g');
+                let specificMatch;
+                while ((specificMatch = pattern.exec(content)) !== null) {
+                    routes.push({
+                        method: method.toUpperCase(),
+                        path: specificMatch[1],
+                        file: file.path,
+                        type: `Flight::${method}`
+                    });
+                }
+            });
+        });
+
+        routes.forEach((route) => {
+            route.pathParams = [];
+            const paramPattern = /@(\w+)/g;
+            let paramMatch;
+            while ((paramMatch = paramPattern.exec(route.path)) !== null) {
+                route.pathParams.push(paramMatch[1]);
+            }
+        });
+
+        return routes;
+    };
+
+    MonacoMultifileWrapper.prototype.renderApiTesterPanel = function() {
+        if (!this.apiTesterPanel) {
+            return;
+        }
+
+        this.apiTesterPanel.empty();
+
+        if (this.apiTesterTopBar) {
+            this.apiTesterPanel.append(this.apiTesterTopBar);
+            // IMPORTANT: Re-query the controls after re-appending
+            this.apiTesterControls = this.apiTesterTopBar.find('.monaco-api-topbar-controls');
+            this.attachSharedControlsToApiTopBar();
+        }
+
+        const header = $('<div class="monaco-api-tester-header"></div>');
+        const title = $('<h3 class="monaco-panel-title">API Tester</h3>');
+        const scanBtn = $('<button class="monaco-icon-btn" type="button"></button>');
+        scanBtn.append(
+            $('<span class="codicon codicon-refresh"></span>'),
+            $('<span>Scan Routes</span>')
+        );
+        scanBtn.on('click', () => {
+            const previousSelection = this.selectedRoute;
+            this.currentRoutes = this.scanForRoutes();
+            if (previousSelection && Array.isArray(this.currentRoutes)) {
+                this.selectedRoute = this.currentRoutes.find((route) =>
+                    route.method === previousSelection.method &&
+                    route.path === previousSelection.path &&
+                    route.file === previousSelection.file
+                ) || null;
+            } else {
+                this.selectedRoute = null;
+            }
+            this.renderApiTesterPanel();
+        });
+
+        header.append(title, scanBtn);
+        this.apiTesterPanel.append(header);
+
+        if (!this.currentRoutes) {
+            const prompt = $('<div class="monaco-api-tester-empty"></div>');
+            prompt.html(
+                '<span class="codicon codicon-search"></span>' +
+                '<p>Click "Scan Routes" to detect endpoints in your code</p>'
+            );
+            this.apiTesterPanel.append(prompt);
+            return;
+        }
+
+        if (this.currentRoutes.length === 0) {
+            const noRoutes = $('<div class="monaco-api-tester-empty"></div>');
+            noRoutes.html(
+                '<span class="codicon codicon-warning"></span>' +
+                '<p>No routes found. Define routes using Flight::get(), Flight::post(), etc.</p>'
+            );
+            this.apiTesterPanel.append(noRoutes);
+            return;
+        }
+
+        const routeSelector = $('<div class="monaco-api-tester-route-selector"></div>');
+        const routeLabel = $('<label>Select Route:</label>');
+        const routeDropdown = $('<select class="monaco-select"></select>');
+        routeDropdown.append($('<option>').val('').text('-- Select a route --'));
+
+        this.currentRoutes.forEach((route, index) => {
+            const option = $('<option></option>')
+                .val(index)
+                .text(`${route.method} ${route.path} (${route.file})`);
+            routeDropdown.append(option);
+        });
+
+        routeDropdown.on('change', (e) => {
+            const routeIndex = parseInt(e.target.value, 10);
+            if (!isNaN(routeIndex)) {
+                this.selectedRoute = this.currentRoutes[routeIndex];
+                this.renderRequestBuilder();
+                if (this.responseViewerContainer) {
+                    this.responseViewerContainer.empty();
+                }
+            } else {
+                this.selectedRoute = null;
+                this.renderRequestBuilder();
+                if (this.responseViewerContainer) {
+                    this.responseViewerContainer.empty();
+                }
+            }
+        });
+
+        const preselectedIndex = this.selectedRoute && this.currentRoutes
+            ? this.currentRoutes.findIndex(route =>
+                route.method === this.selectedRoute.method &&
+                route.path === this.selectedRoute.path &&
+                route.file === this.selectedRoute.file)
+            : -1;
+        if (preselectedIndex >= 0) {
+            routeDropdown.val(String(preselectedIndex));
+        }
+
+        routeSelector.append(routeLabel, routeDropdown);
+        this.apiTesterPanel.append(routeSelector);
+
+        this.requestBuilderContainer = $('<div class="monaco-api-tester-request-builder"></div>');
+        this.responseViewerContainer = $('<div class="monaco-api-tester-response"></div>');
+        this.apiTesterPanel.append(this.requestBuilderContainer, this.responseViewerContainer);
+
+        this.renderRequestBuilder();
+    };
+
+    MonacoMultifileWrapper.prototype.renderRequestBuilder = function() {
+        if (!this.requestBuilderContainer) {
+            return;
+        }
+        this.requestBuilderContainer.empty();
+        if (!this.selectedRoute) {
+            return;
+        }
+
+        const builder = $('<div class="monaco-request-builder"></div>');
+
+        // Method badge and path display
+        const methodBadge = $('<span class="monaco-method-badge"></span>')
+            .addClass(`monaco-method-${this.selectedRoute.method.toLowerCase()}`)
+            .text(this.selectedRoute.method);
+
+        const pathDisplay = $('<div class="monaco-path-display"></div>');
+        pathDisplay.append(methodBadge, $('<span></span>').text(this.selectedRoute.path));
+        builder.append(pathDisplay);
+
+        // Create tabs container
+        const tabsContainer = $('<div class="monaco-request-tabs"></div>');
+
+        // Determine which tabs to show
+        const hasBody = ['POST', 'PUT', 'PATCH'].includes(this.selectedRoute.method);
+
+        // Always show Params tab
+        const paramsTab = $('<button type="button" class="monaco-request-tab active" data-tab="params">Params</button>');
+        tabsContainer.append(paramsTab);
+
+        // Show Body tab for POST/PUT/PATCH
+        if (hasBody) {
+            const bodyTab = $('<button type="button" class="monaco-request-tab" data-tab="body">Body</button>');
+            tabsContainer.append(bodyTab);
+        }
+
+        // Always show Headers tab
+        const headersTab = $('<button type="button" class="monaco-request-tab" data-tab="headers">Headers</button>');
+        tabsContainer.append(headersTab);
+
+        builder.append(tabsContainer);
+
+        // Create tab content containers
+        const tabContents = $('<div class="monaco-request-tab-contents"></div>');
+
+        // Params tab content
+        const paramsContent = $('<div class="monaco-request-tab-content active" data-content="params"></div>');
+
+        // Path parameters
+        const pathParams = Array.isArray(this.selectedRoute.pathParams) ? this.selectedRoute.pathParams : [];
+        if (pathParams.length > 0) {
+            const pathParamsSection = $('<div class="monaco-params-section"></div>');
+            const pathParamsHeader = $('<h4>Path Parameters</h4>');
+            pathParamsSection.append(pathParamsHeader);
+
+            pathParams.forEach(param => {
+                const paramRow = $('<div class="monaco-param-row"></div>');
+                const paramLabel = $('<label></label>').text(`@${param}:`);
+                const paramInput = $('<input type="text" class="monaco-input">')
+                    .attr('placeholder', `Value for ${param}`)
+                    .attr('data-param', param);
+                paramRow.append(paramLabel, paramInput);
+                pathParamsSection.append(paramRow);
+            });
+
+            paramsContent.append(pathParamsSection);
+        }
+
+        // Query parameters
+        const querySection = $('<div class="monaco-params-section"></div>');
+        const queryHeader = $('<h4>Query Parameters</h4>');
+        const addQueryBtn = $('<button type="button" class="monaco-icon-btn-small"></button>');
+        addQueryBtn.html('<span class="codicon codicon-add"></span> Add');
+        addQueryBtn.on('click', () => this.addQueryParam());
+        queryHeader.append(addQueryBtn);
+        querySection.append(queryHeader);
+
+        this.queryParamsContainer = $('<div class="monaco-query-params"></div>');
+        querySection.append(this.queryParamsContainer);
+        paramsContent.append(querySection);
+
+        tabContents.append(paramsContent);
+
+        // Body tab content (for POST/PUT/PATCH)
+        if (hasBody) {
+            const bodyContent = $('<div class="monaco-request-tab-content" data-content="body"></div>');
+            const bodySection = $('<div class="monaco-body-section"></div>');
+            const bodyHeader = $('<h4>Request Body</h4>');
+            const bodyTypeSelector = $('<select class="monaco-select-small"></select>');
+            bodyTypeSelector.append(
+                $('<option value="json">JSON</option>'),
+                $('<option value="form">Form Data</option>'),
+                $('<option value="text">Plain Text</option>')
+            );
+            bodyTypeSelector.val(this.bodyType || 'json');
+            bodyTypeSelector.on('change', (e) => {
+                this.bodyType = e.target.value;
+            });
+            bodyHeader.append(bodyTypeSelector);
+            bodySection.append(bodyHeader);
+
+            this.bodyEditor = $('<textarea class="monaco-body-editor" rows="12" placeholder="Enter request body"></textarea>');
+            bodySection.append(this.bodyEditor);
+            bodyContent.append(bodySection);
+            tabContents.append(bodyContent);
+        } else {
+            this.bodyEditor = null;
+        }
+
+        // Headers tab content
+        const headersContent = $('<div class="monaco-request-tab-content" data-content="headers"></div>');
+        const headersSection = $('<div class="monaco-params-section"></div>');
+        const headersHeader = $('<h4>Request Headers</h4>');
+        const addHeaderBtn = $('<button type="button" class="monaco-icon-btn-small"></button>');
+        addHeaderBtn.html('<span class="codicon codicon-add"></span> Add');
+        addHeaderBtn.on('click', () => this.addRequestHeader());
+        headersHeader.append(addHeaderBtn);
+        headersSection.append(headersHeader);
+
+        this.requestHeadersContainer = $('<div class="monaco-query-params"></div>');
+        headersSection.append(this.requestHeadersContainer);
+        headersContent.append(headersSection);
+        tabContents.append(headersContent);
+
+        builder.append(tabContents);
+
+        // Tab switching logic
+        tabsContainer.find('.monaco-request-tab').on('click', function() {
+            const tabName = $(this).attr('data-tab');
+            tabsContainer.find('.monaco-request-tab').removeClass('active');
+            $(this).addClass('active');
+            tabContents.find('.monaco-request-tab-content').removeClass('active');
+            tabContents.find(`[data-content="${tabName}"]`).addClass('active');
+        });
+
+        // Send button
+        const sendBtn = $('<button type="button" class="monaco-send-btn"></button>');
+        sendBtn.html('<span class="codicon codicon-play"></span> Send Request');
+        sendBtn.on('click', () => this.sendRequest());
+        builder.append(sendBtn);
+
+        this.requestBuilderContainer.append(builder);
+    };
+
+    MonacoMultifileWrapper.prototype.addQueryParam = function() {
+        if (!this.queryParamsContainer) {
+            return;
+        }
+        const paramRow = $('<div class="monaco-query-param-row"></div>');
+        const keyInput = $('<input type="text" class="monaco-input monaco-param-key" placeholder="Key">');
+        const valueInput = $('<input type="text" class="monaco-input monaco-param-value" placeholder="Value">');
+        const removeBtn = $('<button type="button" class="monaco-icon-btn-small"></button>');
+        removeBtn.html('<span class="codicon codicon-close"></span>');
+        removeBtn.on('click', () => paramRow.remove());
+        paramRow.append(keyInput, valueInput, removeBtn);
+        this.queryParamsContainer.append(paramRow);
+    };
+
+    MonacoMultifileWrapper.prototype.addRequestHeader = function() {
+        if (!this.requestHeadersContainer) {
+            return;
+        }
+        const headerRow = $('<div class="monaco-query-param-row"></div>');
+        const keyInput = $('<input type="text" class="monaco-input monaco-param-key" placeholder="Header Name">');
+        const valueInput = $('<input type="text" class="monaco-input monaco-param-value" placeholder="Header Value">');
+        const removeBtn = $('<button type="button" class="monaco-icon-btn-small"></button>');
+        removeBtn.html('<span class="codicon codicon-close"></span>');
+        removeBtn.on('click', () => headerRow.remove());
+        headerRow.append(keyInput, valueInput, removeBtn);
+        this.requestHeadersContainer.append(headerRow);
+    };
+
+    MonacoMultifileWrapper.prototype.sendRequest = async function() {
+        if (!this.selectedRoute) {
+            this.renderResponseError(new Error('Select a route to send a request.'));
+            return;
+        }
+        if (!this.isFlightQuestion()) {
+            this.renderResponseError(new Error('API testing is available for Flight questions only.'));
+            return;
+        }
+
+        try {
+            this.renderResponseLoading();
+
+            const workspaceUrl = await this.deployToFlightWorkspace();
+
+            let path = this.selectedRoute.path || '';
+            this.requestBuilderContainer.find('input[data-param]').each((i, input) => {
+                const param = $(input).attr('data-param');
+                const value = $(input).val() || '';
+                path = path.replace(`@${param}`, encodeURIComponent(value));
+            });
+
+            const queryParams = {};
+            if (this.queryParamsContainer) {
+                this.queryParamsContainer.find('.monaco-query-param-row').each((i, row) => {
+                    const key = $(row).find('.monaco-param-key').val();
+                    const value = $(row).find('.monaco-param-value').val();
+                    if (key) {
+                        queryParams[key] = value;
+                    }
+                });
+            }
+
+            const queryString = Object.keys(queryParams).length > 0
+                ? '?' + new URLSearchParams(queryParams).toString()
+                : '';
+
+            const baseUrl = workspaceUrl.replace(/\/$/, '');
+            const normalizedPath = path.startsWith('/') ? path : '/' + path;
+            const fullUrl = `${baseUrl}${normalizedPath}${queryString}`;
+
+            const options = {
+                method: this.selectedRoute.method,
+                headers: {}
+            };
+
+            // Add custom headers from Headers tab
+            if (this.requestHeadersContainer) {
+                this.requestHeadersContainer.find('.monaco-query-param-row').each((i, row) => {
+                    const key = $(row).find('.monaco-param-key').val();
+                    const value = $(row).find('.monaco-param-value').val();
+                    if (key) {
+                        options.headers[key] = value;
+                    }
+                });
+            }
+
+            if (['POST', 'PUT', 'PATCH'].includes(this.selectedRoute.method) && this.bodyEditor) {
+                const bodyContent = this.bodyEditor.val();
+                if (this.bodyType === 'form') {
+                    options.headers['Content-Type'] = 'application/x-www-form-urlencoded';
+                    options.body = bodyContent;
+                } else if (this.bodyType === 'text') {
+                    options.headers['Content-Type'] = 'text/plain';
+                    options.body = bodyContent;
+                } else {
+                    options.headers['Content-Type'] = 'application/json';
+                    options.body = bodyContent;
+                }
+            }
+
+            const startTime = Date.now();
+            const response = await fetch(fullUrl, options);
+            const endTime = Date.now();
+            const duration = endTime - startTime;
+
+            const responseText = await response.text();
+            let responseBody;
+            try {
+                responseBody = JSON.parse(responseText);
+            } catch (e) {
+                responseBody = responseText;
+            }
+
+            this.renderResponse({
+                status: response.status,
+                statusText: response.statusText,
+                headers: Object.fromEntries(response.headers.entries()),
+                body: responseBody,
+                duration: duration,
+                url: fullUrl,
+                baseUrl: baseUrl
+            });
+        } catch (error) {
+            this.renderResponseError(error);
+        }
+    };
+
+    MonacoMultifileWrapper.prototype.renderResponse = function(response) {
+        if (!this.responseViewerContainer) {
+            return;
+        }
+        this.responseViewerContainer.empty();
+
+        const viewer = $('<div class="monaco-response-viewer"></div>');
+
+        const statusLine = $('<div class="monaco-response-status"></div>');
+        const statusBadge = $('<span class="monaco-status-badge"></span>')
+            .addClass(response.status < 400 ? 'monaco-status-success' : 'monaco-status-error')
+            .text(`${response.status} ${response.statusText}`);
+        const duration = $('<span class="monaco-response-duration"></span>').text(`${response.duration}ms`);
+        statusLine.append(statusBadge, duration);
+        viewer.append(statusLine);
+
+        // Display URL with base hidden
+        let displayUrl = response.url || '';
+        if (response.baseUrl && displayUrl.startsWith(response.baseUrl)) {
+            displayUrl = '<base_url>' + displayUrl.substring(response.baseUrl.length);
+        }
+        const urlDisplay = $('<div class="monaco-response-url"></div>').text(displayUrl);
+        viewer.append(urlDisplay);
+
+        const tabsContainer = $('<div class="monaco-response-tabs"></div>');
+        const bodyTab = $('<button type="button" class="monaco-response-tab active">Body</button>');
+        const rawTab = $('<button type="button" class="monaco-response-tab">Raw Response</button>');
+        const headersTab = $('<button type="button" class="monaco-response-tab">Headers</button>');
+        tabsContainer.append(bodyTab, rawTab, headersTab);
+        viewer.append(tabsContainer);
+
+        // Body tab
+        const bodyContent = $('<div class="monaco-response-content"></div>');
+        const isJson = response && typeof response.body === 'object';
+        const rawText = response && response.body !== undefined ? String(response.body) === '[object Object]' ? JSON.stringify(response.body) : String(response.body) : '';
+        const contentType = response && response.headers ? (response.headers['content-type'] || response.headers['Content-Type'] || '') : '';
+        const looksHtml = contentType.toLowerCase().indexOf('text/html') !== -1 || /<[^>]+>/.test(rawText);
+
+        if (isJson) {
+            const jsonString = JSON.stringify(response.body, null, 2);
+            const bodyPre = $('<pre class="monaco-response-body"></pre>');
+            bodyPre.html(this.syntaxHighlightJSON(jsonString));
+            bodyContent.append(bodyPre);
+        } else {
+            const plainTextContainer = $('<div class="monaco-response-plain"></div>');
+            if (looksHtml) {
+                const textOnly = $('<div>').html(rawText).text();
+                plainTextContainer.text(textOnly || rawText);
+            } else {
+                plainTextContainer.text(rawText);
+            }
+            bodyContent.append(plainTextContainer);
+        }
+        viewer.append(bodyContent);
+
+        // Raw tab
+        const rawContent = $('<div class="monaco-response-content"></div>').css('display', 'none');
+        const rawPre = $('<pre class="monaco-response-body monaco-response-body-raw"></pre>');
+        rawPre.text(rawText);
+        rawContent.append(rawPre);
+        viewer.append(rawContent);
+
+        // Headers tab
+        const headersContent = $('<div class="monaco-response-content"></div>').css('display', 'none');
+        const headersList = $('<div class="monaco-headers-list"></div>');
+        if (response && response.headers) {
+            Object.entries(response.headers).forEach(([key, value]) => {
+                const headerRow = $('<div class="monaco-header-row"></div>');
+                const headerKey = $('<span class="monaco-header-key"></span>').text(`${key}:`);
+                const headerValue = $('<span class="monaco-header-value"></span>').text(value);
+                headerRow.append(headerKey, headerValue);
+                headersList.append(headerRow);
+            });
+        }
+        headersContent.append(headersList);
+        viewer.append(headersContent);
+
+        const activateTab = (target) => {
+            [bodyTab, rawTab, headersTab].forEach(tab => tab.removeClass('active'));
+            [bodyContent, rawContent, headersContent].forEach(content => content.hide());
+            target.tab.addClass('active');
+            target.content.show();
+        };
+
+        bodyTab.on('click', () => activateTab({tab: bodyTab, content: bodyContent}));
+        rawTab.on('click', () => activateTab({tab: rawTab, content: rawContent}));
+        headersTab.on('click', () => activateTab({tab: headersTab, content: headersContent}));
+
+        this.responseViewerContainer.append(viewer);
+    };
+
+    MonacoMultifileWrapper.prototype.renderResponseLoading = function() {
+        if (!this.responseViewerContainer) {
+            return;
+        }
+        this.responseViewerContainer.empty();
+        const loading = $('<div class="monaco-response-loading"></div>');
+        loading.html('<span class="codicon codicon-loading codicon-modifier-spin"></span> Sending request...');
+        this.responseViewerContainer.append(loading);
+    };
+
+    MonacoMultifileWrapper.prototype.renderResponseError = function(error) {
+        if (!this.responseViewerContainer) {
+            return;
+        }
+        this.responseViewerContainer.empty();
+        const errorDiv = $('<div class="monaco-response-error"></div>');
+        const errorIcon = $('<span class="codicon codicon-error"></span>');
+        const message = error && error.message ? error.message : error;
+        const errorMsg = $('<p></p>').text(`Request failed: ${message}`);
+        errorDiv.append(errorIcon, errorMsg);
+        this.responseViewerContainer.append(errorDiv);
+    };
+
+    MonacoMultifileWrapper.prototype.syntaxHighlightJSON = function(json) {
+        json = json.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        return json.replace(
+            /("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?)/g,
+            function(match) {
+                let cls = 'json-number';
+                if (/^"/.test(match)) {
+                    if (/:$/.test(match)) {
+                        cls = 'json-key';
+                    } else {
+                        cls = 'json-string';
+                    }
+                } else if (/true|false/.test(match)) {
+                    cls = 'json-boolean';
+                } else if (/null/.test(match)) {
+                    cls = 'json-null';
+                }
+                return '<span class="' + cls + '">' + match + '</span>';
+            }
+        );
     };
 
     MonacoMultifileWrapper.prototype.createPreviewModal = function() {
@@ -7274,7 +8398,10 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
         const data = this.vfs.toJSON();
         data.uiState = this.getUiState();
         data.timestamp = new Date().getTime(); // Add timestamp
+        data.folderName = this.workspaceInstanceId; // Add workspace ID for Flight deployment
         this.textarea.value = JSON.stringify(data, null, 2);
+
+        // Trigger change event if this is a submit
         if (isSubmit) {
             this.textarea.dispatchEvent(new Event('change', { bubbles: true }));
         }

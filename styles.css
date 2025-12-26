@@ -2310,3 +2310,910 @@ body#page-question-type-coderunner div[id^=fitem_id_extra_] {
 .monaco-problem-hint .monaco-problem-icon {
     color: #16a34a;
 }
+
+/* API Tester Panel */
+.monaco-panel-title {
+    margin: 0;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--mm-header-color);
+}
+
+.monaco-api-tester-panel {
+    padding: 0;
+    overflow-y: auto;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+}
+
+.monaco-api-topbar {
+    display: flex;
+    align-items: stretch;
+    height: 35px;
+    background: var(--mm-tab-bg);
+    border-bottom: 1px solid var(--mm-tab-border);
+    flex-shrink: 0;
+}
+
+.monaco-api-topbar-title {
+    font-weight: 600;
+    font-size: 12px;
+    color: var(--mm-header-color);
+    padding: 0 12px;
+    display: flex;
+    align-items: center;
+}
+
+.monaco-api-topbar-controls {
+    display: flex;
+    align-items: stretch;
+    margin-left: auto;
+}
+
+.monaco-api-topbar-controls .monaco-preview-btn {
+    border-bottom: 1px solid var(--mm-tab-border);
+}
+
+.monaco-api-topbar-controls .monaco-theme-control {
+    border-left: 1px solid var(--mm-tab-border);
+    position: relative !important;
+    height: 100%;
+    display: flex;
+    align-items: stretch;
+}
+
+.monaco-api-tester-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 16px 8px 16px;
+    border-bottom: 1px solid var(--mm-border-sidebar);
+    flex-shrink: 0;
+}
+
+.monaco-api-tester-header .monaco-icon-btn {
+    padding: 6px 12px;
+    border: 1px solid var(--mm-border-sidebar);
+    border-radius: 2px;
+    background: var(--mm-header-bg);
+    color: var(--mm-item-color);
+    font-size: 13px;
+    font-weight: 500;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    transition: all 0.15s ease;
+    line-height: 1;
+}
+
+.monaco-api-tester-header .monaco-icon-btn > span {
+    display: flex;
+    align-items: center;
+}
+
+.monaco-api-tester-header .monaco-icon-btn:hover {
+    background: var(--mm-icon-hover-bg);
+    border-color: var(--mm-item-active-bg);
+}
+
+.monaco-api-tester-header .monaco-icon-btn:active {
+    transform: scale(0.97);
+}
+
+.monaco-api-tester-header .monaco-icon-btn .codicon {
+    font-size: 14px;
+    line-height: 1;
+}
+
+.monaco-api-tester-empty {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 60px 20px;
+    color: var(--mm-icon-color);
+    opacity: 0.6;
+}
+
+.monaco-api-tester-empty .codicon {
+    font-size: 48px;
+    margin-bottom: 16px;
+    opacity: 0.5;
+}
+
+.monaco-api-tester-empty p {
+    margin: 0;
+    font-size: 13px;
+    line-height: 1.5;
+}
+
+/* Route Selector */
+.monaco-api-tester-route-selector {
+    padding: 12px 16px;
+    background: var(--mm-bg-sidebar);
+    border-bottom: 1px solid var(--mm-border-sidebar);
+    flex-shrink: 0;
+}
+
+.monaco-api-tester-route-selector label {
+    display: block;
+    margin-bottom: 6px;
+    font-weight: 600;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--mm-header-color);
+}
+
+.monaco-api-tester-route-selector .monaco-select {
+    margin-top: 5px;
+    display: block;
+}
+
+.monaco-select {
+    width: 100%;
+    padding: 6px 10px;
+    border: 1px solid var(--mm-border-sidebar);
+    border-radius: 2px;
+    background: var(--mm-editor-bg);
+    color: var(--mm-item-color);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    font-size: 13px;
+    transition: border-color 0.15s ease;
+}
+
+.monaco-select:hover {
+    border-color: var(--mm-item-active-bg);
+}
+
+.monaco-select:focus {
+    outline: none;
+    border-color: var(--mm-item-active-bg);
+    box-shadow: inset 0 0 0 1px var(--mm-item-active-bg);
+}
+
+/* Request Builder */
+.monaco-api-tester-request-builder {
+    padding: 16px;
+    flex-shrink: 0;
+    overflow-y: auto;
+}
+
+.monaco-request-builder {
+    max-width: 900px;
+}
+
+.monaco-path-display {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 16px;
+    padding: 12px 14px;
+    background: var(--mm-header-bg);
+    border-radius: 3px;
+    border: 1px solid var(--mm-border-sidebar);
+    font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+    font-size: 13px;
+    color: var(--mm-item-color);
+}
+
+/* Request Tabs */
+.monaco-request-tabs {
+    display: flex;
+    border-bottom: 2px solid var(--mm-border-sidebar);
+    margin-bottom: 20px;
+    gap: 2px;
+}
+
+.monaco-request-tab {
+    padding: 8px 16px;
+    border: none;
+    background: transparent;
+    color: var(--mm-icon-color);
+    cursor: pointer;
+    font-weight: 500;
+    font-size: 12px;
+    position: relative;
+    transition: color 0.15s ease;
+    opacity: 0.7;
+    border-radius: 2px 2px 0 0;
+}
+
+.monaco-request-tab:hover {
+    color: var(--mm-item-color);
+    opacity: 1;
+    background: var(--mm-icon-hover-bg);
+}
+
+.monaco-request-tab.active {
+    color: var(--mm-item-color);
+    opacity: 1;
+}
+
+.monaco-request-tab.active::after {
+    content: '';
+    position: absolute;
+    bottom: -2px;
+    left: 0;
+    right: 0;
+    height: 2px;
+    background: var(--mm-item-active-bg);
+}
+
+/* Request Tab Contents */
+.monaco-request-tab-contents {
+    position: relative;
+}
+
+.monaco-request-tab-content {
+    display: none;
+}
+
+.monaco-request-tab-content.active {
+    display: block;
+}
+
+/* Method Badges (HTTP method colors matching VSCode) */
+.monaco-method-badge {
+    padding: 4px 8px;
+    border-radius: 2px;
+    font-weight: 700;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    border: 1px solid var(--mm-border);
+}
+
+/* Base colors (fallback if theme class missing) */
+.monaco-method-get {
+    background: rgba(14, 99, 156, 0.16);
+    color: #4fc3f7;
+    border-color: rgba(14, 99, 156, 0.5);
+}
+.monaco-method-post {
+    background: rgba(29, 134, 85, 0.16);
+    color: #81c784;
+    border-color: rgba(29, 134, 85, 0.5);
+}
+.monaco-method-put {
+    background: rgba(255, 152, 0, 0.16);
+    color: #ffb74d;
+    border-color: rgba(255, 152, 0, 0.5);
+}
+.monaco-method-patch {
+    background: rgba(0, 150, 136, 0.16);
+    color: #4db6ac;
+    border-color: rgba(0, 150, 136, 0.5);
+}
+.monaco-method-delete {
+    background: rgba(244, 67, 54, 0.16);
+    color: #e57373;
+    border-color: rgba(244, 67, 54, 0.55);
+}
+
+/* Light theme colors */
+.monaco-multifile-container.monaco-light .monaco-method-get {
+    background: #e3f2fd;
+    color: #1565c0;
+    border-color: #90caf9;
+}
+.monaco-multifile-container.monaco-light .monaco-method-post {
+    background: #e8f5e9;
+    color: #2e7d32;
+    border-color: #a5d6a7;
+}
+.monaco-multifile-container.monaco-light .monaco-method-put {
+    background: #fff3e0;
+    color: #e65100;
+    border-color: #ffcc80;
+}
+.monaco-multifile-container.monaco-light .monaco-method-patch {
+    background: #e0f2f1;
+    color: #00695c;
+    border-color: #80cbc4;
+}
+.monaco-multifile-container.monaco-light .monaco-method-delete {
+    background: #ffebee;
+    color: #c62828;
+    border-color: #ef9a9a;
+}
+
+/* Dark theme colors */
+.monaco-multifile-container.monaco-dark .monaco-method-get,
+.monaco-multifile-container.monaco-hc-black .monaco-method-get {
+    background: rgba(33, 150, 243, 0.15);
+    color: #4fc3f7;
+    border-color: rgba(79, 195, 247, 0.6);
+}
+.monaco-multifile-container.monaco-dark .monaco-method-post,
+.monaco-multifile-container.monaco-hc-black .monaco-method-post {
+    background: rgba(76, 175, 80, 0.15);
+    color: #81c784;
+    border-color: rgba(129, 199, 132, 0.6);
+}
+.monaco-multifile-container.monaco-dark .monaco-method-put,
+.monaco-multifile-container.monaco-hc-black .monaco-method-put {
+    background: rgba(255, 152, 0, 0.15);
+    color: #ffb74d;
+    border-color: rgba(255, 183, 77, 0.6);
+}
+.monaco-multifile-container.monaco-dark .monaco-method-patch,
+.monaco-multifile-container.monaco-hc-black .monaco-method-patch {
+    background: rgba(0, 150, 136, 0.15);
+    color: #4db6ac;
+    border-color: rgba(77, 182, 172, 0.6);
+}
+.monaco-multifile-container.monaco-dark .monaco-method-delete,
+.monaco-multifile-container.monaco-hc-black .monaco-method-delete {
+    background: rgba(244, 67, 54, 0.15);
+    color: #e57373;
+    border-color: rgba(229, 115, 115, 0.6);
+}
+
+/* Parameters Section */
+.monaco-params-section {
+    margin-bottom: 24px;
+}
+
+.monaco-params-section h4 {
+    font-size: 11px;
+    font-weight: 600;
+    margin-bottom: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--mm-header-color);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.monaco-param-row {
+    display: grid;
+    grid-template-columns: 100px 1fr;
+    gap: 12px;
+    align-items: center;
+    margin-bottom: 10px;
+}
+
+.monaco-param-row label {
+    font-weight: 500;
+    font-size: 13px;
+    color: var(--mm-item-color);
+    font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+}
+
+.monaco-input {
+    padding: 6px 10px;
+    border: 1px solid var(--mm-border-sidebar);
+    border-radius: 2px;
+    background: var(--mm-editor-bg);
+    color: var(--mm-item-color);
+    font-size: 13px;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    transition: border-color 0.15s ease;
+}
+
+.monaco-input:hover {
+    border-color: var(--mm-item-active-bg);
+}
+
+.monaco-input:focus {
+    outline: none;
+    border-color: var(--mm-item-active-bg);
+    box-shadow: inset 0 0 0 1px var(--mm-item-active-bg);
+}
+
+/* Query Parameters */
+.monaco-query-params {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.monaco-query-param-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr 32px;
+    gap: 8px;
+    align-items: center;
+}
+
+.monaco-icon-btn-small {
+    padding: 6px;
+    border: 1px solid var(--mm-border-sidebar);
+    border-radius: 2px;
+    background: var(--mm-header-bg);
+    color: var(--mm-icon-color);
+    cursor: pointer;
+    font-size: 11px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    transition: all 0.15s ease;
+    min-width: 32px;
+    height: 32px;
+}
+
+.monaco-icon-btn-small:hover {
+    background: var(--mm-icon-hover-bg);
+    border-color: var(--mm-item-active-bg);
+}
+
+.monaco-icon-btn-small:active {
+    transform: scale(0.95);
+}
+
+.monaco-select-small {
+    padding: 4px 8px;
+    border: 1px solid var(--mm-border-sidebar);
+    border-radius: 2px;
+    background: var(--mm-editor-bg);
+    color: var(--mm-item-color);
+    font-size: 12px;
+    margin-left: 10px;
+    transition: border-color 0.15s ease;
+}
+
+.monaco-select-small:hover {
+    border-color: var(--mm-item-active-bg);
+}
+
+.monaco-select-small:focus {
+    outline: none;
+    border-color: var(--mm-item-active-bg);
+}
+
+/* Body Editor */
+.monaco-body-section {
+    margin-bottom: 24px;
+}
+
+.monaco-body-section h4 {
+    font-size: 11px;
+    font-weight: 600;
+    margin-bottom: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--mm-header-color);
+    display: flex;
+    align-items: center;
+}
+
+.monaco-body-editor {
+    width: 100%;
+    padding: 10px;
+    border: 1px solid var(--mm-border-sidebar);
+    border-radius: 2px;
+    background: var(--mm-editor-bg);
+    color: var(--mm-item-color);
+    font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+    font-size: 12px;
+    line-height: 1.5;
+    resize: vertical;
+    min-height: 120px;
+    transition: border-color 0.15s ease;
+}
+
+.monaco-body-editor:hover {
+    border-color: var(--mm-item-active-bg);
+}
+
+.monaco-body-editor:focus {
+    outline: none;
+    border-color: var(--mm-item-active-bg);
+    box-shadow: inset 0 0 0 1px var(--mm-item-active-bg);
+}
+
+/* Send Button */
+.monaco-send-btn {
+    width: 100%;
+    padding: 10px 16px;
+    background: var(--mm-item-active-bg);
+    color: var(--mm-item-active-color);
+    border: none;
+    border-radius: 2px;
+    font-weight: 600;
+    font-size: 13px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    transition: all 0.15s ease;
+    margin-bottom: 16px;
+}
+
+.monaco-send-btn:hover {
+    filter: brightness(1.1);
+    transform: translateY(-1px);
+}
+
+.monaco-send-btn:active {
+    transform: translateY(0);
+    filter: brightness(0.95);
+}
+
+.monaco-send-btn .codicon {
+    font-size: 14px;
+}
+
+/* Response Viewer */
+.monaco-api-tester-response {
+    padding: 0 16px 16px 16px;
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+}
+
+.monaco-response-viewer {
+    border: 1px solid var(--mm-border-sidebar);
+    border-radius: 3px;
+    overflow: hidden;
+    background: var(--mm-editor-bg);
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+}
+
+.monaco-response-status {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 14px;
+    background: var(--mm-header-bg);
+    border-bottom: 1px solid var(--mm-border-sidebar);
+}
+
+.monaco-status-badge {
+    padding: 4px 10px;
+    border-radius: 2px;
+    font-weight: 700;
+    font-size: 11px;
+    letter-spacing: 0.3px;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+}
+
+/* Light theme status colors */
+.monaco-multifile-container.monaco-light .monaco-status-success {
+    background: #e8f5e9;
+    color: #2e7d32;
+}
+
+.monaco-multifile-container.monaco-light .monaco-status-error {
+    background: #ffebee;
+    color: #c62828;
+}
+
+/* Dark theme status colors */
+.monaco-multifile-container.monaco-dark .monaco-status-success,
+.monaco-multifile-container.monaco-hc-black .monaco-status-success {
+    background: rgba(76, 175, 80, 0.15);
+    color: #81c784;
+}
+
+.monaco-multifile-container.monaco-dark .monaco-status-error,
+.monaco-multifile-container.monaco-hc-black .monaco-status-error {
+    background: rgba(244, 67, 54, 0.15);
+    color: #e57373;
+}
+
+.monaco-response-duration {
+    font-size: 11px;
+    color: var(--mm-icon-color);
+    font-weight: 600;
+    opacity: 0.7;
+}
+
+.monaco-response-url {
+    padding: 8px 14px;
+    background: var(--mm-header-bg);
+    border-bottom: 1px solid var(--mm-border-sidebar);
+    font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+    font-size: 11px;
+    color: var(--mm-icon-color);
+    word-break: break-all;
+    opacity: 0.8;
+}
+
+/* Response Tabs */
+.monaco-response-tabs {
+    display: flex;
+    border-bottom: 1px solid var(--mm-border-sidebar);
+    background: var(--mm-header-bg);
+}
+
+.monaco-response-tab {
+    padding: 8px 16px;
+    border: none;
+    background: transparent;
+    color: var(--mm-icon-color);
+    cursor: pointer;
+    font-weight: 500;
+    font-size: 12px;
+    position: relative;
+    transition: color 0.15s ease;
+    opacity: 0.7;
+}
+
+.monaco-response-tab:hover {
+    color: var(--mm-item-color);
+    opacity: 1;
+}
+
+.monaco-response-tab.active {
+    color: var(--mm-item-color);
+    opacity: 1;
+}
+
+.monaco-response-tab.active::after {
+    content: '';
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 2px;
+    background: var(--mm-item-active-bg);
+}
+
+/* Response Content */
+.monaco-response-content {
+    padding: 14px;
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
+}
+
+.monaco-response-plain {
+    padding: 10px 12px;
+    border: 1px solid var(--mm-border-sidebar);
+    border-radius: 2px;
+    background: var(--mm-bg);
+    color: var(--mm-item-color);
+    white-space: pre-wrap;
+    word-break: break-word;
+    margin-bottom: 10px;
+    font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+    font-size: 12px;
+    line-height: 1.5;
+}
+
+.monaco-response-raw-label {
+    font-size: 11px;
+    color: var(--mm-text-muted);
+    margin: 4px 0;
+}
+
+.monaco-response-body {
+    margin: 0;
+    padding: 10px;
+    background: var(--mm-header-bg);
+    border: 1px solid var(--mm-border-sidebar);
+    border-radius: 2px;
+    font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+    font-size: 12px;
+    line-height: 1.6;
+    overflow-x: auto;
+    white-space: pre-wrap;
+    word-break: break-word;
+    color: var(--mm-item-color);
+}
+
+.monaco-response-body-raw {
+    background: var(--mm-bg);
+}
+
+/* Headers List */
+.monaco-headers-list {
+    font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+    font-size: 12px;
+}
+
+.monaco-header-row {
+    display: grid;
+    grid-template-columns: 200px 1fr;
+    gap: 12px;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--mm-border-sidebar);
+}
+
+.monaco-header-row:last-child {
+    border-bottom: none;
+}
+
+.monaco-header-key {
+    font-weight: 600;
+    color: var(--mm-item-color);
+}
+
+.monaco-header-value {
+    color: var(--mm-icon-color);
+    word-break: break-all;
+    opacity: 0.8;
+}
+
+/* Loading/Error States */
+.monaco-response-loading {
+    padding: 60px 20px;
+    text-align: center;
+    color: var(--mm-icon-color);
+    opacity: 0.7;
+}
+
+.monaco-response-loading .codicon {
+    font-size: 32px;
+    animation: spin 1s linear infinite;
+    margin-bottom: 12px;
+}
+
+@keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+
+.monaco-response-error {
+    padding: 14px;
+    border: 1px solid var(--mm-border-sidebar);
+    border-radius: 2px;
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+}
+
+/* Light theme error */
+.monaco-multifile-container.monaco-light .monaco-response-error {
+    background: #ffebee;
+    color: #c62828;
+}
+
+.monaco-multifile-container.monaco-light .monaco-response-error .codicon {
+    color: #d32f2f;
+}
+
+/* Dark theme error */
+.monaco-multifile-container.monaco-dark .monaco-response-error,
+.monaco-multifile-container.monaco-hc-black .monaco-response-error {
+    background: rgba(244, 67, 54, 0.1);
+    color: #e57373;
+}
+
+.monaco-multifile-container.monaco-dark .monaco-response-error .codicon,
+.monaco-multifile-container.monaco-hc-black .monaco-response-error .codicon {
+    color: #ef5350;
+}
+
+.monaco-response-error .codicon {
+    font-size: 18px;
+    flex-shrink: 0;
+}
+
+.monaco-response-error p {
+    margin: 0;
+    font-size: 13px;
+    line-height: 1.5;
+}
+
+/* VSCode-styled scrollbars for API Tester */
+.monaco-api-tester-request-builder::-webkit-scrollbar,
+.monaco-response-content::-webkit-scrollbar,
+.monaco-response-body::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+}
+
+.monaco-multifile-container.monaco-light .monaco-api-tester-request-builder::-webkit-scrollbar-track,
+.monaco-multifile-container.monaco-light .monaco-response-content::-webkit-scrollbar-track,
+.monaco-multifile-container.monaco-light .monaco-response-body::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.monaco-multifile-container.monaco-dark .monaco-api-tester-request-builder::-webkit-scrollbar-track,
+.monaco-multifile-container.monaco-dark .monaco-response-content::-webkit-scrollbar-track,
+.monaco-multifile-container.monaco-dark .monaco-response-body::-webkit-scrollbar-track,
+.monaco-multifile-container.monaco-hc-black .monaco-api-tester-request-builder::-webkit-scrollbar-track,
+.monaco-multifile-container.monaco-hc-black .monaco-response-content::-webkit-scrollbar-track,
+.monaco-multifile-container.monaco-hc-black .monaco-response-body::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.monaco-multifile-container.monaco-light .monaco-api-tester-request-builder::-webkit-scrollbar-thumb,
+.monaco-multifile-container.monaco-light .monaco-response-content::-webkit-scrollbar-thumb,
+.monaco-multifile-container.monaco-light .monaco-response-body::-webkit-scrollbar-thumb {
+    background: rgba(100, 100, 100, 0.4);
+    border-radius: 5px;
+    border: 2px solid transparent;
+    background-clip: padding-box;
+}
+
+.monaco-multifile-container.monaco-dark .monaco-api-tester-request-builder::-webkit-scrollbar-thumb,
+.monaco-multifile-container.monaco-dark .monaco-response-content::-webkit-scrollbar-thumb,
+.monaco-multifile-container.monaco-dark .monaco-response-body::-webkit-scrollbar-thumb,
+.monaco-multifile-container.monaco-hc-black .monaco-api-tester-request-builder::-webkit-scrollbar-thumb,
+.monaco-multifile-container.monaco-hc-black .monaco-response-content::-webkit-scrollbar-thumb,
+.monaco-multifile-container.monaco-hc-black .monaco-response-body::-webkit-scrollbar-thumb {
+    background: rgba(121, 121, 121, 0.4);
+    border-radius: 5px;
+    border: 2px solid transparent;
+    background-clip: padding-box;
+}
+
+.monaco-multifile-container.monaco-light .monaco-api-tester-request-builder::-webkit-scrollbar-thumb:hover,
+.monaco-multifile-container.monaco-light .monaco-response-content::-webkit-scrollbar-thumb:hover,
+.monaco-multifile-container.monaco-light .monaco-response-body::-webkit-scrollbar-thumb:hover {
+    background: rgba(100, 100, 100, 0.7);
+    background-clip: padding-box;
+}
+
+.monaco-multifile-container.monaco-dark .monaco-api-tester-request-builder::-webkit-scrollbar-thumb:hover,
+.monaco-multifile-container.monaco-dark .monaco-response-content::-webkit-scrollbar-thumb:hover,
+.monaco-multifile-container.monaco-dark .monaco-response-body::-webkit-scrollbar-thumb:hover,
+.monaco-multifile-container.monaco-hc-black .monaco-api-tester-request-builder::-webkit-scrollbar-thumb:hover,
+.monaco-multifile-container.monaco-hc-black .monaco-response-content::-webkit-scrollbar-thumb:hover,
+.monaco-multifile-container.monaco-hc-black .monaco-response-body::-webkit-scrollbar-thumb:hover {
+    background: rgba(121, 121, 121, 0.7);
+    background-clip: padding-box;
+}
+
+.monaco-multifile-container.monaco-light .monaco-api-tester-request-builder::-webkit-scrollbar-thumb:active,
+.monaco-multifile-container.monaco-light .monaco-response-content::-webkit-scrollbar-thumb:active,
+.monaco-multifile-container.monaco-light .monaco-response-body::-webkit-scrollbar-thumb:active {
+    background: rgba(100, 100, 100, 0.9);
+    background-clip: padding-box;
+}
+
+.monaco-multifile-container.monaco-dark .monaco-api-tester-request-builder::-webkit-scrollbar-thumb:active,
+.monaco-multifile-container.monaco-dark .monaco-response-content::-webkit-scrollbar-thumb:active,
+.monaco-multifile-container.monaco-dark .monaco-response-body::-webkit-scrollbar-thumb:active,
+.monaco-multifile-container.monaco-hc-black .monaco-api-tester-request-builder::-webkit-scrollbar-thumb:active,
+.monaco-multifile-container.monaco-hc-black .monaco-response-content::-webkit-scrollbar-thumb:active,
+.monaco-multifile-container.monaco-hc-black .monaco-response-body::-webkit-scrollbar-thumb:active {
+    background: rgba(191, 191, 191, 0.4);
+    background-clip: padding-box;
+}
+
+/* JSON syntax highlighting in response body */
+.monaco-response-body .json-key {
+    color: #9876aa;
+}
+
+.monaco-multifile-container.monaco-light .monaco-response-body .json-key {
+    color: #881391;
+}
+
+.monaco-response-body .json-string {
+    color: #ce9178;
+}
+
+.monaco-multifile-container.monaco-light .monaco-response-body .json-string {
+    color: #a31515;
+}
+
+.monaco-response-body .json-number {
+    color: #b5cea8;
+}
+
+.monaco-multifile-container.monaco-light .monaco-response-body .json-number {
+    color: #098658;
+}
+
+.monaco-response-body .json-boolean,
+.monaco-response-body .json-null {
+    color: #569cd6;
+}
+
+.monaco-multifile-container.monaco-light .monaco-response-body .json-boolean,
+.monaco-multifile-container.monaco-light .monaco-response-body .json-null {
+    color: #0000ff;
+}
+
+.monaco-response-body .json-punctuation {
+    color: var(--mm-item-color);
+    opacity: 0.6;
+}

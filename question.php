@@ -642,11 +642,83 @@ class qtype_coderunner_question extends question_graded_automatically {
                 return get_string('answerrequired', 'qtype_coderunner');
             } else if (strlen($response['answer']) < constants::FUNC_MIN_LENGTH) {
                 return get_string('answertooshort', 'qtype_coderunner', constants::FUNC_MIN_LENGTH);
-            } else if (trim($response['answer']) == trim($this->answerpreload)) {
+            } else if (!$this->looks_like_multifile_json($response['answer']) &&
+                       trim($response['answer']) == trim($this->answerpreload)) {
                 return get_string('answerunchanged', 'qtype_coderunner');
             }
         }
         return '';  // All good.
+    }
+
+    /**
+     * Check if an answer looks like multifile JSON format.
+     * @param string $answer The answer to check
+     * @return bool True if it looks like multifile JSON
+     */
+    private function looks_like_multifile_json($answer) {
+        if (strlen($answer) < 2) {
+            return false;
+        }
+        $trimmed = trim($answer);
+        if ($trimmed[0] !== '{') {
+            return false;
+        }
+        $data = json_decode($trimmed, true);
+        $is_multifile = $data !== null && isset($data['files']) && is_array($data['files']);
+        return $is_multifile;
+    }
+
+    /**
+     * Compare two multifile JSON answers by their file contents only.
+     * @param string $answer1 First JSON answer
+     * @param string $answer2 Second JSON answer
+     * @return bool True if file contents are equal
+     */
+    private function multifile_answers_equal($answer1, $answer2) {
+        $data1 = json_decode($answer1, true);
+        $data2 = json_decode($answer2, true);
+
+        if ($data1 === null || $data2 === null) {
+            return trim($answer1) === trim($answer2);
+        }
+
+        $files1 = isset($data1['files']) ? $data1['files'] : [];
+        $files2 = isset($data2['files']) ? $data2['files'] : [];
+
+        if (count($files1) !== count($files2)) {
+            return false;
+        }
+
+        $map1 = [];
+        foreach ($files1 as $file) {
+            $path = isset($file['path']) ? $file['path'] : '';
+            $content = isset($file['content']) ? $file['content'] : '';
+            $map1[$path] = $content;
+        }
+
+        $map2 = [];
+        foreach ($files2 as $file) {
+            $path = isset($file['path']) ? $file['path'] : '';
+            $content = isset($file['content']) ? $file['content'] : '';
+            $map2[$path] = $content;
+        }
+
+        $keys1 = array_keys($map1);
+        $keys2 = array_keys($map2);
+        sort($keys1);
+        sort($keys2);
+
+        if ($keys1 !== $keys2) {
+            return false;
+        }
+
+        foreach ($map1 as $path => $content1) {
+            if (!isset($map2[$path]) || $map2[$path] !== $content1) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     // Return true iff the given filename is valid, meaning it matches the
@@ -679,7 +751,22 @@ class qtype_coderunner_question extends question_graded_automatically {
 
 
     public function is_complete_response(array $response) {
-        return $this->is_gradable_response($response);
+        // First check if it's gradable
+        if (!$this->is_gradable_response($response)) {
+            return false;
+        }
+
+        // For multifile questions, also check if the answer has been changed from preload
+        // An unchanged multifile answer should not be considered complete
+        if ($this->looks_like_multifile_json($response['answer']) &&
+            $this->looks_like_multifile_json($this->answerpreload)) {
+            // Both are multifile JSON, compare them
+            if ($this->multifile_answers_equal($response['answer'], $this->answerpreload)) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
 

@@ -588,6 +588,11 @@ function xmldb_qtype_coderunner_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 2025120602, 'qtype', 'coderunner');
     }
 
+    if ($oldversion < 2025121000) {
+        // TypeScript support added
+        // Note: prototypes are reloaded by update_question_types() at the end of this function.
+        upgrade_plugin_savepoint(true, 2025121000, 'qtype', 'coderunner');
+    }
 
     require_once(__DIR__ . '/upgradelib.php');
     update_question_types();

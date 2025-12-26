@@ -1187,6 +1187,11 @@ multi-file editor with an Explorer-style sidebar. Use the Answer preload panel t
 structure, lock template files, and include starter assets; students can then add, rename, and edit files
 entirely within the UI while their work is stored as JSON.</p>';
 
+$string['qtype_multifile_flight'] = '<p>A multi-file PHP Flight framework question type that opens the Monaco
+multi-file editor with support for PHP backends and HTML/CSS/JavaScript frontends. Tests can validate 3-layer
+architecture (DAO/Service/Routes), HTTP endpoints with JSON validation, JWT authentication, and code patterns.
+Student code is automatically deployed to a Flight server for testing and preview.</p>';
+
 $string['qtype_multifile_java'] = '<p>A multi-file Java question type that opens the Monaco multi-file editor
 with an Explorer-style sidebar. Students can build small Java projects with multiple source files; tests can
 either run the student&rsquo;s main method with per-test stdin or compile and execute teacher-supplied harness code.</p>';
