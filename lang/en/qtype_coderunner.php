@@ -1730,3 +1730,27 @@ $string['mongodb_database'] = 'MongoDB Database';
 $string['mongodb_database_desc'] = 'Default MongoDB database name for CodeRunner questions';
 $string['mongodb_collection'] = 'MongoDB Collection';
 $string['mongodb_collection_desc'] = 'Default collection name for CodeRunner questions';
+
+$string['qtype_kotlin_program'] = '<p>A Kotlin write-a-program question where the student
+submits a complete Kotlin program as their answer, including a top-level <code>fun main()</code>
+entry point. The program is compiled with <code>kotlinc</code> and executed for each test case.
+There is no test code — only stdin test data. Requires <code>kotlinc</code> and a JRE to be
+installed on the Jobe server.</p>
+<p>This question type sends one compile-and-execute job per test case to the sandbox.
+If there are many test cases, consider writing a combinator-style question type instead.</p>';
+
+$string['qtype_kotlin_function'] = '<p>A Kotlin write-a-function question where the student
+writes one or more top-level functions or classes. Each test case calls a function from the
+student\'s code in the <i>Test code</i> field (e.g. <code>println(add(2, 3))</code>). The
+template automatically wraps all test calls in a generated <code>fun main()</code> and runs
+them in a single compile-and-execute cycle (combinator style). Requires <code>kotlinc</code>
+and a JRE on the Jobe server.</p>';
+
+$string['qtype_kotlin_compose'] = '<p>A Kotlin Jetpack Compose question type for JVM/desktop
+Compose UI testing. The student submits Kotlin declarations such as composable functions,
+state holders, and view models; they must not submit a <code>fun main()</code>. Each test case
+is written as a <code>runComposeUiTest</code> block and can use node finders, assertions,
+text input, and click actions such as <code>onNodeWithTag(...).performClick()</code>.</p>
+<p>Requires a Jobe language named <code>kotlin_compose</code> with the Compose compiler plugin,
+Compose runtime/UI test classpath, and <code>xvfb-run</code> support for tests run with the
+<code>{"composeui":true}</code> sandbox parameter.</p>';

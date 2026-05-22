@@ -594,6 +594,111 @@ function xmldb_qtype_coderunner_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 2025121000, 'qtype', 'coderunner');
     }
 
+    if ($oldversion < 2026051800) {
+        // Add Kotlin question type prototypes: kotlin_program, kotlin_function, kotlin_compose.
+        // Note: prototypes are reloaded by update_question_types() at the end of this function.
+        upgrade_plugin_savepoint(true, 2026051800, 'qtype', 'coderunner');
+    }
+
+    if ($oldversion < 2026051801) {
+        // Fix kotlin_function to use test code as a raw statement (not wrapped in println).
+        // Suppress JVM deprecation warnings from stderr in all Kotlin templates.
+        // Note: prototypes are reloaded by update_question_types() at the end of this function.
+        upgrade_plugin_savepoint(true, 2026051801, 'qtype', 'coderunner');
+    }
+
+    if ($oldversion < 2026051802) {
+        // Kotlin templates: add find_tool() to locate kotlinc/java when not on default PATH,
+        // add FileNotFoundError handling, and filter JVM noise from both stdout and stderr.
+        // Note: prototypes are reloaded by update_question_types() at the end of this function.
+        upgrade_plugin_savepoint(true, 2026051802, 'qtype', 'coderunner');
+    }
+
+    if ($oldversion < 2026051803) {
+        // Kotlin templates: always emit a visible message on any failure path (no more silent
+        // empty output); combine stderr+stdout for compile errors; increase time/memory limits.
+        // Note: prototypes are reloaded by update_question_types() at the end of this function.
+        upgrade_plugin_savepoint(true, 2026051803, 'qtype', 'coderunner');
+    }
+
+    if ($oldversion < 2026051804) {
+        // Kotlin templates: cap JVM heap size (-J-Xmx256m for kotlinc, -Xmx128m for java)
+        // to prevent "Could not reserve enough space for object heap" in Jobe sandbox.
+        // Note: prototypes are reloaded by update_question_types() at the end of this function.
+        upgrade_plugin_savepoint(true, 2026051804, 'qtype', 'coderunner');
+    }
+
+    if ($oldversion < 2026051805) {
+        // Kotlin templates: also cap CompressedClassSpace (default 1GB) and MaxMetaspace
+        // to prevent "Could not allocate compressed class space" in Jobe sandbox.
+        // Note: prototypes are reloaded by update_question_types() at the end of this function.
+        upgrade_plugin_savepoint(true, 2026051805, 'qtype', 'coderunner');
+    }
+
+    if ($oldversion < 2026051806) {
+        // Kotlin templates: replace CompressedClassSpaceSize cap with -XX:-UseCompressedOops,
+        // which disables CCS entirely and avoids virtual address space exhaustion in Jobe sandbox.
+        // Note: prototypes are reloaded by update_question_types() at the end of this function.
+        upgrade_plugin_savepoint(true, 2026051806, 'qtype', 'coderunner');
+    }
+
+    if ($oldversion < 2026051807) {
+        // Kotlin prototypes: raise memlimitmb from 512 to 2000 (matching Java prototypes).
+        // 512MB virtual memory was too low for kotlinc's JVM to mmap the JRT modules image.
+        // Also removed -XX:-UseCompressedOops (which increased VA usage); with 2000MB VA the
+        // default CompressedOops/CCS allocation succeeds without special flags.
+        upgrade_plugin_savepoint(true, 2026051807, 'qtype', 'coderunner');
+    }
+
+    if ($oldversion < 2026051808) {
+        // Switch Kotlin prototypes from Python-wrapper approach to native Kotlin execution via
+        // Jobe's built-in Kotlin language support. Templates are now plain Twig (like java_program/
+        // java_method). Also fix jobesandbox.php to use .kt file extension for language=kotlin.
+        upgrade_plugin_savepoint(true, 2026051808, 'qtype', 'coderunner');
+    }
+
+    if ($oldversion < 2026051809) {
+        // Change kotlin_compose to target a custom Jobe kotlin_compose language and run
+        // Compose UI tests via a combinator TemplateGrader.
+        upgrade_plugin_savepoint(true, 2026051809, 'qtype', 'coderunner');
+    }
+
+    if ($oldversion < 2026051810) {
+        // Raise kotlin_compose disk limit so Skiko can unpack its native runtime library.
+        upgrade_plugin_savepoint(true, 2026051810, 'qtype', 'coderunner');
+    }
+
+    if ($oldversion < 2026051811) {
+        // Format kotlin_compose UI test results as Test/Expected/Got and keep caught
+        // assertion failures from being reclassified as Jobe runtime errors.
+        upgrade_plugin_savepoint(true, 2026051811, 'qtype', 'coderunner');
+    }
+
+    if ($oldversion < 2026051812) {
+        // Report combinator TemplateGrader compilation errors as normal syntax errors.
+        upgrade_plugin_savepoint(true, 2026051812, 'qtype', 'coderunner');
+    }
+
+    if ($oldversion < 2026051813) {
+        // Use CodeRunner's standard Kotlin source filename for kotlin_compose runs.
+        upgrade_plugin_savepoint(true, 2026051813, 'qtype', 'coderunner');
+    }
+
+    if ($oldversion < 2026051814) {
+        // Make successful kotlin_compose UI test rows more descriptive.
+        upgrade_plugin_savepoint(true, 2026051814, 'qtype', 'coderunner');
+    }
+
+    if ($oldversion < 2026051815) {
+        // Add ktTest helper to customise kotlin_compose UI test pass/fail text.
+        upgrade_plugin_savepoint(true, 2026051815, 'qtype', 'coderunner');
+    }
+
+    if ($oldversion < 2026051816) {
+        // Add kotlin_compose showtestcode parameter and remove pass-count prologue.
+        upgrade_plugin_savepoint(true, 2026051816, 'qtype', 'coderunner');
+    }
+
     require_once(__DIR__ . '/upgradelib.php');
     update_question_types();
 

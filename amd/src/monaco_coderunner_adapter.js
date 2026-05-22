@@ -967,6 +967,11 @@
       var stopped = false;
       var trackedDisposables = [];
       var lastDiagnosticsByUri = new Map();
+      var pullDiagnosticsEnabled = false;
+      var diagnosticIdentifier = null;
+      var lastDiagnosticResultIds = new Map();
+      var diagnosticTimer = null;
+      var diagnosticRequestToken = 0;
       var keepAliveTimer = null;
       var KEEPALIVE_INTERVAL = 30000;
       var EXECUTE_COMMAND_ID = 'lmsMonaco.executeCommand';
@@ -2194,6 +2199,10 @@
                     'async', 'modification', 'documentation', 'defaultLibrary'
                   ],
                   formats: ['relative']
+                },
+                diagnostic: {
+                  dynamicRegistration: false,
+                  relatedDocumentSupport: false
                 }
               },
               workspace: {
@@ -2209,6 +2218,9 @@
                 },
                 executeCommand: {
                   dynamicRegistration: true
+                },
+                diagnostics: {
+                  refreshSupport: true
                 }
               }
             },
@@ -2221,6 +2233,14 @@
         pending[init.id] = {
           resolve: function (result) {
             send({ jsonrpc: '2.0', method: 'initialized', params: {} });
+            // Detect pull-diagnostics support from server capabilities
+            var diagProvider = result && result.capabilities && result.capabilities.diagnosticProvider;
+            if (diagProvider) {
+              pullDiagnosticsEnabled = true;
+              diagnosticIdentifier = typeof diagProvider === 'object' ? (diagProvider.identifier || null) : null;
+              lastDiagnosticResultIds.clear();
+              scheduleDiagnostics(0);
+            }
             // Send workspace configuration via didChangeConfiguration for LSP servers like sqls
             if (workspaceConfig) {
               send({
@@ -2410,6 +2430,41 @@
           return d && d.range && d.range.start && d.range.start.line >= targetPrefixLineCount;
         }) : [];
         lastDiagnosticsByUri.set(targetUri, filteredDiagnostics);
+      }
+
+      function scheduleDiagnostics(delay) {
+        if (!pullDiagnosticsEnabled) return;
+        clearTimeout(diagnosticTimer);
+        diagnosticTimer = setTimeout(refreshDiagnostics, delay != null ? delay : 250);
+      }
+
+      function refreshDiagnostics() {
+        if (!pullDiagnosticsEnabled) return;
+        var token = ++diagnosticRequestToken;
+        for (var mi = 0; mi < sharedConnection.models.length; mi++) {
+          (function(m) {
+            var uri = m && m.uri && m.uri.toString();
+            if (!uri) return;
+            var lspUri = (sharedConnection.lspUriByModel && sharedConnection.lspUriByModel.get(uri)) || uri;
+            var params = { textDocument: { uri: lspUri } };
+            if (diagnosticIdentifier) {
+              params.identifier = diagnosticIdentifier;
+            }
+            if (lastDiagnosticResultIds.has(lspUri)) {
+              params.previousResultId = lastDiagnosticResultIds.get(lspUri);
+            }
+            request('textDocument/diagnostic', params).then(function(report) {
+              if (token !== diagnosticRequestToken) return;
+              if (report && report.kind === 'full') {
+                lastDiagnosticResultIds.set(lspUri, report.resultId != null ? report.resultId : null);
+                handleDiagnostics({ uri: lspUri, diagnostics: report.items || [] });
+              } else if (report && report.kind === 'unchanged') {
+                var prev = lastDiagnosticResultIds.get(lspUri);
+                lastDiagnosticResultIds.set(lspUri, report.resultId != null ? report.resultId : prev);
+              }
+            }).catch(function() {});
+          })(sharedConnection.models[mi]);
+        }
       }
 
       function getPrefixInfoForModel(targetModel) {
@@ -3609,6 +3664,7 @@
         var currentUri = toUri();
         send({ jsonrpc: '2.0', method: 'textDocument/didChange', params: { textDocument: { uri: currentUri, version: version }, contentChanges: [ { text: text } ] } });
         notifyDidChangeSent({ uri: currentUri, version: version });
+        scheduleDiagnostics(250);
 
         // Debounce didSave to trigger full project revalidation after changes stabilize
         // This ensures dependent files get updated diagnostics
@@ -3709,6 +3765,13 @@
             handleDiagnostics(msg.params);
             return;
           }
+          if (msg.method === 'workspace/diagnostic/refresh') {
+            if (msg.id !== undefined) {
+              send({ jsonrpc: '2.0', id: msg.id, result: null });
+            }
+            scheduleDiagnostics(0);
+            return;
+          }
           if (msg.method === 'workspace/applyEdit') {
             var success = false;
             try { success = applyWorkspaceEdit(msg.params && msg.params.edit); } catch (e) { success = false; }
@@ -3802,6 +3865,12 @@
         ws.onerror = function () { rejectAllPending({ code: 'error' }); };
         ws.onclose = function () {
           try { monaco.editor.setModelMarkers(model, 'lsp', []); } catch (e) {}
+          clearTimeout(diagnosticTimer);
+          diagnosticTimer = null;
+          diagnosticRequestToken++;
+          pullDiagnosticsEnabled = false;
+          diagnosticIdentifier = null;
+          lastDiagnosticResultIds.clear();
           rejectAllPending({ code: 'closed' });
           scheduleReconnect();
           if (keepAliveTimer) {

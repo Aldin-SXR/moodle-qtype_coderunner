@@ -197,6 +197,8 @@ class qtype_coderunner_jobesandbox extends qtype_coderunner_sandbox {
             } else {
                 $progname = 'NO_PUBLIC_CLASS_FOUND.java';  // I give up. Over to the sandbox. Will probably fail.
             }
+        } else if ($language === 'kotlin' || $language === 'kotlin_compose') {
+            $progname = '__tester__.kt';
         } else {
             $progname = "__tester__.$language";
         }
