@@ -37,6 +37,7 @@ use external_value;
 use context;
 use qtype_coderunner_sandbox;
 use qtype_coderunner_exception;
+use qtype_coderunner\constants;
 
 class run_in_sandbox extends external_api {
     /**
@@ -181,16 +182,65 @@ class run_in_sandbox extends external_api {
             } else {
                 $paramsarray['cputime'] = $maxcputime;
             }
-            $jobehostws = trim(get_config('qtype_coderunner', 'wsjobeserver') ?? '');
-            if ($jobehostws !== '') {
-                $paramsarray['jobeserver'] = $jobehostws;
+            // Decide which Jobe server (if any) this call is allowed to use, and strip
+            // out anything the caller had no business supplying. See the
+            // qtype_coderunner/wsjobeservermode setting for the three possible modes.
+            $requestedjobeserver = $paramsarray['jobeserver'] ?? null;
+            unset($paramsarray['jobeserver'], $paramsarray['jobeapikey']);
+            $mode = get_config('qtype_coderunner', 'wsjobeservermode') ?: constants::WS_JOBESERVER_MODE_STANDARD;
+
+            if ($mode === constants::WS_JOBESERVER_MODE_FLEXIBLE && $requestedjobeserver !== null) {
+                $allowed = self::find_allowed_jobeserver($requestedjobeserver);
+                if ($allowed === null) {
+                    throw new qtype_coderunner_exception(get_string('wsjobeservernotallowed', 'qtype_coderunner'));
+                }
+                $paramsarray['jobeserver'] = $allowed['host'];
+                if ($allowed['apikey'] !== '') {
+                    $paramsarray['jobeapikey'] = $allowed['apikey'];
+                }
+            } else if ($requestedjobeserver !== null) {
+                // Standard or forced mode: no caller-requested override is ever
+                // honoured, so make that explicit rather than silently ignoring
+                // the request and running on a different server than asked for.
+                throw new qtype_coderunner_exception(get_string('wsjobeservernotallowed', 'qtype_coderunner'));
+            } else if ($mode === constants::WS_JOBESERVER_MODE_FORCED) {
+                $forcedjobeserver = trim(get_config('qtype_coderunner', 'wsjobeserver') ?? '');
+                if ($forcedjobeserver !== '') {
+                    $paramsarray['jobeserver'] = $forcedjobeserver;
+                }
             }
+            // Otherwise (standard mode, or flexible mode, with no request made) the
+            // sandbox falls back to its own default: the primary jobe_host/jobe_apikey.
+
             // Usecache set to false for these runs as we will never regrade them.
             $runresult = $sandbox->execute($sourcecode, $language, $stdin, $filesarray, $paramsarray, false);
-        } catch (Exception $ex) {
-            throw new qtype_coderunner_exception("Attempt to run job failed with error {$ex->message}");
+        } catch (\Exception $ex) {
+            throw new qtype_coderunner_exception("Attempt to run job failed with error {$ex->getMessage()}");
         }
         $runresult->sandboxinfo = null; // Prevent leakage of info.
         return json_encode($runresult);
+    }
+
+    /**
+     * Look up a caller-requested Jobe server against the admin-configured
+     * qtype_coderunner/wsallowedjobeservers list. Used only in 'flexible' mode.
+     *
+     * @param string $requested The jobeserver value requested by the caller.
+     * @return array|null ['host' => string, 'apikey' => string] if the requested
+     * server is in the allowed list, else null.
+     */
+    private static function find_allowed_jobeserver($requested) {
+        $list = get_config('qtype_coderunner', 'wsallowedjobeservers') ?: '';
+        foreach (preg_split('/\r\n|\r|\n/', $list) as $line) {
+            $line = trim($line);
+            if ($line === '') {
+                continue;
+            }
+            [$host, $apikey] = array_pad(explode('|', $line, 2), 2, '');
+            if (trim($host) === trim($requested)) {
+                return ['host' => trim($host), 'apikey' => trim($apikey)];
+            }
+        }
+        return null;
     }
 }

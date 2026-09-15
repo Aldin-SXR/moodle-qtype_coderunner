@@ -1,6 +1,6 @@
 # CodeRunner
 
-Version: 5.9.3 23 June, 2026. Requires **MOODLE V4.3 or later + PHP >=8.1**. Earlier versions
+Version: 5.10.2 15 September, 2026. Requires **MOODLE V4.3 or later + PHP >=8.1**. Earlier versions
 of Moodle must use CodeRunner V4.
 
 

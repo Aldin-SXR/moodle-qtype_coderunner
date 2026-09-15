@@ -445,6 +445,26 @@ function xmldb_qtype_coderunner_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 2026071001, 'qtype', 'coderunner');
     }
 
+    if ($oldversion < 2026091501) {
+        // New wsjobeservermode setting controls whether a caller of the sandbox
+        // web service (run_in_sandbox) may redirect requests to a Jobe server of
+        // their own choosing. Previously an empty wsjobeserver setting meant any
+        // caller-supplied jobeserver/jobeapikey was honoured unchecked; a
+        // non-empty wsjobeserver meant it was always forced. Preserve existing
+        // behaviour for sites already relying on the forced case; everyone else
+        // (the vast majority, who never touched this setting) gets the new
+        // safe-by-default 'standard' mode, closing that hole automatically.
+        $existingforced = trim(get_config('qtype_coderunner', 'wsjobeserver') ?: '');
+        set_config(
+            'wsjobeservermode',
+            $existingforced !== ''
+                ? \qtype_coderunner\constants::WS_JOBESERVER_MODE_FORCED
+                : \qtype_coderunner\constants::WS_JOBESERVER_MODE_STANDARD,
+            'qtype_coderunner'
+        );
+        upgrade_plugin_savepoint(true, 2026091501, 'qtype', 'coderunner');
+    }
+
     require_once(__DIR__ . '/upgradelib.php');
     update_question_types();
 

@@ -1,5 +1,17 @@
 # CHANGE HISTORY
 
+### September 15 2026, 5.10.2
+ * Security fixes (cherry-picked from #296):
+   - Scope quiztrajectory.php reporting to the caller's authorised course.
+   - Escape prototype name and gate output in prototypeusage.php.
+   - Require sesskey on the cache-purge worker in cachepurge.php.
+ * Replace the sandbox web service's single "forced Jobe server" setting with a three-mode
+   "Web-service Jobe server mode" (Standard/Forced/Flexible). Standard (the new default) no
+   longer honours a caller-supplied jobeserver/jobeapikey at all, closing an SSRF-shaped hole
+   where any authenticated user could redirect run_in_sandbox requests to a host of their own
+   choosing; Flexible allows specific pre-approved alternate servers, each with its own
+   admin-configured API key that a caller can never supply themselves.
+
 ### July 22 2026, 5.10.1
  * Bump dependency in version.php in order to trigger update to the coderunner behaviour code,
    which fixes the problem that the Precheck and Stop buttons were not initiating a scroll

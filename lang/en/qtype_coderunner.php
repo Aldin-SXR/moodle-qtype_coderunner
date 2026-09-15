@@ -366,11 +366,10 @@ $string['jobe_apikey'] = 'Jobe API-key';
 $string['jobe_apikey_desc'] = 'The API key to be included in all REST requests to the Jobe server (if required). Max 40 chars. Leave blank to omit the API Key from requests';
 $string['jobe_host'] = 'Jobe server';
 $string['jobe_host_desc'] = 'The host name of the Jobe server plus the port number if other than port 80, e.g. jobe.somewhere.edu:4010. The URL for the Jobe request is obtained by default by prefixing this string with http:// and appending /jobe/index.php/restapi/<REST_METHOD>. You may either specify the https:// protocol in front of the host name (e.g. https://jobe.somewhere.edu) if the Jobe server is set behind a reverse proxy which act as an SSL termination. Multiple jobe servers, separated by a semicolon, are possible for handling higher loads: one is chosen at random.';
-$string['jobe_host_ws'] = 'Jobe server to use for web services';
-$string['jobe_host_ws_desc'] = 'The sandbox server web service will use whatever sandbox is configured for the specified
-    language. This is virtually always a Jobe server, and the particular Jobe server to use is configured via the admin interface (above).
-    However, for best web service security it is better to use an alternative
-    Jobe server, set by this field. Multiple jobe servers, separated by a semicolon, are possible for handling higher loads: one is chosen at random. Leave blank to use the default. ';
+$string['jobe_host_ws'] = 'Forced Jobe server for web services';
+$string['jobe_host_ws_desc'] = 'Only used when "Web-service Jobe server mode" (above) is set to Forced. One or more
+    Jobe servers, separated by a semicolon (one is chosen at random for each request), that will always be used for
+    every sandbox web-service call, regardless of what any caller requests.';
 $string['jobe_warning_html'] = "<p style='background-color:yellow'>Run using the University of Canterbury's Jobe server. This is for initial testing only. Please set up your own Jobe server as soon as possible. See <a href='https://github.com/trampgeek/moodle-qtype_coderunner/blob/master/Readme.md#sandbox-configuration' target='_blank'>here</a>.</p>";
 $string['jobe_canterbury_html'] = "<p style='color:gray; font-style:italic; font-size:smaller'>Run on the University of Canterbury's Jobe server.</p>";
 
@@ -1452,9 +1451,25 @@ $string['useace'] = 'Template uses ace';
 $string['validateonsave'] = 'Validate on save';
 
 $string['wrongnumberofformats'] = 'Wrong number of test results column formats. Expected {$a->expected}, got {$a->got}';
+$string['wsallowedjobeservers'] = 'Jobe servers a caller may request';
+$string['wsallowedjobeservers_desc'] = 'Only used when "Web-service Jobe server mode" (above) is set to Flexible. One
+    entry per line, each of the form <code>host[:port]</code> or <code>host[:port]|apikey</code> (the apikey part is
+    only needed if that Jobe server requires one). A caller of the sandbox web service may request one of these
+    servers by name; the corresponding apikey (if any) is then used automatically &ndash; a caller can never supply
+    their own apikey. A request for any server not listed here is rejected. Leave empty to disallow all such
+    requests (the caller-requested server is simply ignored and the primary Jobe server(s) are used instead).';
 $string['wsbadjson'] = 'Params and file parameters must be blank or a valid JSON record';
 $string['wscputimeexcess'] = 'CPU time specified exceeds set maximum CPU time';
 $string['wsdisabled'] = 'Sandbox web service disabled. Talk to a sysadmin';
+$string['wsjobeservermode'] = 'Web-service Jobe server mode';
+$string['wsjobeservermode_desc'] = 'Controls which Jobe server(s) the sandbox web service (used to run code outside
+    of a normal CodeRunner question submission, e.g. by a "Try it!" widget or a custom page) is allowed to use. A
+    caller of this web service can, if permitted, ask to have their code run on a Jobe server of their own choosing
+    &ndash; this setting controls whether, and how, that request is honoured.';
+$string['wsjobeservermode_standard'] = 'Standard: always use the primary Jobe server(s) configured above; any server requested by the caller is ignored';
+$string['wsjobeservermode_forced'] = 'Forced: always use only the Jobe server(s) specified below; any server requested by the caller is ignored';
+$string['wsjobeservermode_flexible'] = 'Flexible: use the primary Jobe server(s) above, unless the caller requests one of the specific alternates listed below';
+$string['wsjobeservernotallowed'] = 'The requested Jobe server cannot be used: either this web service does not allow the caller to choose a Jobe server, or the requested server is not in the allowed list';
 $string['wsloggingenable'] = 'Log sandbox web service usage';
 $string['wsloggingenable_desc'] = 'If this option is checked, every code execution via the sandbox web service will be logged. This option must be enabled if user rate throttling is to work.';
 $string['wsmaxcputime'] = 'Max CPU time (secs)';
