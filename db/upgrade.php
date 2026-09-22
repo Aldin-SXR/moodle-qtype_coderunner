@@ -759,6 +759,33 @@ function xmldb_qtype_coderunner_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 2026062300, 'qtype', 'coderunner');
     }
 
+    if ($oldversion < 2026071001) {
+        // Install the new qtype/coderunner:management capability and assign it
+        // to the archetypes defined in db/access.php (editingteacher, manager).
+        update_capabilities('qtype_coderunner');
+        upgrade_plugin_savepoint(true, 2026071001, 'qtype', 'coderunner');
+    }
+
+    if ($oldversion < 2026091501) {
+        // New wsjobeservermode setting controls whether a caller of the sandbox
+        // web service (run_in_sandbox) may redirect requests to a Jobe server of
+        // their own choosing. Previously an empty wsjobeserver setting meant any
+        // caller-supplied jobeserver/jobeapikey was honoured unchecked; a
+        // non-empty wsjobeserver meant it was always forced. Preserve existing
+        // behaviour for sites already relying on the forced case; everyone else
+        // (the vast majority, who never touched this setting) gets the new
+        // safe-by-default 'standard' mode, closing that hole automatically.
+        $existingforced = trim(get_config('qtype_coderunner', 'wsjobeserver') ?: '');
+        set_config(
+            'wsjobeservermode',
+            $existingforced !== ''
+                ? \qtype_coderunner\constants::WS_JOBESERVER_MODE_FORCED
+                : \qtype_coderunner\constants::WS_JOBESERVER_MODE_STANDARD,
+            'qtype_coderunner'
+        );
+        upgrade_plugin_savepoint(true, 2026091501, 'qtype', 'coderunner');
+    }
+
     if ($oldversion < 2026092200) {
         // Add linked-list, stack and queue modes to the data_structure_graph prototype grader.
         // Note: prototypes are reloaded by update_question_types() at the end of this function.
@@ -769,6 +796,29 @@ function xmldb_qtype_coderunner_upgrade($oldversion) {
         // Linked-list, stack and queue elements hold a single key; queues use head/tail.
         // Note: prototypes are reloaded by update_question_types() at the end of this function.
         upgrade_plugin_savepoint(true, 2026092201, 'qtype', 'coderunner');
+    }
+
+    if ($oldversion < 2026092300) {
+        // Merge of upstream CodeRunner 5.10.2. Sites whose version was already
+        // above upstream's 2026071001 and 2026091501 savepoints skipped those
+        // steps, so apply their effects here. Both are safe to repeat.
+        //
+        // 1. Install the qtype/coderunner:management capability.
+        update_capabilities('qtype_coderunner');
+        // 2. Initialise the wsjobeservermode setting that closes the sandbox
+        // web-service SSRF hole, preserving the old behaviour of sites that
+        // forced a web-service Jobe server.
+        if (get_config('qtype_coderunner', 'wsjobeservermode') === false) {
+            $existingforced = trim(get_config('qtype_coderunner', 'wsjobeserver') ?: '');
+            set_config(
+                'wsjobeservermode',
+                $existingforced !== ''
+                    ? \qtype_coderunner\constants::WS_JOBESERVER_MODE_FORCED
+                    : \qtype_coderunner\constants::WS_JOBESERVER_MODE_STANDARD,
+                'qtype_coderunner'
+            );
+        }
+        upgrade_plugin_savepoint(true, 2026092300, 'qtype', 'coderunner');
     }
 
     require_once(__DIR__ . '/upgradelib.php');

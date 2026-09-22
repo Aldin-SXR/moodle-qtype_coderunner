@@ -24,10 +24,9 @@
 
 use Behat\Mink\Exception\ExpectationException;
 use Facebook\WebDriver\Exception\NoSuchAlertException;
-
+use Moodle\BehatExtension\Exception\SkippedException;
 
 class behat_coderunner extends behat_base {
-
     /**
      * Loads the default coderunner settings file for testing.
      * It seems silly that I have to do that. Why is there not
@@ -36,7 +35,7 @@ class behat_coderunner extends behat_base {
      */
     public function the_coderunner_test_configuration_file_is_loaded() {
         global $CFG;
-        require($CFG->dirroot .'/question/type/coderunner/tests/fixtures/test-sandbox-config.php');
+        require($CFG->dirroot . '/question/type/coderunner/tests/fixtures/test-sandbox-config.php');
     }
 
     /**
@@ -50,10 +49,10 @@ class behat_coderunner extends behat_base {
 
 
     /**
-      * Sets the webserver webservice to disabled for testing purposes.
-      *
-      * @Given /^the CodeRunner webservice is disabled/
-      */
+     * Sets the webserver webservice to disabled for testing purposes.
+     *
+     * @Given /^the CodeRunner webservice is disabled/
+     */
     public function the_coderunner_webservice_is_disabled() {
         set_config('wsenabled', 0, 'qtype_coderunner');
     }
@@ -128,16 +127,26 @@ class behat_coderunner extends behat_base {
 
     /**
      * Sets the ace editor content to provided string, using name of associated textarea.
-     * NOTE: this assumes the existence of a text area next to a
-     * UI wrapper div containing the Ace div! Also works on partial matches,
-     * i.e. value as _answer will work for Ace UI
+     * NOTES:
+     *  - Also works on partial matches, eg, value as _answer will work for Ace UI
+     *  - But you will just get the first match so need to be using on pages with one question...
+     *  - The field to look for is different between plain Ace and Scratchpad
+     *     - In plain Ace look for a field containing "_answer" in the name
+     *     - In Scratchpad look for
+     *          - a field containing "answer_code" in the name
+     *          - or a field containing "test_code" in the name
+     *  - This assumes the existence of a text area next to a
+     *    UI wrapper div containing the Ace div!
+
+     *
      * Intended as a replacement for I set field to <value>, for ace fields.
      * @Then /^I set the ace field "(?P<elname>(?:[^"]|\\")*)" to "(?P<value>(?:[^"]|\\")*)"$/
      * @throws ExpectationException
      * @param string $expected The string that we expect to find
      */
     public function i_set_ace_field($elname, $value) {
-        $xpath = "//textarea[@name='$elname' or (contains(@name, '$elname') and contains(@class, 'edit_code'))]/following-sibling::div[1]/div";
+        $xpath = "//textarea[@name='$elname' or (contains(@name, '$elname') " .
+             "and contains(@class, 'edit_code'))]/following-sibling::div[1]/div";
         $driver = $this->getSession()->getDriver();
         // Does the div managed by Ace exist?
         if (!$driver->find($xpath)) {
@@ -159,9 +168,19 @@ class behat_coderunner extends behat_base {
     }
 
     /**
-     * Sets the ace editor content to provided string, using name of associated textarea.
-     * NOTE: this assumes the existence of a text area next to a
-     * UI wrapper div containing the Ace div!
+     * Sets the ace editor content to a provided multiline string, using name of associated textarea.
+     * Should probably change format to I set... to multiline:$ to match base Moodle equivalent.
+     *    But this is big job :/
+     * NOTES:
+     *  - Also works on partial matches, eg, value as _answer will work for Ace UI
+     *  - But you will just get the first match so need to be using on pages with one question...
+     *  - The field to look for is different between plain Ace and Scratchpad
+     *     - In plain Ace look for a field containing "_answer" in the name
+     *     - In Scratchpad look for
+     *          - a field containing "answer_code" in the name
+     *          - or a field containing "test_code" in the name
+     *  - This assumes the existence of a text area next to a
+     *    UI wrapper div containing the Ace div!
      * Intended as a replacement for I set field to <value>, for ace fields.
      * @Then /^I set the ace field "(?P<elname>(?:[^"]|\\")*)" to:$/
      * @throws ExpectationException
@@ -257,6 +276,26 @@ class behat_coderunner extends behat_base {
         $this->execute('behat_forms::i_set_the_field_to', [$fieldlocator, $this->escape($value)]);
     }
 
+
+    /**
+     * Sets the specified value to the field with xpath.
+     * This doesn't seem to be in the base Moodle behat code as of v5.0
+     * Need this as the above  i_set_the_field_to_pystring definition only
+     * matches the field name exactly.
+     *
+     * @Given /^I set the field with xpath "(?P<fieldxpath_string>(?:[^"]|\\")*)" to multiline:$/
+     * @throws ElementNotFoundException Thrown by behat_base::find
+     * @param string $fieldxpath
+     * @param string $value
+     * @return void
+     */
+    public function i_set_the_field_with_xpath_to_pystring($fieldxpath, Behat\Gherkin\Node\PyStringNode $value) {
+        #$value = (string)$value;
+        $rawvalue = $value->getRaw();
+        $this->execute('behat_forms::i_set_the_field_with_xpath_to', [$fieldxpath, $rawvalue]);
+    }
+
+
     /**
      * @Then /^I should see a canvas/
      */
@@ -312,7 +351,17 @@ class behat_coderunner extends behat_base {
         }
     }
 
-
+    /**
+     * Skips scenario if the given language is not installed on the Jobe server
+     *
+     * @Given /^the Jobe server supports "(?P<lang>[^"]+)"$/
+     */
+    public function jobe_supports_language(string $lang): void {
+        if (qtype_coderunner_sandbox::get_best_sandbox($lang, true) === null) {
+            $msg = "$lang is not installed on your server. Scenario skipped.";
+            throw new SkippedException($msg);
+        }
+    }
 
     /**
      * Presses a named button. Checks if there is a specified error text displayed.

@@ -7,6 +7,7 @@ Feature: Check that Python and other languages can be used instead of Twig as a 
 
   Background:
     Given the CodeRunner test configuration file is loaded
+    And the Jobe server supports "python3"
     And the following "users" exist:
       | username | firstname       | lastname  | email            |
       | teacher1 | Teacher         | Last      | teacher1@asd.com |
@@ -25,7 +26,7 @@ Feature: Check that Python and other languages can be used instead of Twig as a 
       | contextlevel    | reference | name           |
       | Activity module | quiz1     | Test questions |
 
-Scenario: if evaluate per student is true, both teacher and student should be able to answer with their own names
+  Scenario: if evaluate per student is true, both teacher and student should be able to answer with their own names
     When I am on the "Quiz 1" "mod_quiz > Edit" page logged in as "teacher1"
     And I disable UI plugins in the CodeRunner question type
     And I open the "last" add to quiz menu
@@ -61,8 +62,8 @@ Scenario: if evaluate per student is true, both teacher and student should be ab
     When I log out
     And I am on the "Quiz 1" "quiz activity" page logged in as student1
     And I press "Attempt quiz"
-    Then I should see "Write a program that prints True if seed parameter provided, then StudentFirst OConnell"
-    And I set the field with xpath "//textarea[contains(@name, 'answer')]" to "print('StudentFirst OConnell')"
+    Then I should see "Write a program that prints True if seed parameter provided, then Student First O'Connell"
+    And I set the field with xpath "//textarea[contains(@name, 'answer')]" to "print('Student First O\'Connell')"
     And I press "Check"
     Then I should see "Passed all tests"
 
@@ -70,10 +71,10 @@ Scenario: if evaluate per student is true, both teacher and student should be ab
     And I am on the "Quiz 1" "quiz activity" page logged in as teacher1
     And I follow "Attempts: 1"
     And I follow "Review attempt"
-    Then I should see "Write a program that prints True if seed parameter provided, then StudentFirst OConnell"
+    Then I should see "Write a program that prints True if seed parameter provided, then Student First O'Connell"
     And I should see "Passed all tests"
 
-Scenario: if evaluate per student is unchecked, the teacher's name is displayed not the student's.
+  Scenario: if evaluate per student is unchecked, the teacher's name is displayed not the student's.
     When I am on the "Quiz 1" "mod_quiz > Edit" page logged in as "teacher1"
     And I disable UI plugins in the CodeRunner question type
     And I open the "last" add to quiz menu

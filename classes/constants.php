@@ -52,6 +52,12 @@ class constants {
     const JOBE_HOST_DEFAULT = 'jobe2.cosc.canterbury.ac.nz';
     const JOBE_HOST_DEFAULT_API_KEY = '2AAA7A5415B4A9B394B54BF1D2E9D';
 
+    // Modes for the qtype_coderunner/wsjobeservermode setting, controlling how
+    // the sandbox web service (run_in_sandbox) selects a Jobe server.
+    const WS_JOBESERVER_MODE_STANDARD = 'standard'; // Always use the primary jobe_host(s).
+    const WS_JOBESERVER_MODE_FORCED   = 'forced';   // Always use wsjobeserver, ignoring any caller request.
+    const WS_JOBESERVER_MODE_FLEXIBLE = 'flexible'; // Primary jobe_host(s), or a caller-requested entry from wsallowedjobeservers.
+
     const DEFAULT_NUM_ROWS = 18;     // Default answerbox size.
 
     const ANSWER_CODE_KEY = 'answer_code'; // The key to the code in a Scratchpad UI question.

@@ -59,3 +59,28 @@ function qtype_coderunner_pluginfile($course, $cm, $context, $filearea, $args, $
 function qtype_coderunner_reload_cache_definitions_after_ttl_update(string $caller) {
     cache_helper::update_definitions();
 }
+
+/**
+ * Add a link to the CodeRunner management dashboard in the course administration navigation.
+ * Visible to anyone with the qtype/coderunner:management capability in the course context.
+ */
+function qtype_coderunner_extend_navigation_course(
+    navigation_node $navref,
+    stdClass $course,
+    context_course $context
+): void {
+    if (has_capability('qtype/coderunner:management', $context)) {
+        $url = new moodle_url(
+            '/question/type/coderunner/management.php',
+            ['courseid' => $course->id]
+        );
+        $navref->add(
+            get_string('mgmt_navlink', 'qtype_coderunner'),
+            $url,
+            navigation_node::TYPE_SETTING,
+            null,
+            null,
+            new pix_icon('i/settings', '')
+        );
+    }
+}

@@ -27,8 +27,6 @@ defined('MOODLE_INTERNAL') || die();
 
 require_once($CFG->dirroot . '/question/type/coderunner/tests/test.php');
 
-qtype_coderunner_testcase::setup_test_sandbox_configuration();
-
 // Special class of exception thrown when the helper is asked to construct
 // a CodeRunner question of a type for which no prototype exists.
 // This may occur if, say Matlab has been installed in a sandbox but the
@@ -43,7 +41,7 @@ class qtype_coderunner_missing_question_type extends Exception {
  */
 class qtype_coderunner_test_helper extends question_test_helper {
     public function get_test_questions() {
-        return ['sqr', 'sqr_pylint', 'printans',
+        return ['sqr', 'sqr_with_ace', 'sqr_with_scratchpad', 'sqr_pylint', 'printans',
             'hello_func', 'copy_stdin', 'timeout', 'exceptions',
             'sqr_part_marks', 'sqrnoprint',
             'studentanswervar', 'hello_python',
@@ -191,9 +189,40 @@ class qtype_coderunner_test_helper extends question_test_helper {
         return $form;
     }
 
+    /**
+     * Gets the form data that would come back when the editing form is saved,
+     * if you were creating the standard sqr question with the ace editor enabled.
+     * @return stdClass the form data.
+     */
+    public function get_coderunner_question_form_data_sqr_with_ace() {
+        $form = self::get_coderunner_question_form_data_sqr();  // Starting point.
+        $form->useace = 0; // Don't use Ace for the template.
+        $form->name = 'Square function (with Ace)';
+        $form->questiontext = ['text' => 'Write a function sqr(n) that returns n squared.', 'format' => FORMAT_HTML];
+        $form->uiplugin = 'ace';
+        return $form;
+    }
 
     /**
      * Gets the form data that would come back when the editing form is saved,
+     * if you were creating the standard sqr question with the ace editor enabled.
+     * @return stdClass the form data.
+     */
+    public function get_coderunner_question_form_data_sqr_with_scratchpad() {
+        $form = self::get_coderunner_question_form_data_sqr();  // Starting point.
+        $form->useace = 0;  // Don't use Ace for the template.
+        $form->name = 'Square function (with Scratchpad)';
+        $form->uiplugin = 'scratchpad';
+        return $form;
+    }
+
+
+
+
+
+
+    /**
+     * Gets the form data that would come back when the editing form is saved
      * if you were creating a Python3 question with a template that just
      * prints the student answer. This question has no test cases defined.
      * @return stdClass the form data.

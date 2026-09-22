@@ -152,13 +152,13 @@ const isCollapsed = (el) => {
 
 /**
  * Constructor for the ScratchpadUi object.
- * @param {string} textAreaId The ID of the html textarea.
+ * @param {string} textareaId The ID of the html textarea.
  * @param {int} width The width in pixels of the textarea.
  * @param {int} height The height in pixels of the textarea.
  * @param {object} uiParams The UI parameter object.
  */
 class ScratchpadUi {
-    constructor(textAreaId, width, height, uiParams) {
+    constructor(textareaId, width, height, uiParams) {
         const DEF_UI_PARAMS = {
             scratchpad_name: '',
             button_name: '',
@@ -175,8 +175,8 @@ class ScratchpadUi {
             jobe_servers: [],
             api_keys: []
         };
-        this.textArea = document.getElementById(textAreaId);
-        this.textAreaId = textAreaId;
+        this.textArea = document.getElementById(textareaId);
+        this.textareaId = textareaId;
         this.height = height;
         this.readOnly = this.textArea.readonly;
         this.fail = false;
@@ -306,36 +306,36 @@ class ScratchpadUi {
 
     updateContext(preload) {
         this.context = {
-            "id": this.textAreaId,
+            "id": this.textareaId,
             "disable_scratchpad": this.uiParams.disable_scratchpad,
             "scratchpad_name": this.uiParams.scratchpad_name,
             "button_name": this.uiParams.button_name,
             "help_text": {"text": this.uiParams.help_text},
             "answer_code": {
-                "id": this.textAreaId + '_answer-code',
+                "id": this.textareaId + '_answer-code',
                 "name": "answer_code",
                 "text": preload.answer_code[0],
                 "lang": this.lang,
                 "rows": this.numRows
             },
             "test_code": {
-                "id": this.textAreaId + '_test-code',
+                "id": this.textareaId + '_test-code',
                 "name": "test_code",
                 "text": preload.test_code[0],
                 "lang": this.lang,
                 "rows": 6
             },
             "show_hide": {
-                "id": this.textAreaId + '_scratchpad',
+                "id": this.textareaId + '_scratchpad',
                 "show": preload.show_hide[0]
             },
             "prefix_ans": {
-                "id": this.textAreaId + '_prefix-ans',
+                "id": this.textareaId + '_prefix-ans',
                 "label": this.uiParams.prefix_name,
                 "checked": preload.prefix_ans[0]
             },
             "output_display": {
-                "id": this.textAreaId + '_run-output'
+                "id": this.textareaId + '_run-output'
             },
             // Bootstrap collapse requires jQuery friendly ids to work...
             "jquery_escape": function() {
@@ -393,7 +393,7 @@ class ScratchpadUi {
     }
 
     drawUi(html) {
-        const wrapperDiv = document.getElementById(this.textAreaId).nextSibling;
+        const wrapperDiv = document.getElementById(this.textareaId).nextSibling;
         wrapperDiv.innerHTML = html;
         this.outerDiv = wrapperDiv.firstChild;
         // No resizing the outer wrapper. Instead, resize the two sub UIs,
@@ -413,7 +413,7 @@ class ScratchpadUi {
     }
 
     addEventListeners() {
-        const runButton = document.getElementById(this.textAreaId + '_run-btn');
+        const runButton = document.getElementById(this.textareaId + '_run-btn');
         if (runButton) {
             runButton.addEventListener('click', () => this.handleRunButtonClick());
         }

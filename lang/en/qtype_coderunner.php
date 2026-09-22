@@ -138,11 +138,13 @@ $string['badpenalties'] = 'Penalty regime must be a comma separated list of numb
 $string['badquestion'] = 'Error in question';
 $string['badrandomintarg'] = 'Bad argument to JSON @randomint function';
 $string['badrandompickarg'] = 'Bad argument to JSON @randompic function';
+$string['badresultstable'] = 'Bad test results table. Should be a list of lists.';
 $string['badsandboxparams'] = '\'Other\' field (sandbox params) must be either blank or a valid JSON record';
 $string['badtemplateparams'] = 'Template parameters must evaluate to blank or a valid JSON record. Got: <pre class="templateparamserror">{$a}</pre>';
 $string['baduiparams'] = 'UI parameters must be blank or a valid JSON record.';
 $string['brokencombinator'] = 'Expected {$a->numtests} test results, got {$a->numresults}. Perhaps excessive output or error in question?';
 $string['brokentemplategrader'] = 'Bad output from grader: {$a->output}. Your program execution may have aborted (e.g. a timeout or memory limit exceeded).';
+$string['browsequestions'] = 'Browse questions';
 $string['bulkquestiontester'] = 'The <a href="{$a->link}">bulk tester script</a> tests that the sample answers for all questions in the current context are marked right. Useful only once some questions with sample answers have been added; the initial install has none.';
 $string['bulktestallincontext'] = 'Test all';
 $string['bulktestcontinuefromhere'] = 'Run again or resume, starting from here';
@@ -540,11 +542,10 @@ $string['jobe_apikey'] = 'Jobe API-key';
 $string['jobe_apikey_desc'] = 'The API key to be included in all REST requests to the Jobe server (if required). Max 40 chars. Leave blank to omit the API Key from requests';
 $string['jobe_host'] = 'Jobe server';
 $string['jobe_host_desc'] = 'The host name of the Jobe server plus the port number if other than port 80, e.g. jobe.somewhere.edu:4010. The URL for the Jobe request is obtained by default by prefixing this string with http:// and appending /jobe/index.php/restapi/<REST_METHOD>. You may either specify the https:// protocol in front of the host name (e.g. https://jobe.somewhere.edu) if the Jobe server is set behind a reverse proxy which act as an SSL termination. Multiple jobe servers, separated by a semicolon, are possible for handling higher loads: one is chosen at random.';
-$string['jobe_host_ws'] = 'Jobe server to use for web services';
-$string['jobe_host_ws_desc'] = 'The sandbox server web service will use whatever sandbox is configured for the specified
-    language. This is virtually always a Jobe server, and the particular Jobe server to use is configured via the admin interface (above).
-    However, for best web service security it is better to use an alternative
-    Jobe server, set by this field. Multiple jobe servers, separated by a semicolon, are possible for handling higher loads: one is chosen at random. Leave blank to use the default. ';
+$string['jobe_host_ws'] = 'Forced Jobe server for web services';
+$string['jobe_host_ws_desc'] = 'Only used when "Web-service Jobe server mode" (above) is set to Forced. One or more
+    Jobe servers, separated by a semicolon (one is chosen at random for each request), that will always be used for
+    every sandbox web-service call, regardless of what any caller requests.';
 $string['jobe_warning_html'] = "<p style='background-color:yellow'>Run using the University of Canterbury's Jobe server. This is for initial testing only. Please set up your own Jobe server as soon as possible. See <a href='https://github.com/trampgeek/moodle-qtype_coderunner/blob/master/Readme.md#sandbox-configuration' target='_blank'>here</a>.</p>";
 $string['jobe_canterbury_html'] = "<p style='color:gray; font-style:italic; font-size:smaller'>Run on the University of Canterbury's Jobe server.</p>";
 
@@ -614,6 +615,41 @@ run using the \'Adaptive (no penalties)\' behaviour.';
 $string['maxfilesize'] = 'Max allowed file size (bytes)';
 $string['maxfilesize_help'] = 'Select the maximum file upload size (bytes). Allowing large file uploads with large classes can impact performance and and disk space on both Moodle and Jobe servers.';
 $string['memorylimit'] = 'MemLimit (MB)';
+$string['coderunner:management'] = 'Access CodeRunner management dashboard';
+$string['mgmt_navlink'] = 'CodeRunner management';
+$string['mgmt_needs_courseid'] = 'This page must be accessed via the CodeRunner management link in your course navigation, not directly by URL. Please go to your course and use the link from there.';
+$string['mgmt_cat_analytics_desc'] = 'Tools for analysing student engagement and quiz performance.';
+$string['mgmt_cat_analytics_title'] = 'Analytics';
+$string['mgmt_cat_dataexport_desc'] = 'Tools for exporting quiz attempt data for analysis and research.';
+$string['mgmt_cat_dataexport_title'] = 'Data Export';
+$string['mgmt_cat_maintenance_desc'] = 'Tools for maintaining question banks and database integrity.';
+$string['mgmt_cat_maintenance_title'] = 'Maintenance';
+$string['mgmt_cat_prototype_desc'] = 'Tools for managing and analyzing CodeRunner question prototypes.';
+$string['mgmt_cat_prototype_title'] = 'Prototype Management';
+$string['mgmt_cat_testing_desc'] = 'Tools for testing questions and browsing question banks.';
+$string['mgmt_cat_testing_title'] = 'Testing & Validation';
+$string['mgmt_intro'] = 'Central access point for CodeRunner administration and management tools. Select a category below to access the tools you need.';
+$string['mgmt_open_tool'] = 'Open Tool →';
+$string['mgmt_page_heading'] = 'CodeRunner Management Dashboard';
+$string['mgmt_page_title'] = 'CodeRunner Management';
+$string['mgmt_tool_analytics_studenttime_desc'] = 'Estimate time-on-server for each student in a course, based on Moodle log events. Student is assumed to be inactive when the inter-hit time exceeds the given idle-gap threshold. Filter by activity, group, and date range. ';
+$string['mgmt_tool_analytics_studenttime_title'] = 'Student time-on-server';
+$string['mgmt_tool_analytics_quiztrajectory_desc'] = 'Visualise student score on a selected quiz over time. Meaningful only for Adaptive behaviour quizzes. Vertical dotted lines show when the student took a break of longer than the given idle-gap threshold.';
+$string['mgmt_tool_analytics_quiztrajectory_title'] = 'Quiz Score Trajectory';
+$string['mgmt_tool_bulktester_desc'] = 'Test multiple CodeRunner questions in bulk to verify they work correctly. Run all tests for selected subsets of questions and see detailed results.';
+$string['mgmt_tool_bulktester_title'] = 'Bulk Tester';
+$string['mgmt_tool_cachepurge_desc'] = 'Clear the CodeRunner job runs cache for selected courses or contexts. Reduces disk space usage. Required after updates to Jobe servers that might alter run results.';
+$string['mgmt_tool_cachepurge_title'] = 'Runs-cache Purge';
+$string['mgmt_tool_deleteold_desc'] = 'Clean up bloated question banks by deleting old question versions, keeping only the most recent version of each question (plus any others explicitly in use by quizzes). Works for all question types. Administrator use only.';
+$string['mgmt_tool_deleteold_title'] = 'Delete Old Question Versions';
+$string['mgmt_tool_downloadattempts_anon_desc'] = 'Export anonymized quiz attempt data for research purposes. Removes personally identifiable information for use in studies subject to ethics approval.';
+$string['mgmt_tool_downloadattempts_anon_title'] = 'Download Quiz Attempts (Anonymized)';
+$string['mgmt_tool_downloadattempts_desc'] = 'Export quiz attempt data for analysis. Download student submissions, code responses, and results in various formats for grading review and analysis.';
+$string['mgmt_tool_downloadattempts_title'] = 'Download Quiz Attempts';
+$string['mgmt_tool_prototypeusage_desc'] = 'Analyze which prototypes are being used in a selected question bank or question context. See usage statistics and identify unused prototypes within the selected context.';
+$string['mgmt_tool_prototypeusage_title'] = 'Prototype Usage';
+$string['mgmt_tool_questionbrowser_desc'] = 'Browse and search through CodeRunner questions. View question text, answer, tags and quiz usage. Preview questions or edit them in the question bank. Useful for finding and reviewing questions.';
+$string['mgmt_tool_questionbrowser_title'] = 'CodeRunner Question Browser';
 $string['missinganswers'] = 'missing answers';
 $string['missingorbadfraction'] = 'Bad or missing fraction in output from template grader. Output was: {$a->output}';
 $string['missingoutput'] = 'You must supply the expected output from this test case.';
@@ -723,6 +759,74 @@ $string['prototype_load_failure'] = 'Error loading prototype: ';
 $string['prototype_missing_alert'] = 'Missing prototype: Check if {$a} prototype exists in this context.';
 $string['prototype_duplicate_alert'] = 'Duplicate prototype: Duplicate {$a} prototypes exist. Can only load one.';
 $string['prototypeQ'] = 'Is prototype?';
+
+//Question browser strings
+$string['qb_add_rule'] = '+ Add rule';
+$string['qb_advanced_filters'] = 'Advanced filters';
+$string['qb_advanced_filters_hint'] = 'Build complex filter rules with AND/OR logic';
+$string['qb_alert_bad_regex'] = 'Invalid regex pattern';
+$string['qb_alert_max_rules'] = 'Maximum of 6 advanced filter rules allowed';
+$string['qb_alert_no_bank_params'] = 'Missing question bank parameters';
+$string['qb_alert_no_id'] = 'No question ID available for preview';
+$string['qb_any'] = 'Any';
+$string['qb_apply_filters'] = 'Apply filters';
+$string['qb_available_contexts'] = 'Available contexts ({$a})';
+$string['qb_browser_heading'] = 'Question browser';
+$string['qb_browser_title'] = 'Question browser - {$a}';
+$string['qb_btn_answer'] = 'Answer';
+$string['qb_btn_bank'] = 'Bank';
+$string['qb_btn_close'] = 'Close';
+$string['qb_btn_json'] = 'JSON';
+$string['qb_btn_preview'] = 'Preview';
+$string['qb_btn_question'] = 'Question';
+$string['qb_clear'] = 'Clear';
+$string['qb_coderunner_type'] = 'CodeRunner type';
+$string['qb_col_actions'] = 'Actions';
+$string['qb_col_category'] = 'Category ↕';
+$string['qb_col_name'] = 'Name ↕';
+$string['qb_col_tags'] = 'Tags ↕';
+$string['qb_col_usedin'] = 'Used In ↕';
+$string['qb_data'] = 'Data';
+$string['qb_exclude'] = 'Exclude';
+$string['qb_export_csv'] = 'Export CSV';
+$string['qb_export_json'] = 'Export JSON';
+$string['qb_field'] = 'Field';
+$string['qb_filter_tip'] = 'Tip: All filters combine with AND logic. Advanced filters provide OR options.';
+$string['qb_filters'] = 'Filters';
+$string['qb_include'] = 'Include';
+$string['qb_index_instructions'] = '<strong>Instructions:</strong> Click &#34;Browse questions&#34; to open the question browser for that context.';
+$string['qb_index_intro'] = 'Select a context to browse CodeRunner questions with enhanced metadata and filtering capabilities.';
+$string['qb_index_title'] = 'CodeRunner question browser';
+$string['qb_lines_of_code'] = 'Lines of code';
+$string['qb_loaded_questions'] = 'Loaded {$a} questions';
+$string['qb_loading'] = 'Loading...';
+$string['qb_loading_questions'] = 'Loading questions, please wait…';
+$string['qb_mode'] = 'Mode';
+$string['qb_moodle5_notice'] = 'Moodle >= 5.0 detected. Listing by course then question bank.';
+$string['qb_no_answer'] = 'No answer available';
+$string['qb_no_matches'] = 'No questions match the current filters.';
+$string['qb_no_permission'] = 'You do not have permission to browse questions in any contexts.';
+$string['qb_no_questiontext'] = 'No question text available';
+$string['qb_regex'] = 'Regex';
+$string['qb_regex_hint'] = 'Regex uses JavaScript syntax';
+$string['qb_results'] = 'Results';
+$string['qb_search'] = 'Search';
+$string['qb_search_placeholder'] = 'substring or regex';
+$string['qb_shown'] = 'shown';
+$string['qb_text'] = 'Text';
+$string['qb_text_filter'] = 'Text filter';
+$string['qb_tip_preview_question'] = 'Preview question';
+$string['qb_tip_regex_input'] = 'JavaScript regex pattern (case-insensitive)';
+$string['qb_tip_remove_filter'] = 'Remove filter';
+$string['qb_tip_remove_rule'] = 'Remove rule';
+$string['qb_tip_view_answer'] = 'View answer';
+$string['qb_tip_view_in_bank'] = 'View in question bank';
+$string['qb_tip_view_json'] = 'View JSON';
+$string['qb_tip_view_question'] = 'View question';
+$string['qb_total'] = 'total';
+$string['qb_type'] = 'Type';
+$string['qb_unknown_course'] = 'Unknown course ({$a})';
+// Question browser strings end
 
 $string['qtype_c_function'] = '<p>A question type for C write-a-function questions.
 The student answer is expected to be a complete C function, but it can optionally
@@ -1448,7 +1552,7 @@ The \'Parameters\' entry
 is used to pass further sandbox-specific data, such as compile options and
 API-keys. It should generally be left blank but if non-blank it must be a valid
 JSON record. In the case of the jobe sandbox, available attributes include
-disklimit, streamsize, numprocs, compileargs, linkargs and interpreterargs. For
+disklimit, streamsize, numprocs, compileargs, linkargs, runargs and interpreterargs. For
 example <code>{"compileargs":["-std=c89"]}</code> for a C question would force C89
 compliance and no other C options would be used. See the jobe documentation
 for details. Some sandboxes (e.g. the deprecated Ideone sandbox) may silently ignore any or all of
@@ -1479,6 +1583,7 @@ $string['stdin_help'] = 'The standard input to the test, seen by the template as
 $string['student_answer'] = 'Student answer';
 $string['submitbuttons'] = 'Submit buttons';
 $string['supportscripts'] = 'Support scripts';
+$string['supportscripts_desc'] = 'The <a href="{$a->link}">CodeRunner management page</a> provides links to several support scripts for managing CodeRunner questions, including a bulk tester that tests that sample answers for all questions in a given context are marked right.';
 $string['syntax_errors'] = 'Syntax Error(s)';
 
 // SCRATCHPAD UI Default text.
@@ -1779,9 +1884,25 @@ $string['useace'] = 'Template uses ace';
 $string['validateonsave'] = 'Validate on save';
 
 $string['wrongnumberofformats'] = 'Wrong number of test results column formats. Expected {$a->expected}, got {$a->got}';
+$string['wsallowedjobeservers'] = 'Jobe servers a caller may request';
+$string['wsallowedjobeservers_desc'] = 'Only used when "Web-service Jobe server mode" (above) is set to Flexible. One
+    entry per line, each of the form <code>host[:port]</code> or <code>host[:port]|apikey</code> (the apikey part is
+    only needed if that Jobe server requires one). A caller of the sandbox web service may request one of these
+    servers by name; the corresponding apikey (if any) is then used automatically &ndash; a caller can never supply
+    their own apikey. A request for any server not listed here is rejected. Leave empty to disallow all such
+    requests (the caller-requested server is simply ignored and the primary Jobe server(s) are used instead).';
 $string['wsbadjson'] = 'Params and file parameters must be blank or a valid JSON record';
 $string['wscputimeexcess'] = 'CPU time specified exceeds set maximum CPU time';
 $string['wsdisabled'] = 'Sandbox web service disabled. Talk to a sysadmin';
+$string['wsjobeservermode'] = 'Web-service Jobe server mode';
+$string['wsjobeservermode_desc'] = 'Controls which Jobe server(s) the sandbox web service (used to run code outside
+    of a normal CodeRunner question submission, e.g. by a "Try it!" widget or a custom page) is allowed to use. A
+    caller of this web service can, if permitted, ask to have their code run on a Jobe server of their own choosing
+    &ndash; this setting controls whether, and how, that request is honoured.';
+$string['wsjobeservermode_standard'] = 'Standard: always use the primary Jobe server(s) configured above; any server requested by the caller is ignored';
+$string['wsjobeservermode_forced'] = 'Forced: always use only the Jobe server(s) specified below; any server requested by the caller is ignored';
+$string['wsjobeservermode_flexible'] = 'Flexible: use the primary Jobe server(s) above, unless the caller requests one of the specific alternates listed below';
+$string['wsjobeservernotallowed'] = 'The requested Jobe server cannot be used: either this web service does not allow the caller to choose a Jobe server, or the requested server is not in the allowed list';
 $string['wsloggingenable'] = 'Log sandbox web service usage';
 $string['wsloggingenable_desc'] = 'If this option is checked, every code execution via the sandbox web service will be logged. This option must be enabled if user rate throttling is to work.';
 $string['wsmaxcputime'] = 'Max CPU time (secs)';

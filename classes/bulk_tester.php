@@ -98,8 +98,10 @@ class bulk_tester {
      * @param int $repeatrandomonly when true(or 1), only repeats tests for questions with random in the name.
      *              Default = true (or really 1).
      * @param int $nruns the number times to test each question. Default to 1.
-     * @param int $clearcachefirst If 1 then clears the grading cache (ignoring ttl) for the given context before running the tests. Default is 0.
-     * @param int $usecache Set to 0 to not use the grading cache when testing. Helpful for multiple runs of fixed, non-randomised, questions. Default is 1.
+     * @param int $clearcachefirst If 1 then clears the grading cache (ignoring ttl) for the given context before running the tests.
+     *            Default is 0.
+     * @param int $usecache Set to 0 to not use the grading cache when testing. Helpful for multiple runs of fixed, non-randomised,
+     *            questions. Default is 1.
      */
     public function __construct(
         $context = null,
@@ -329,7 +331,7 @@ class bulk_tester {
         }
 
         return $DB->get_records_sql("
-            SELECT q.id, ctx.id as contextid, qc.id as category, qc.name as categoryname, q.*, opts.*
+            SELECT q.id, ctx.id as contextid, qc.id as category, qc.name as categoryname, qv.version, opts.*, q.*
               FROM {context} ctx
               JOIN {question_categories} qc ON qc.contextid = ctx.id
               JOIN {question_bank_entries} qbe ON qbe.questioncategoryid = qc.id
@@ -387,13 +389,7 @@ class bulk_tester {
      * @return moodle_url base URL used for seeing the results of a test run.
      */
     private function get_question_base_test_url() {
-        if ($this->context->contextlevel == CONTEXT_COURSE) {
-            $qparams['courseid'] = $this->context->instanceid;
-        } else if ($this->context->contextlevel == CONTEXT_MODULE) {
-            $qparams['cmid'] = $this->context->instanceid;
-        } else {
-            $qparams['courseid'] = SITEID;
-        }
+        $qparams = qtype_coderunner_util::get_question_bank_params($this->context->id);
         $questiontestsurl = new moodle_url('/question/type/coderunner/questiontestrun.php');
         $questiontestsurl->params($qparams);
         return $questiontestsurl;
@@ -607,7 +603,7 @@ class bulk_tester {
     public function run_tests($questionidstoinclude = []) {
         global $OUTPUT;
         global $PAGE;
-        $oldskool = !(qtype_coderunner_util::using_mod_qbank()); // no qbanks in Moodle < 5.0.
+        $oldskool = !(qtype_coderunner_util::using_mod_qbank()); // No qbanks in Moodle < 5.0.
         if ($this->context->contextlevel == CONTEXT_COURSE) {
             if ($oldskool) {
                 $this->run_tests_for_simple_context($this->context, questionidstoinclude:$questionidstoinclude);
@@ -723,7 +719,7 @@ class bulk_tester {
             $buttonstyle = 'font-size: large; border:2px solid rgb(230, 211, 195);';
             $buttonstyle .= 'background-color:rgb(240, 240, 233);padding: 2px 2px 0px 2px;';
             $retestallurl = new moodle_url(
-                '/question/type/coderunner/bulktest.php',
+                '/question/type/coderunner/scripts/bulktest.php',
                 ['contextid' => $this->context->id,
                 'randomseed' => $this->randomseed,
                 'repeatrandomonly' => $this->repeatrandomonly,
@@ -741,7 +737,7 @@ class bulk_tester {
 
             echo html_writer::tag('p', '&nbsp;&nbsp;-------> ' . $retestalllink);
         }
-        $url = new moodle_url('/question/type/coderunner/bulktestindex.php');
+        $url = new moodle_url('/question/type/coderunner/scripts/bulktest.php');
         $link = html_writer::link($url, get_string('backtobulktestindex', 'qtype_coderunner'));
         echo html_writer::tag('p', $link);
     }
@@ -821,17 +817,51 @@ class bulk_tester {
 
     /**
      * Return a link to the given question in the question bank.
-     * @param int $courseid the id of the course containing the question
+     * @param int $courseid the id of the course containing the question (not used - kept for compatibility)
      * @param stdObj $question the question
      * @return html link to the question in the question bank
      */
     private static function make_question_link($courseid, $question) {
-        $qbankparams = ['qperpage' => 1000]; // Can't easily get the true vrequire_once($CFG->libdir . '/questionlib.php');alue.
-        $qbankparams['category'] = $question->category . ',' . $question->contextid;
-        $qbankparams['lastchanged'] = $question->questionid;
-        $qbankparams['courseid'] = $courseid;
-        $qbankparams['showhidden'] = 1;
+        $qbankparams = qtype_coderunner_util::make_question_bank_url_params($question);
         $questionbanklink = new moodle_url('/question/edit.php', $qbankparams);
         return html_writer::link($questionbanklink, $question->name, ['target' => '_blank']);
+    }
+
+    /**
+     * Get the full category path for a given category ID.
+     * @param int $categoryid The category ID
+     * @return string The full category path (e.g., "Default/Subcategory")
+     */
+    public static function get_category_path($categoryid) {
+        global $DB;
+
+        static $categorypathcache = [];
+
+        if (isset($categorypathcache[$categoryid])) {
+            return $categorypathcache[$categoryid];
+        }
+
+        $path = [];
+        $currentid = $categoryid;
+
+        // Build path by traversing up the category hierarchy.
+        while ($currentid != 0) {
+            $category = $DB->get_record('question_categories', ['id' => $currentid], 'id,name,parent');
+            if (!$category) {
+                break;
+            }
+
+            // Skip the top level category (usually just contains contextid).
+            if ($category->parent != 0) {
+                array_unshift($path, $category->name);
+            }
+
+            $currentid = $category->parent;
+        }
+
+        $fullpath = empty($path) ? 'Default' : implode('/', $path);
+        $categorypathcache[$categoryid] = $fullpath;
+
+        return $fullpath;
     }
 }

@@ -39,6 +39,17 @@ $capabilities = [
         'clonepermissionsfrom' => 'moodle/grade:viewhidden',
     ],
 
+    // Who can access the CodeRunner management dashboard.
+    'qtype/coderunner:management' => [
+        'riskbitmask' => 0,
+        'captype'     => 'read',
+        'contextlevel' => CONTEXT_COURSE,
+        'archetypes'  => [
+            'editingteacher' => CAP_ALLOW,
+            'manager'        => CAP_ALLOW,
+        ],
+    ],
+
     // Who can use the sandbox web service (and therefore use the ace_inline filter).
     'qtype/coderunner:sandboxwsaccess' => [
         'riskbitmask'  => 0, // No standard risks apply. Only potential DoS.

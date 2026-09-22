@@ -33,6 +33,7 @@ class qtype_coderunner_util {
     public static function load_uiplugin_js($question, $textareaid) {
         global $PAGE;
 
+
         $uiplugin = $question->uiplugin === null ? 'ace' : strtolower($question->uiplugin);
         if ($uiplugin !== '' && $uiplugin !== 'none') {
             $params = [$uiplugin, $textareaid];  // Params to plugin's init function.
@@ -65,6 +66,110 @@ class qtype_coderunner_util {
      */
     public static function using_mod_qbank() {
         return class_exists('mod_qbank\\task\\transfer_question_categories');
+    }
+
+
+    /**
+     * Display contexts for all course-level contexts (Moodle 4 style).
+     * $availablequestionsbycontext maps from contextid to [name, numquestions] associative arrays.
+     * $displaycallback is a function that takes ($contextid, $name, $numquestions).
+     */
+    public static function display_course_contexts($availablequestionsbycontext, $displaycallback) {
+        echo \html_writer::start_tag('ul');
+        foreach ($availablequestionsbycontext as $contextid => $info) {
+            $context = \context::instance_by_id($contextid);
+            if ($context->contextlevel === CONTEXT_COURSE || $context->contextlevel === CONTEXT_COURSECAT) {
+                $name = $info['name'];
+                $numquestions = $info['numquestions'];
+                $displaycallback($contextid, $name, $numquestions);
+            }
+        }
+        echo \html_writer::end_tag('ul');
+    }
+
+
+    /**
+     * Get URL parameters for accessing a question in the question bank.
+     * Returns array with either 'cmid' or 'courseid' depending on context level.
+     *
+     * @param int $contextid The context ID where the question resides
+     * @return array URL parameters (cmid or courseid)
+     */
+    public static function get_question_bank_params($contextid) {
+        $qcontext = \context::instance_by_id($contextid);
+        $params = [];
+        if ($qcontext->contextlevel == CONTEXT_COURSE) {
+            $params['courseid'] = $qcontext->instanceid;
+        } else if ($qcontext->contextlevel == CONTEXT_MODULE) {
+            $params['cmid'] = $qcontext->instanceid;
+        } else {
+            $params['courseid'] = SITEID;
+        }
+        return $params;
+    }
+
+
+    /**
+     * Build complete URL parameters for linking to a question in the question bank.
+     *
+     * @param object $question Question object with id, category, and contextid properties
+     * @return array Complete URL parameters for question/edit.php
+     */
+    public static function make_question_bank_url_params($question) {
+        $params = self::get_question_bank_params($question->contextid);
+        $params['qperpage'] = 1000;
+        $params['category'] = $question->category . ',' . $question->contextid;
+        $params['lastchanged'] = $question->id;
+        $params['showhidden'] = 1;
+        return $params;
+    }
+
+
+    /**
+     * Display contexts grouped by course (Moodle 5 style).
+     * $availablequestionsbycontext maps from contextid to [name, numquestions] associative arrays.
+     * $courseheadercallback is a function that takes ($coursecontextid, $coursename).
+     * $contextcallback is a function that takes ($contextid, $name, $numquestions).
+     */
+    public static function display_course_grouped_contexts(
+        $availablequestionsbycontext,
+        $courseheadercallback,
+        $contextcallback
+    ) {
+        $allcourses = \qtype_coderunner\bulk_tester::get_all_courses();
+        foreach ($allcourses as $courseid => $course) {
+            $coursecontext = \context_course::instance($courseid);
+            $courseheadercallback($coursecontext->id, $course->name);
+            try {
+                $allbanks = \qtype_coderunner\bulk_tester::get_all_qbanks_for_course($courseid);
+                if (count($allbanks) > 0) {
+                    echo \html_writer::start_tag('ul');
+                    foreach ($allbanks as $bank) {
+                        $contextid = $bank->contextid ?? $bank->cminfo->context->id;  // Need difft code for Moodle 5.2+.
+                        if (array_key_exists($contextid, $availablequestionsbycontext)) {
+                            $contextdata = $availablequestionsbycontext[$contextid];
+                            $name = $contextdata['name'];
+                            $numquestions = $contextdata['numquestions'];
+                            $contextcallback($contextid, $name, $numquestions);
+                        }
+                    }
+                    echo \html_writer::end_tag('ul');
+                }
+            } catch (Exception $e) {
+                echo \html_writer::start_tag('ul');
+                echo \html_writer::start_tag('li');
+                $message = get_string('errorprocessingqbanksforcourse', 'qtype_coderunner', $course->name);
+                echo \html_writer::span($message, '', ['style' => 'background-color: #FFD1DC;']);
+                echo \html_writer::end_tag('li');
+                echo \html_writer::start_tag('ul');
+                echo \html_writer::start_tag('li');
+                $exceptiondetails = get_string('exceptionwas', 'qtype_coderunner', $e);
+                echo \html_writer::tag('em', $exceptiondetails);
+                echo \html_writer::end_tag('li');
+                echo \html_writer::end_tag('ul');
+                echo \html_writer::end_tag('ul');
+            }
+        }
     }
 
 
@@ -105,7 +210,7 @@ class qtype_coderunner_util {
     // Used e.g. by the equality grader subclass.
     // UTF-8 character handling is rudimentary - only standard ASCII
     // control characters, whitespace etc are processed.
-    public static function clean(&$s) {
+    public static function clean_legacy(&$s) {
         $nls = '';     // Unused line breaks.
         $output = '';  // Output string.
         $spaces = '';  // Unused space characters.
@@ -131,6 +236,51 @@ class qtype_coderunner_util {
             }
             $c = self::next_char($s, $pointer);
         }
+        if ($output !== '') {
+            $output .= "\n";
+        }
+        return $output;
+    }
+
+    // The above legacy function was written for PHP5 which had appallingly inefficient
+    // string handling. PHP7 reportedly uses 90% less CPU and much less memory.
+    // So the following much simpler method should now be viable. It also properly
+    // removes all trailing whitespace characters from the string, not just space
+    // characters before a newline.
+    public static function clean(&$s) {
+        if (trim($s) === '') {
+            return '';
+        }
+
+        // Trim trailing space off all lines.
+        $lines = explode("\n", $s);
+        $trimmedlines = [];
+        foreach ($lines as $line) {
+            $trimmedlines[] = rtrim($line);
+        }
+
+        // Remove trailing blank lines.
+        while (end($trimmedlines) === '') {
+            array_pop($trimmedlines);
+        }
+
+        $output = implode("\n", $trimmedlines);
+
+        // Replace all non-printing chars with \r, \t or a hex representation.
+        $output = preg_replace_callback('/[\x00-\x1f]/', function ($matches) {
+            $char = $matches[0];
+            if ($char === "\n") {
+                return $char;
+            }
+            if ($char === "\t") {
+                return '\t';
+            }
+            if ($char === "\r") {
+                return '\r';
+            }
+            return '\\x' . sprintf("%02x", ord($char));
+        }, $output);
+
         if ($output !== '') {
             $output .= "\n";
         }

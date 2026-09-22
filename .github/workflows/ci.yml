@@ -1,5 +1,26 @@
 name: Moodle plugin CI
-on: [push, pull_request]
+
+on:
+  push:
+    paths-ignore:
+      - 'docs/**'
+      - '*.md'
+      - 'README*'
+      - 'LICENSE'
+      - '.gitignore'
+      - 'site/**'
+      - '*.html'
+      - 'mkdocs.yml'
+  pull_request:
+    paths-ignore:
+      - 'docs/**'
+      - '*.md'
+      - 'README*'
+      - 'LICENSE'
+      - '.gitignore'
+      - 'site/**'
+      - '*.html'
+      - 'mkdocs.yml'
 
 jobs:
   test:
@@ -9,8 +30,11 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - php: '8.3'
-            moodle-branch: 'MOODLE_500_STABLE'
+          - php: '8.4'
+            moodle-branch: 'MOODLE_502_STABLE'
+            database: 'mariadb'
+          - php: '8.4'
+            moodle-branch: 'MOODLE_501_STABLE'
             database: 'mariadb'
           - php: '8.3'
             moodle-branch: 'MOODLE_405_STABLE'

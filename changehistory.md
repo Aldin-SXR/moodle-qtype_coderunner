@@ -1,6 +1,75 @@
 # CHANGE HISTORY
 
-### 15 August 2025, 5.7.2+
+### September 15 2026, 5.10.2
+ * Security fixes (cherry-picked from #296):
+   - Scope quiztrajectory.php reporting to the caller's authorised course.
+   - Escape prototype name and gate output in prototypeusage.php.
+   - Require sesskey on the cache-purge worker in cachepurge.php.
+ * Replace the sandbox web service's single "forced Jobe server" setting with a three-mode
+   "Web-service Jobe server mode" (Standard/Forced/Flexible). Standard (the new default) no
+   longer honours a caller-supplied jobeserver/jobeapikey at all, closing an SSRF-shaped hole
+   where any authenticated user could redirect run_in_sandbox requests to a host of their own
+   choosing; Flexible allows specific pre-approved alternate servers, each with its own
+   admin-configured API key that a caller can never supply themselves.
+
+### July 22 2026, 5.10.1
+ * Bump dependency in version.php in order to trigger update to the coderunner behaviour code,
+   which fixes the problem that the Precheck and Stop buttons were not initiating a scroll
+   back to the current question.
+
+### July 10 2026, 5.10.0
+ * Add warning notice plus colour change to a result table when the answer changes from that
+   used to compute the result table.
+ * Add a new capability qtype/coderunner:management which defaults to editing teacher and allows
+   access to the management page.
+ * Add a navigation link to the "More" menu for users with the new capability, taking them
+   to the management.php page. 
+   
+### 23 June 2026, 5.9.3
+
+ * Bug fix (workaround for Moodle core bug): the Ace UI "full screen" mode could result in an unusable Ace window after restoring to normal size. Clicking in the Ace window would repeatedly move focus to the right hand Block Drawer.
+ * Bug fix: UI parameter field could not be twigged.
+ * Bug fix: remote loading of program contest problem specs via the in-question link wasn't working (rarely used functionality except by UC).
+ * Bug fix (regression): "Rerun failed tests" button in the bulk tester was not working.
+ * Miscellaneous test-suite updates
+
+### 10 May 2026, 5.9.2
+
+Update for Moodle 5.2 compatibility.
+
+### 13 April 2026, 5.9.1
+
+Add the two analytics scripts (studenttimeanalysis and quiztrajectory) to the management page.
+
+### 8 April 2026, 5.9.0
+
+Extensive refactoring of scripts, merging all {scriptname}index.php and {scriptname}.php pairs.
+Script files all moved into scripts folder leaving only management.php at the plugin root.
+
+### 4 November 2025, 5.8.1
+
+ * New scripts for question bank clean up (deletion of old unused versions) and integrity checking.
+ * Addition of a top-level management.php script that links to other CodeRunner management scripts.
+ * Fix bug in CodeRunner upgrade lib that resulted in the built-in prototypes being invisibly orphaned
+   rather than properly deleted prior to installing the latest versions.
+
+### 28 October 2025, 5.8.0
+
+ * New question browser script moodlehome/question/type/coderunner/questionbrowserindex.php allows easy browsing
+   of all CodeRunner questions in a given course or context, including text or regex search on any of the
+   question fields and instant display of question text, answer and quiz usage.
+ * Add a QUIZ variable to the Twig context with fields QUIZ.name and QUIZ.tags. Allows customising the behaviour
+   of CodeRunner questions according to the quiz in which they're running.
+ * Extend TwigAll to include penalty regime.
+ * Improve resilience of combinator template grader code to bad responses from author's template.
+ * Improvements to test suite (issues #266, #267 and #276)
+ * Bug fix: when using equality grader, trailing space characters were correctly being removed from
+   all lines but the spec said all whitespace characters were being removed. That wasn't true - characters
+   like tabs and return characters weren't removed
+ * Move document to mkdocs format with much improved browsing at https://trampgeek.github.io/moodle-qtype_coderunner/
+ * Various code tweaks and polishing.
+
+### 15 August 2025, 5.7.2+1
 
  * Bug fix #254 The presence of a CodeRunner question in the course's question bank causes the duplication of quizzes to fail.
 
@@ -8,7 +77,7 @@
 
  * Updates to grade caching.
    - Scheduled task purges old cache entries automatically (only if using FileStore)
-   - Manual grade-cache cleaner available (script cachepurgeindex.php)
+   - Manual grade-cache cleaner available (script cachepurge.php)
    - Fix for issue #261 Unsupported modification of PAGE->context
 
  * Extended bulk-tester capabilites

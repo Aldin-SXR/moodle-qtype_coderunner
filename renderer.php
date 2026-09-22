@@ -32,6 +32,7 @@ use qtype_coderunner\constants;
  */
 
 
+
 class qtype_coderunner_renderer extends qtype_renderer {
     /**
      * Generate the display of the formulation part of the question. This is the
@@ -43,6 +44,30 @@ class qtype_coderunner_renderer extends qtype_renderer {
      * @param question_display_options $options controls what should and should not be displayed.
      * @return string HTML fragment.
      */
+
+
+    public function fnv1a32($str) {
+        $data = $str;  // mb_convert_encoding($str, 'UTF-8');
+        $hash = (float) 0x811c9dc5;
+        $prime = (float) 0x01000193;
+        // echo 'Length = ', mb_strlen($data, 'UTF-8'), '---------- ';
+        // for ($i = 0; $i < mb_strlen($data, 'UTF-8'); $i++) {
+        //   $charcode = ord(mb_substr($data, $i, 1, 'UTF-8'));
+        for ($i = 0; $i < strlen($data); $i++) {
+            $charcode = ord($data[$i]);
+            // echo $i, "c={$charcode}, h={$hash} ...";
+            $hash ^= $charcode;
+            $hashafterxor = $hash;
+            $prod = (int) ($hash * $prime);
+            $hash = $prod & (int) 0xffffffff; // Keep it 32-bit.
+            // echo $i, ", {$data[$i]}, ", $charcode, ", {$hash}, prod={$prod}, {$hashafterxor}; ";
+        }
+        $hexhash = dechex($hash);
+        // echo " *** {$hexhash} ***";
+        return $hexhash;
+    }
+
+
     public function formulation_and_controls(question_attempt $qa, question_display_options $options) {
         global $USER;
 
@@ -130,13 +155,50 @@ class qtype_coderunner_renderer extends qtype_renderer {
             $currentanswer = "\n" . $currentanswer;
         }
 
+        $lastgradedstep = null;
+        $lastcheckedanswerhash = "";
+
+        foreach ($qa->get_step_iterator() as $step) {
+            if ($step->has_behaviour_var('_try') || $step->get_behaviour_var('_precheck')) {
+                $lastgradedstep = $step;
+            }
+        }
+        if ($lastgradedstep) {
+            $lastcheckedanswer = $lastgradedstep->get_qt_var('answer');
+            if ($lastcheckedanswer) {
+                // TODO make this a util function of some sort
+                // Extract the code from JSON if this is a Scratchpad UI or similar.
+                // Note that this breaks the old python3_scratchpad question type
+                // where the template expects the full JSON string to be presented as
+                // the value of STUDENT_ANSWER. The fix is simply to change the template
+                // to use the value of STUDENT_ANSWER as given, rather than trying
+                // to extract the student answer itself.
+                if ($question->extractcodefromjson) {
+                    $json = json_decode($lastcheckedanswer, true);
+                    if ($json !== null && isset($json[constants::ANSWER_CODE_KEY])) {
+                        $lastcheckedanswer  = $json[constants::ANSWER_CODE_KEY][0];
+                    }
+                }
+                // For some strange reason the last answer may end up containing \r\n chars
+                // instead of \n so we will normlalise here until we figure out why!
+                $lastcheckedanswer = str_replace("\r\n", "\n", $lastcheckedanswer);
+                $lastcheckedanswerhash = self::fnv1a32($lastcheckedanswer);
+            } else {
+                $lastcheckedanswer = "";
+            }
+        } else {
+            $lastcheckedanswer = "";
+        }
+
         $rows = isset($question->answerboxlines) ? $question->answerboxlines : constants::DEFAULT_NUM_ROWS;
         $taattributes = $this->answerbox_attributes(
             $responsefieldname,
             $rows,
             $question,
             $currentlanguage,
-            $options->readonly
+            $options->readonly,
+            $lastcheckedanswerhash,
+            $lastcheckedanswer   // TODO ---------------- remove this when done debugging!
         );
 
         $qtext .= html_writer::tag('textarea', s($currentanswer), $taattributes);
@@ -224,7 +286,6 @@ class qtype_coderunner_renderer extends qtype_renderer {
                 $optionsclone->generalfeedback = 1;
             }
         }
-
         return parent::feedback($qa, $optionsclone);
     }
 
@@ -379,7 +440,7 @@ class qtype_coderunner_renderer extends qtype_renderer {
         $testresults = $outcome->get_test_results($question);
         if (is_array($testresults) && count($testresults) > 1) {
             $table = new html_table();
-            $table->attributes['class'] = 'coderunner-test-results';
+            $table->attributes['class'] = 'table coderunner-test-results';
             $headers = $testresults[0];
             foreach ($headers as $header) {
                 if (strtolower($header) != 'ishidden') {
@@ -720,7 +781,7 @@ class qtype_coderunner_renderer extends qtype_renderer {
      */
     private function format_examples($examples, $resultcolumns) {
         $table = new html_table();
-        $table->attributes['class'] = 'coderunnerexamples';
+        $table->attributes['class'] = 'table coderunnerexamples';
 
         // Record counts of non-empty cells in each column so empty columns are suppressed.
         // But always show the 'expected' column (renaming it to 'result').
@@ -818,13 +879,17 @@ class qtype_coderunner_renderer extends qtype_renderer {
         $rows,
         $question,
         $currentlanguage,
-        $readonly = false
+        $readonly = false,
+        $lastcheckedanswerhash = "",
+        $lastcheckedanswer = ""
     ) {
-        if ($question->mergeduiparameters) {
-            $uiparamsjson = json_encode($question->mergeduiparameters);
-        } else {
-            $uiparamsjson = '{}';
-        }
+        // Add in the hash of the last checked student answer so that
+        // javascript can detect when the student's current answer
+        // is different from the last one they checked.
+        $question->mergeduiparameters["lastcheckedanswerhash"] = $lastcheckedanswerhash;
+        $question->mergeduiparameters["extractcodefromjson"] = $question->extractcodefromjson;
+
+        $uiparamsjson = json_encode($question->mergeduiparameters);
         $attributes = [
                 'class' => 'coderunner-answer edit_code',
                 'name' => $fieldname,

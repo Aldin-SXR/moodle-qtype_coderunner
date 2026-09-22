@@ -42,19 +42,20 @@ class graphui_save_test extends \qtype_coderunner_testcase {
     protected $qtype;
 
     protected function setUp(): void {
+        parent::setUp();
         $this->resetAfterTest(true);
         $this->qtype = new \qtype_coderunner();
     }
 
-    public function test_question_saving_graph_ui() {
+    public function test_question_saving_graph_ui(): void {
         $this->assert_question_saves_with_ui('graph');
     }
 
-    public function test_question_saving_datastructuregraph_ui() {
+    public function test_question_saving_datastructuregraph_ui(): void {
         $this->assert_question_saves_with_ui('datastructuregraph');
     }
 
-    public function test_question_saving_datastructuregraph_answer() {
+    public function test_question_saving_datastructuregraph_answer(): void {
         $this->assert_question_saves_with_ui('datastructuregraph', $this->datastructuregraph_answer_json());
     }
 

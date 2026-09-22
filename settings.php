@@ -26,18 +26,14 @@ defined('MOODLE_INTERNAL') || die();
 use qtype_coderunner\constants;
 
 
-$links = [
-    get_string(
-        'bulkquestiontester',
-        'qtype_coderunner',
-        ['link' => (string) new moodle_url('/question/type/coderunner/bulktestindex.php')]
-    ),
-];
-
 $settings->add(new admin_setting_heading(
     'supportscripts',
     get_string('supportscripts', 'qtype_coderunner'),
-    '* ' . implode("\n* ", $links)
+    get_string(
+        'supportscripts_desc',
+        'qtype_coderunner',
+        ['link' => (string) new moodle_url('/question/type/coderunner/management.php')]
+    )
 ));
 
 $settings->add(new admin_setting_heading(
@@ -93,14 +89,14 @@ $settings->add(new admin_setting_configcheckbox(
 
 // Deprecated setting in v2025070800. Now using db/caches.php for ttl.
 // $cachettlsetting = new admin_setting_configtext(
-//     "qtype_coderunner/gradecachettl",
-//     get_string('settingsgradecachettl', 'qtype_coderunner'),
-//     get_string('settingsgradecachettl_desc', 'qtype_coderunner'),
-//     constants::GRADING_CACHE_DEFAULT_TTL,
-//     PARAM_INT,
-//     10
+// "qtype_coderunner/gradecachettl",
+// get_string('settingsgradecachettl', 'qtype_coderunner'),
+// get_string('settingsgradecachettl_desc', 'qtype_coderunner'),
+// constants::GRADING_CACHE_DEFAULT_TTL,
+// PARAM_INT,
+// 10
 // );
-//$settings->add($cachettlsetting);
+// $settings->add($cachettlsetting).
 
 
 $settings->add(new admin_setting_configtext(
@@ -132,6 +128,18 @@ $settings->add(new admin_setting_configcheckbox(
     false
 ));
 
+$settings->add(new admin_setting_configselect(
+    "qtype_coderunner/wsjobeservermode",
+    get_string('wsjobeservermode', 'qtype_coderunner'),
+    get_string('wsjobeservermode_desc', 'qtype_coderunner'),
+    constants::WS_JOBESERVER_MODE_STANDARD,
+    [
+        constants::WS_JOBESERVER_MODE_STANDARD => get_string('wsjobeservermode_standard', 'qtype_coderunner'),
+        constants::WS_JOBESERVER_MODE_FORCED   => get_string('wsjobeservermode_forced', 'qtype_coderunner'),
+        constants::WS_JOBESERVER_MODE_FLEXIBLE => get_string('wsjobeservermode_flexible', 'qtype_coderunner'),
+    ]
+));
+
 $settings->add(new admin_setting_configtext(
     "qtype_coderunner/wsjobeserver",
     get_string('jobe_host_ws', 'qtype_coderunner'),
@@ -140,6 +148,27 @@ $settings->add(new admin_setting_configtext(
     PARAM_RAW,
     60
 ));
+
+$settings->add(new admin_setting_configtextarea(
+    "qtype_coderunner/wsallowedjobeservers",
+    get_string('wsallowedjobeservers', 'qtype_coderunner'),
+    get_string('wsallowedjobeservers_desc', 'qtype_coderunner'),
+    '',
+    PARAM_RAW
+));
+
+$settings->hide_if(
+    'qtype_coderunner/wsjobeserver',
+    'qtype_coderunner/wsjobeservermode',
+    'neq',
+    constants::WS_JOBESERVER_MODE_FORCED
+);
+$settings->hide_if(
+    'qtype_coderunner/wsallowedjobeservers',
+    'qtype_coderunner/wsjobeservermode',
+    'neq',
+    constants::WS_JOBESERVER_MODE_FLEXIBLE
+);
 
 $settings->add(new admin_setting_configcheckbox(
     "qtype_coderunner/wsloggingenabled",

@@ -29,21 +29,32 @@ defined('MOODLE_INTERNAL') || die();
 global $CFG;
 require_once($CFG->dirroot . '/question/engine/tests/helpers.php');
 require_once($CFG->dirroot . '/question/type/coderunner/question.php');
-
+require_once($CFG->dirroot . '/question/type/coderunner/db/upgradelib.php');
 /**
  * @coversNothing
  */
-class qtype_coderunner_testcase extends advanced_testcase {
+abstract class qtype_coderunner_testcase extends advanced_testcase {
     protected $hasfailed = false; // Set to true when a test fails.
 
     /** @var stdClass Holds question category.*/
     protected $category;
 
+    protected static bool $prototypesinstalled = false;
+
     protected function setUp(): void {
         parent::setUp();
         self::setup_test_sandbox_configuration();
-        $this->resetAfterTest(false);
+        $this->resetAfterTest(true);
         $this->setAdminUser();
+        ob_start();
+        if (!self::$prototypesinstalled) {
+            if (\qtype_coderunner_util::using_mod_qbank()) {
+                update_question_types_with_qbank();
+            } else {
+                update_question_types_legacy();
+            }
+        }
+        ob_end_clean();
         $generator = $this->getDataGenerator()->get_plugin_generator('core_question');
         $this->category = $generator->create_question_category([]);
     }
@@ -60,7 +71,7 @@ class qtype_coderunner_testcase extends advanced_testcase {
         if (is_readable($localconfig)) {
             require($localconfig);
         } else {
-            throw new coding_exception('tests/fixtures/test-sandbox-config.php must exist to define test configuration');
+            self::markTestSkipped('tests/fixtures/test-sandbox-config.php must exist to define test configuration');
         }
         $USER->username  = 'tester';
         $USER->email     = 'tester@nowhere.com';
@@ -72,7 +83,7 @@ class qtype_coderunner_testcase extends advanced_testcase {
     // to conditionally skip later tests. See jobesendbox_test.
     // Name can't be made moodle-standards compliant as it's defined by phpunit.
     // $e is the exception to be thrown.
-    protected function onNotSuccessfulTest(Throwable $t): never {
+    protected function onnotsuccessfultest(Throwable $t): never {
         $this->hasfailed = true;
         throw $t;
     }

@@ -6,6 +6,7 @@ Feature: make_combinator_prototype
 
   Background:
     Given the CodeRunner test configuration file is loaded
+    And the Jobe server supports "python3"
     And the following "users" exist:
       | username | firstname | lastname | email            |
       | teacher1 | Teacher   | 1        | teacher1@asd.com |
@@ -65,7 +66,7 @@ Feature: make_combinator_prototype
     And I should not see "Write a sqr function"
     And I should see "Combinator prototype tester"
 
-  Scenario: As a teacher, I get marked right (using combinator template) if I submit a correct answer to a CodeRunner question
+  Scenario: As a teacher, I get marked right (using twig combinator template) if I submit a correct answer to a CodeRunner question
     When I choose "Preview" action for "Combinator prototype tester" in the question bank
     And I click on "a[aria-controls='id_attemptoptionsheadercontainer']" "css_element"
     And I set the field "id_behaviour" to "Adaptive mode"
