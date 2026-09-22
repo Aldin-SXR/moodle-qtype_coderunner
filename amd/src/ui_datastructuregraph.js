@@ -3021,7 +3021,7 @@ define(['jquery', 'core/str'], function($, Str) {
                     onChange(slot);
                 });
             buttons.append(button);
-        });
+        }, this);
         row.append(buttons);
         return row;
     };

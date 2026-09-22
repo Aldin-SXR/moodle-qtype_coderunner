@@ -8384,6 +8384,27 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
         };
     }
 
+    /**
+     * The timestamp already stored in the answer field, when that answer holds
+     * exactly the given files. Used on the first sync after a page load so that
+     * reopening an attempt does not restamp (and so dirty) an unchanged answer.
+     *
+     * @param {string} filesJson Serialised files of the current workspace.
+     * @returns {number|null} The stored timestamp, or null if it does not match.
+     */
+    MonacoMultifileWrapper.prototype.timestampOfStoredAnswer = function(filesJson) {
+        try {
+            const stored = JSON.parse(this.textarea.value);
+            if (!stored || typeof stored.timestamp !== 'number') {
+                return null;
+            }
+            const storedFiles = JSON.stringify({files: stored.files, folders: stored.folders});
+            return storedFiles === filesJson ? stored.timestamp : null;
+        } catch (e) {
+            return null; // No answer yet, or not our JSON.
+        }
+    };
+
     MonacoMultifileWrapper.prototype.sync = function(isSubmit = false) {
         // Save current file content
         if (this.activeFile && modelIsAlive(this.activeFile.model)) {
@@ -8396,10 +8417,25 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
 
         // Serialize all files to JSON
         const data = this.vfs.toJSON();
+        // The timestamp records when the files last changed, not when this sync
+        // ran. The sync timer fires every few seconds, so re-stamping it each
+        // time would keep rewriting an otherwise unchanged answer: Moodle then
+        // treats the answer as permanently edited (autosave churn, a spurious
+        // "your answer has changed since it was checked" warning) and identical
+        // resubmissions are no longer recognised as identical.
+        const filesJson = JSON.stringify(data);
+        if (filesJson !== this.lastSyncedFilesJson) {
+            const unchanged = this.timestampOfStoredAnswer(filesJson);
+            this.lastSyncedFilesJson = filesJson;
+            this.lastContentTimestamp = unchanged === null ? new Date().getTime() : unchanged;
+        }
         data.uiState = this.getUiState();
-        data.timestamp = new Date().getTime(); // Add timestamp
+        data.timestamp = this.lastContentTimestamp; // When the files last changed.
         data.folderName = this.workspaceInstanceId; // Add workspace ID for Flight deployment
-        this.textarea.value = JSON.stringify(data, null, 2);
+        const json = JSON.stringify(data, null, 2);
+        if (json !== this.textarea.value) {
+            this.textarea.value = json;
+        }
 
         // Trigger change event if this is a submit
         if (isSubmit) {
