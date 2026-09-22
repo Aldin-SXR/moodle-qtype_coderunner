@@ -52,6 +52,502 @@
     background-color: #f0f0f0;
 }
 
+.coderunner-datastructuregraph {
+    position: relative;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 240px;
+    grid-template-rows: 38px minmax(0, 1fr);
+    background: #f7f8fa;
+    color: #111827;
+    min-height: 220px;
+    max-width: 100%;
+    box-sizing: border-box;
+}
+
+/* Keyboard/mouse controls help dialog. */
+.coderunner-datastructuregraph-help-overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 60;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+    background: rgba(16, 24, 40, 0.45);
+}
+
+.coderunner-datastructuregraph-help-overlay .dsg-help {
+    display: flex;
+    flex-direction: column;
+    max-width: 560px;
+    width: 100%;
+    max-height: 100%;
+    background: #fff;
+    border-radius: 10px;
+    box-shadow: 0 12px 32px rgba(16, 24, 40, 0.35);
+    overflow: hidden;
+}
+
+.coderunner-datastructuregraph-help-overlay .dsg-help-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 16px;
+    border-bottom: 1px solid #e4e7ec;
+}
+
+.coderunner-datastructuregraph-help-overlay .dsg-help-title {
+    margin: 0;
+    font-size: 16px;
+    font-weight: 600;
+    color: #101828;
+}
+
+.coderunner-datastructuregraph-help-overlay .dsg-help-close {
+    border: 0;
+    background: transparent;
+    font-size: 22px;
+    line-height: 1;
+    color: #475467;
+    cursor: pointer;
+    border-radius: 6px;
+    padding: 2px 8px;
+}
+
+.coderunner-datastructuregraph-help-overlay .dsg-help-close:hover {
+    background: #f2f4f7;
+    color: #101828;
+}
+
+.coderunner-datastructuregraph-help-overlay .dsg-help-close:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 2px rgba(36, 84, 198, 0.4);
+}
+
+.coderunner-datastructuregraph-help-overlay .dsg-help-body {
+    padding: 14px 16px 18px;
+    overflow-y: auto;
+}
+
+.coderunner-datastructuregraph-help-overlay .dsg-help-section + .dsg-help-section {
+    margin-top: 16px;
+}
+
+.coderunner-datastructuregraph-help-overlay .dsg-help-section h4 {
+    margin: 0 0 8px;
+    font-size: 13px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    color: #667085;
+}
+
+.coderunner-datastructuregraph-help-overlay .dsg-help-list {
+    margin: 0;
+    padding-left: 18px;
+    color: #344054;
+    font-size: 13px;
+    line-height: 1.7;
+}
+
+.coderunner-datastructuregraph-help-overlay .dsg-help-row {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+    padding: 4px 0;
+    font-size: 13px;
+    color: #344054;
+}
+
+.coderunner-datastructuregraph-help-overlay .dsg-help-keys {
+    flex: 0 0 40%;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    justify-content: flex-end;
+    text-align: right;
+}
+
+.coderunner-datastructuregraph-help-overlay .dsg-help-keys .dsg-help-sep {
+    align-self: center;
+    color: #98a2b3;
+}
+
+.coderunner-datastructuregraph-help-overlay .dsg-help-keys kbd {
+    display: inline-block;
+    padding: 1px 6px;
+    border: 1px solid #d0d5dd;
+    border-bottom-width: 2px;
+    border-radius: 5px;
+    background: #f9fafb;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 11px;
+    color: #101828;
+    white-space: nowrap;
+}
+
+.coderunner-datastructuregraph-help-overlay .dsg-help-desc {
+    flex: 1 1 auto;
+}
+
+/* Off-screen text alternative and live region for keyboard/screen-reader use. */
+.coderunner-datastructuregraph-a11y {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    border: 0;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    clip-path: inset(50%);
+    white-space: nowrap;
+}
+
+.coderunner-datastructuregraph-toolbar {
+    position: relative;
+    z-index: 30;
+    grid-column: 1 / 3;
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    padding: 3px 6px;
+    border-bottom: 1px solid #d0d5dd;
+    background: #f1f3f7;
+    min-width: 0;
+}
+
+.coderunner-datastructuregraph-toolbar .dsg-toolgroup {
+    display: flex;
+    align-items: center;
+    gap: 1px;
+    padding: 0 5px;
+}
+
+.coderunner-datastructuregraph-toolbar .dsg-toolgroup:first-child {
+    padding-left: 0;
+}
+
+.coderunner-datastructuregraph-toolbar .dsg-toolgroup + .dsg-toolgroup {
+    border-left: 1px solid #d7dbe2;
+}
+
+.coderunner-datastructuregraph-toolbar .dsg-tool {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    height: 28px;
+    width: 28px;
+    padding: 0;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    background: transparent;
+    color: #344054;
+    cursor: pointer;
+    transition: background-color 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+}
+
+.coderunner-datastructuregraph-toolbar .dsg-tool-icon {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.coderunner-datastructuregraph-toolbar .dsg-tool svg {
+    width: 17px;
+    height: 17px;
+    display: block;
+    pointer-events: none;
+}
+
+.coderunner-datastructuregraph-toolbar .dsg-tool-label {
+    position: absolute;
+    top: calc(100% + 7px);
+    left: 50%;
+    z-index: 20;
+    padding: 4px 8px;
+    border-radius: 5px;
+    background: #101828;
+    color: #fff;
+    white-space: nowrap;
+    font-size: 11px;
+    line-height: 1.3;
+    font-weight: 500;
+    pointer-events: none;
+    opacity: 0;
+    transform: translate(-50%, -4px) scale(0.94);
+    transform-origin: top center;
+    transition: opacity 0.15s ease, transform 0.15s cubic-bezier(0.34, 1.56, 0.64, 1);
+    box-shadow: 0 4px 12px rgba(16, 24, 40, 0.18);
+}
+
+/* Little arrow pointing up to the button. */
+.coderunner-datastructuregraph-toolbar .dsg-tool-label::before {
+    content: "";
+    position: absolute;
+    bottom: 100%;
+    left: 50%;
+    margin-left: -4px;
+    border: 4px solid transparent;
+    border-bottom-color: #101828;
+}
+
+.coderunner-datastructuregraph-toolbar .dsg-tool:not([disabled]):hover .dsg-tool-label,
+.coderunner-datastructuregraph-toolbar .dsg-tool:focus-visible .dsg-tool-label {
+    opacity: 1;
+    transform: translate(-50%, 0) scale(1);
+}
+
+/* The leftmost button's popover would overflow the editor's left edge, so
+   anchor it to the button's left edge instead of centring it. */
+.coderunner-datastructuregraph-toolbar .dsg-toolgroup:first-child .dsg-tool:first-child .dsg-tool-label {
+    left: 0;
+    transform: translate(0, -4px) scale(0.94);
+    transform-origin: top left;
+}
+
+.coderunner-datastructuregraph-toolbar .dsg-toolgroup:first-child .dsg-tool:first-child .dsg-tool-label::before {
+    left: 14px;
+    margin-left: -4px;
+}
+
+.coderunner-datastructuregraph-toolbar .dsg-toolgroup:first-child .dsg-tool:first-child:not([disabled]):hover .dsg-tool-label,
+.coderunner-datastructuregraph-toolbar .dsg-toolgroup:first-child .dsg-tool:first-child:focus-visible .dsg-tool-label {
+    transform: translate(0, 0) scale(1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .coderunner-datastructuregraph-toolbar .dsg-tool,
+    .coderunner-datastructuregraph-toolbar .dsg-tool-label {
+        transition: none;
+    }
+}
+
+.coderunner-datastructuregraph-toolbar .dsg-tool:hover {
+    background: #e2e7ef;
+    color: #101828;
+}
+
+.coderunner-datastructuregraph-toolbar .dsg-tool:focus-visible {
+    outline: none;
+    border-color: #2454c6;
+    box-shadow: 0 0 0 2px rgba(36, 84, 198, 0.25);
+}
+
+.coderunner-datastructuregraph-toolbar .dsg-tool:active {
+    background: #d4dbe6;
+}
+
+.coderunner-datastructuregraph-toolbar .dsg-tool.active {
+    background: #2454c6;
+    border-color: #2454c6;
+    color: #fff;
+}
+
+.coderunner-datastructuregraph-toolbar .dsg-tool--danger:hover {
+    background: #fee4e2;
+    color: #b42318;
+}
+
+.coderunner-datastructuregraph-toolbar .dsg-zoomlevel {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 44px;
+    height: 28px;
+    padding: 0 6px;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    background: transparent;
+    color: #344054;
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+    cursor: pointer;
+    transition: background-color 0.12s ease, border-color 0.12s ease;
+}
+
+.coderunner-datastructuregraph-toolbar .dsg-zoomlevel:hover {
+    background: #e2e7ef;
+    color: #101828;
+}
+
+.coderunner-datastructuregraph-toolbar .dsg-zoomlevel:focus-visible {
+    outline: none;
+    border-color: #2454c6;
+    box-shadow: 0 0 0 2px rgba(36, 84, 198, 0.25);
+}
+
+.coderunner-datastructuregraph-toolbar .dsg-zoomlevel[disabled] {
+    cursor: default;
+    opacity: 0.4;
+}
+
+.coderunner-datastructuregraph-toolbar .dsg-tool[disabled] {
+    opacity: 0.4;
+    cursor: default;
+    background: transparent;
+    color: #344054;
+}
+
+.coderunner-datastructuregraph-status {
+    flex: 1 1 auto;
+    min-width: 0;
+    margin-left: 6px;
+    color: #475467;
+    font-size: 12px;
+    line-height: 16px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.coderunner-datastructuregraph-status.active {
+    color: #1b7f4c;
+    font-weight: 600;
+}
+
+.coderunner-datastructuregraph-canvaswrap {
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+    background: #fff;
+}
+
+.coderunner-datastructuregraph-canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+    background: #fff;
+    cursor: grab;
+    outline: none;
+    touch-action: none;
+}
+
+.coderunner-datastructuregraph-canvas.over-graph-item {
+    cursor: default;
+}
+
+.coderunner-datastructuregraph-canvas.is-panning {
+    cursor: grabbing;
+}
+
+.coderunner-datastructuregraph-canvas:focus {
+    box-shadow: inset 0 0 0 2px #2454c6;
+}
+
+.coderunner-datastructuregraph-properties {
+    min-width: 0;
+    min-height: 0;
+    overflow-y: auto;
+    border-left: 1px solid #d0d5dd;
+    background: #fff;
+    padding: 10px;
+}
+
+.coderunner-datastructuregraph-properties h4 {
+    font-size: 14px;
+    line-height: 18px;
+    margin: 0 0 10px;
+}
+
+.coderunner-datastructuregraph-field {
+    display: block;
+    margin-bottom: 10px;
+    font-size: 12px;
+    line-height: 16px;
+    font-weight: 600;
+}
+
+.coderunner-datastructuregraph-field span {
+    display: block;
+    margin-bottom: 3px;
+}
+
+.coderunner-datastructuregraph-fieldtitle {
+    margin-bottom: 4px;
+    color: #111827;
+    font-size: 12px;
+    line-height: 16px;
+    font-weight: 600;
+}
+
+.coderunner-datastructuregraph-field input,
+.coderunner-datastructuregraph-field select {
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.coderunner-datastructuregraph-multikey,
+.coderunner-datastructuregraph-slotrow {
+    margin-bottom: 10px;
+}
+
+.coderunner-datastructuregraph-keyrow {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+    gap: 4px;
+    margin-bottom: 4px;
+}
+
+.coderunner-datastructuregraph-keyrow.no-value {
+    grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.coderunner-datastructuregraph-slotbuttons {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+}
+
+.coderunner-datastructuregraph-slotbuttons .btn {
+    margin-right: 0;
+}
+
+.coderunner-datastructuregraph-slotbuttons .btn.active {
+    color: #fff;
+    background: #2454c6;
+    border-color: #2454c6;
+}
+
+.coderunner-datastructuregraph-empty,
+.coderunner-datastructuregraph-endpoints,
+.coderunner-datastructuregraph-id {
+    color: #475467;
+    font-size: 12px;
+    line-height: 16px;
+    overflow-wrap: anywhere;
+}
+
+.coderunner-datastructuregraph-endpoints {
+    margin-bottom: 10px;
+    font-weight: 600;
+}
+
+.coderunner-datastructuregraph-id {
+    margin-top: 8px;
+    font-family: monospace;
+}
+
+@media (max-width: 700px) {
+    .coderunner-datastructuregraph {
+        grid-template-columns: minmax(0, 1fr);
+        grid-template-rows: 38px minmax(0, 1fr) auto;
+    }
+
+    .coderunner-datastructuregraph-toolbar {
+        grid-column: 1;
+        overflow-x: auto;
+    }
+
+    .coderunner-datastructuregraph-properties {
+        border-left: 0;
+        border-top: 1px solid #d0d5dd;
+        max-height: 180px;
+    }
+}
+
 .que.coderunner .ace_editor,
 body#page-question-type-coderunner .ace_editor {
     font-size: 100%;

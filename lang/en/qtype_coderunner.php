@@ -384,6 +384,131 @@ $string['graphui_locknodelabels_descr'] = 'If true, prevent the user from editin
 $string['graphui_lockedgepositions_descr'] = 'If true prevents the user from dragging edges to change their curvature. Possibly useful if the answer box is preloaded with a graph that the student has to annotate by changing node or edge labels or by adding/removing edges. Also ensures that edges added by a student are straight, e.g. to draw a polygon on a set of given points. Note, though that edges can still be added and deleted. See lockedgeset.';
 $string['graphui_lockedgeset_descr'] = 'If true prevents the user from adding or deleting edges.';
 $string['graphui_lockedgelabels_descr'] = 'True to prevent the user from editing edge labels. This also prevents any new edges from having labels.';
+$string['datastructuregraph_ui_invalidserialisation'] = 'DataStructureGraph UI: invalid serialisation';
+$string['datastructuregraph_ui_addnode'] = 'Add node';
+$string['datastructuregraph_ui_connect'] = 'Connect';
+$string['datastructuregraph_ui_delete'] = 'Delete';
+$string['datastructuregraph_ui_undo'] = 'Undo';
+$string['datastructuregraph_ui_redo'] = 'Redo';
+$string['datastructuregraph_ui_layout'] = 'Auto-layout';
+$string['datastructuregraph_ui_resetview'] = 'Reset view';
+$string['datastructuregraph_ui_zoomin'] = 'Zoom in';
+$string['datastructuregraph_ui_zoomout'] = 'Zoom out';
+$string['datastructuregraph_ui_zoomlevel'] = 'Zoom level (click to reset to 100%)';
+$string['datastructuregraph_ui_clear'] = 'Clear';
+$string['datastructuregraph_ui_clearconfirm'] = 'Clear diagram?';
+$string['datastructuregraph_ui_properties'] = 'Properties';
+$string['datastructuregraph_ui_none'] = 'None';
+$string['datastructuregraph_ui_key'] = 'Key';
+$string['datastructuregraph_ui_value'] = 'Value';
+$string['datastructuregraph_ui_color'] = 'Color';
+$string['datastructuregraph_ui_cost'] = 'Cost';
+$string['datastructuregraph_ui_childslot'] = 'Child slot';
+$string['datastructuregraph_ui_connectchild'] = 'Connect child';
+$string['datastructuregraph_ui_keysvalues'] = 'Keys / values';
+$string['datastructuregraph_ui_keys'] = 'Keys';
+$string['datastructuregraph_ui_addkey'] = 'Add key';
+$string['datastructuregraph_ui_remove'] = 'Remove';
+$string['datastructuregraph_ui_keylabel'] = 'Key {$a}';
+$string['datastructuregraph_ui_valuelabel'] = 'Value {$a}';
+$string['datastructuregraph_ui_shiftprefix'] = 'Shift: ';
+$string['datastructuregraph_ui_slotchild'] = '{$a} child: ';
+$string['datastructuregraph_ui_clicktarget'] = 'from {$a} - click target';
+$string['datastructuregraph_ui_clicksource'] = 'click source node';
+$string['datastructuregraph_ui_a11yeditor'] = 'Data structure graph editor';
+$string['datastructuregraph_ui_a11yinstructions'] = 'Press N to add a node. Use Tab and Shift+Tab to move between nodes and edges. Use the arrow keys to reposition the selected node, or to pan when nothing is selected. Press C to connect the selected node to another node. Press Delete to remove the selection. Press Escape to cancel.';
+$string['datastructuregraph_ui_a11yempty'] = 'The graph is currently empty.';
+$string['datastructuregraph_ui_a11ynodes'] = 'Nodes';
+$string['datastructuregraph_ui_a11yedges'] = 'Edges';
+$string['datastructuregraph_ui_a11yselection'] = 'Selected';
+$string['datastructuregraph_ui_a11yto'] = 'to';
+$string['datastructuregraph_ui_a11yslot'] = 'slot {$a}';
+$string['datastructuregraph_ui_a11ycost'] = 'cost {$a}';
+$string['datastructuregraph_ui_a11yadded'] = 'Added node {$a}';
+$string['datastructuregraph_ui_a11ydeleted'] = 'Deleted {$a}';
+$string['datastructuregraph_ui_a11yselnode'] = 'Selected node {$a}';
+$string['datastructuregraph_ui_a11yseledge'] = 'Selected edge {$a}';
+$string['datastructuregraph_ui_a11ycleared'] = 'Selection cleared';
+$string['datastructuregraph_ui_a11yselectfirst'] = 'Select a node first, then press C to connect it.';
+$string['datastructuregraph_ui_a11yconnectstart'] = 'Connecting from node {$a}. Move to another node and press C or Enter to connect, or Escape to cancel.';
+$string['datastructuregraph_ui_a11yconnected'] = 'Connected {$a}';
+$string['datastructuregraph_ui_a11yconnectcancel'] = 'Connection cancelled';
+$string['datastructuregraph_ui_help'] = 'Help';
+$string['datastructuregraph_ui_helptitle'] = 'Keyboard & mouse controls';
+$string['datastructuregraph_ui_helpclose'] = 'Close';
+$string['datastructuregraph_ui_helpmouseheading'] = 'Mouse';
+$string['datastructuregraph_ui_helpkeyboardheading'] = 'Keyboard';
+$string['datastructuregraph_ui_helpmouseselectg'] = 'Click';
+$string['datastructuregraph_ui_helpmouseselect'] = 'a node or edge to select it.';
+$string['datastructuregraph_ui_helpmousemoveg'] = 'Drag';
+$string['datastructuregraph_ui_helpmousemove'] = 'a node to move it.';
+$string['datastructuregraph_ui_helpmousepang'] = 'Drag';
+$string['datastructuregraph_ui_helpmousepan'] = 'an empty part of the canvas to pan the view.';
+$string['datastructuregraph_ui_helpmouseaddg'] = 'Double-click';
+$string['datastructuregraph_ui_helpmouseadd'] = 'an empty spot to add a node.';
+$string['datastructuregraph_ui_helpmouseconnectg'] = 'Click';
+$string['datastructuregraph_ui_helpmouseconnectmid'] = 'a node, then';
+$string['datastructuregraph_ui_helpmouseconnectg2'] = 'Shift-click';
+$string['datastructuregraph_ui_helpmouseconnectend'] = 'another to connect them.';
+$string['datastructuregraph_ui_helpmousezoomg'] = 'Mouse wheel';
+$string['datastructuregraph_ui_helpmousezoom'] = 'to zoom in and out.';
+$string['datastructuregraph_ui_helpkeyadd'] = 'Add a node';
+$string['datastructuregraph_ui_helpkeymove'] = 'Move the selection between nodes and edges';
+$string['datastructuregraph_ui_helpkeynudge'] = 'Move the selected node (hold Shift for larger steps), or pan when nothing is selected';
+$string['datastructuregraph_ui_helpkeyconnect'] = 'Connect the selected node to another (press again on the target)';
+$string['datastructuregraph_ui_helpkeydelete'] = 'Delete the selection';
+$string['datastructuregraph_ui_helpkeycancel'] = 'Cancel a connection or clear the selection';
+$string['datastructuregraph_ui_helpkeyundo'] = 'Undo or redo the last change';
+$string['datastructuregraph_ui_push'] = 'Push';
+$string['datastructuregraph_ui_pop'] = 'Pop';
+$string['datastructuregraph_ui_enqueue'] = 'Enqueue';
+$string['datastructuregraph_ui_dequeue'] = 'Dequeue';
+$string['datastructuregraph_ui_head'] = 'head';
+$string['datastructuregraph_ui_tail'] = 'tail';
+$string['datastructuregraph_ui_top'] = 'top';
+$string['datastructuregraph_ui_empty'] = '(empty)';
+$string['datastructuregraph_ui_linkslot'] = 'Link';
+$string['datastructuregraph_ui_connectlink'] = 'Connect link';
+$string['datastructuregraph_ui_position'] = 'Position {$a}';
+$string['datastructuregraph_ui_a11ylist'] = 'Linked list';
+$string['datastructuregraph_ui_a11ystack'] = 'Stack, from top to bottom';
+$string['datastructuregraph_ui_a11yqueue'] = 'Queue, from head to tail';
+$string['datastructuregraph_ui_a11ynull'] = 'null';
+$string['datastructuregraph_ui_a11yunlinked'] = 'Unlinked nodes';
+$string['datastructuregraph_ui_a11yemptystack'] = 'The stack is currently empty.';
+$string['datastructuregraph_ui_a11yemptyqueue'] = 'The queue is currently empty.';
+$string['datastructuregraph_ui_a11ypushed'] = 'Pushed {$a}';
+$string['datastructuregraph_ui_a11ypopped'] = 'Popped {$a}';
+$string['datastructuregraph_ui_a11yenqueued'] = 'Enqueued {$a}';
+$string['datastructuregraph_ui_a11ydequeued'] = 'Dequeued {$a}';
+$string['datastructuregraph_ui_a11ymoved'] = 'Moved {$a}';
+$string['datastructuregraph_ui_a11ystackinstructions'] = 'Press N to push a new element. Use Tab and Shift+Tab to move between elements. Use the Up and Down arrow keys to move the selected element within the stack. Press Delete to remove the selected element. Press Escape to clear the selection.';
+$string['datastructuregraph_ui_a11yqueueinstructions'] = 'Press N to enqueue a new element. Use Tab and Shift+Tab to move between elements. Use the Left and Right arrow keys to move the selected element within the queue. Press Delete to remove the selected element. Press Escape to clear the selection.';
+$string['datastructuregraph_ui_helpmousereorderg'] = 'Drag';
+$string['datastructuregraph_ui_helpmousereorder'] = 'an element to move it to a different position.';
+$string['datastructuregraph_ui_helpmousepushg'] = 'Double-click';
+$string['datastructuregraph_ui_helpmousepush'] = 'the canvas to push or enqueue a new element.';
+$string['datastructuregraph_ui_helpkeypush'] = 'Push or enqueue a new element';
+$string['datastructuregraph_ui_helpkeyelements'] = 'Move the selection between elements';
+$string['datastructuregraph_ui_helpkeyreorder'] = 'Move the selected element one position, or pan when nothing is selected';
+$string['datastructuregraph_ui_helpkeydeleteelement'] = 'Delete the selected element';
+$string['datastructuregraphui_mode_descr'] = '"tree" for rooted tree/data-structure diagrams with optional child slots, "graph" for general graphs, "list" for linked lists drawn as box-and-pointer nodes, "stack" for a stack built with push/pop, or "queue" for a queue built with enqueue/dequeue.';
+$string['datastructuregraphui_listkind_descr'] = 'List mode only: "singly" for next pointers only, or "doubly" for both next and prev pointers.';
+$string['datastructuregraphui_autoprev_descr'] = 'Doubly linked lists only: if true, setting A.next to B automatically sets B.prev to A (and removing the next link removes that prev link). Set to false to make students set every prev pointer themselves.';
+$string['datastructuregraphui_showheadtail_descr'] = 'If true, label the head and tail of a linked list or queue, or the top of a stack.';
+$string['datastructuregraphui_shownull_descr'] = 'List mode only: if true, draw a diagonal slash in pointer cells that are null.';
+$string['datastructuregraphui_isdirected_descr'] = 'If true, edges are directed from source node to target node.';
+$string['datastructuregraphui_nodefields_descr'] = '"key" for one key per node, "key_value" for one key/value pair per node, "keys" for B-tree style nodes with multiple keys and no values, or "keys_values" for B-tree style nodes with multiple key/value pairs.';
+$string['datastructuregraphui_maxnodekeys_descr'] = 'Maximum number of keys or key/value pairs allowed in a node when nodefields is "keys" or "keys_values". Use 0 for no fixed limit.';
+$string['datastructuregraphui_allowedgecosts_descr'] = 'If true, edges have an editable cost/weight field.';
+$string['datastructuregraphui_allownodecolors_descr'] = 'If true, nodes can be coloured black or red, for example in red-black tree questions.';
+$string['datastructuregraphui_allowedgecolors_descr'] = 'If true, edges can be coloured black or red.';
+$string['datastructuregraphui_childslots_descr'] = 'A list of permitted child-slot labels, such as ["left", "right"]. If empty in tree mode, left and right are used. Set to ["none"] for a tree with an arbitrary number of unlabelled children.';
+$string['datastructuregraphui_locknodeset_descr'] = 'If true, prevents the user from adding or deleting nodes.';
+$string['datastructuregraphui_lockedgeset_descr'] = 'If true, prevents the user from adding or deleting edges.';
+$string['datastructuregraphui_locknodepositions_descr'] = 'If true, prevents the user from moving nodes.';
+$string['datastructuregraphui_locknodefields_descr'] = 'If true, prevents editing node keys, values and colours.';
+$string['datastructuregraphui_lockedgefields_descr'] = 'If true, prevents editing edge costs, child slots and colours.';
 $string['hidden'] = 'Hidden';
 $string['hidecheck'] = 'Hide check';
 $string['hidedetails'] = 'Hide details';
@@ -712,6 +837,17 @@ else:
 one of the aspects of the specification. For example, the first test case might
 print the sorted keys, expecting to see \'A\', \'B\'. The second test case might
 print the outgoing edges from node \'A\', and so on.</p>';
+
+$string['qtype_data_structure_graph'] = '<p>A Python 3 question type that asks the student to build a tree or graph visually.</p>
+<h4>Usage information</h4>
+<p>The question author draws the correct structure in the Sample answer field using the DataStructureGraph UI. The student answer is graded against that sample answer after normalising away canvas layout.</p>
+<p>Nodes have a required key, an optional value and, when enabled in UI parameters, a red/black colour. With <code>nodefields</code> set to <code>key</code>, values are hidden. With <code>nodefields</code> set to <code>keys</code> or <code>keys_values</code>, nodes become B-tree style record nodes with multiple ordered keys or key/value pairs. Edges connect nodes and can have optional costs, optional red/black colour and, in tree mode, child slots such as left and right.</p>
+<p>If the question\'s All-or-nothing grading option is enabled, the answer receives full marks only when every node, node field, edge, cost, colour and child slot is correct. If All-or-nothing is disabled, the template grader awards partial credit for the correct parts of the structure while still requiring a complete match for full marks.</p>
+<p>The template parameter <code>feedbackdetail</code> controls how much mismatch information students see: <code>detailed</code> shows exact differences, <code>summary</code> shows only mismatch counts by category and <code>minimal</code> shows only that the submitted structure differs.</p>
+<p>The most commonly customised UI parameters are <code>mode</code> (<code>tree</code>, <code>graph</code>, <code>list</code>, <code>stack</code> or <code>queue</code>), <code>isdirected</code>, <code>nodefields</code>, <code>maxnodekeys</code>, <code>allowedgecosts</code>, <code>allownodecolors</code>, <code>allowedgecolors</code> and <code>childslots</code>.</p>
+<h4>Linked lists, stacks and queues</h4>
+<p>Set <code>mode</code> to <code>list</code> for a linked list. Nodes are drawn as box-and-pointer records and connecting two nodes sets the source node\'s <code>next</code> pointer; with <code>listkind</code> set to <code>doubly</code> each node also has a <code>prev</code> pointer. Set <code>mode</code> to <code>stack</code> or <code>queue</code> for a stack (Push/Pop) or a queue (Enqueue/Dequeue); elements can also be dragged or moved with the arrow keys to reorder them. In all three modes each element holds a single key; <code>nodefields</code> is ignored.</p>
+<p>These structures are graded by position rather than by key, so duplicate keys are allowed. The grader compares the key at each position (head to tail, or top to bottom) and, for linked lists, every next/prev pointer. It also reports a list that has no single head, contains a cycle or has nodes that cannot be reached from the head. The rubric presets <code>linked_list</code> and <code>sequence</code> and the caps <code>notAList</code>, <code>wrongHead</code>, <code>cycleInList</code> and <code>disconnected</code> apply to these modes.</p>';
 
 $string['qtype_java_class'] = '<p>A Java write-a-class question, where the student submits a
 complete class as their answer. Each test will  typically instantiate an object of the specified

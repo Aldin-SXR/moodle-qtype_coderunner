@@ -699,6 +699,78 @@ function xmldb_qtype_coderunner_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 2026051816, 'qtype', 'coderunner');
     }
 
+    if ($oldversion < 2026061800) {
+        // Add the data_structure_graph prototype and DataStructureGraph UI plugin.
+        // Note: prototypes are reloaded by update_question_types() at the end of this function.
+        upgrade_plugin_savepoint(true, 2026061800, 'qtype', 'coderunner');
+    }
+
+    if ($oldversion < 2026061900) {
+        // Improve the data_structure_graph UI and prototype grader.
+        // Note: prototypes are reloaded by update_question_types() at the end of this function.
+        upgrade_plugin_savepoint(true, 2026061900, 'qtype', 'coderunner');
+    }
+
+    if ($oldversion < 2026061901) {
+        // Make tree graphs undirected by default and normalise blank tree child slots.
+        // Note: prototypes are reloaded by update_question_types() at the end of this function.
+        upgrade_plugin_savepoint(true, 2026061901, 'qtype', 'coderunner');
+    }
+
+    if ($oldversion < 2026061902) {
+        // Improve shift-click connection feedback and tree endpoint normalisation.
+        // Note: prototypes are reloaded by update_question_types() at the end of this function.
+        upgrade_plugin_savepoint(true, 2026061902, 'qtype', 'coderunner');
+    }
+
+    if ($oldversion < 2026061903) {
+        // Compare undirected tree edges without requiring a particular endpoint order.
+        // Note: prototypes are reloaded by update_question_types() at the end of this function.
+        upgrade_plugin_savepoint(true, 2026061903, 'qtype', 'coderunner');
+    }
+
+    if ($oldversion < 2026061904) {
+        // Improve data_structure_graph panning, connection previews and feedback detail controls.
+        // Note: prototypes are reloaded by update_question_types() at the end of this function.
+        upgrade_plugin_savepoint(true, 2026061904, 'qtype', 'coderunner');
+    }
+
+    if ($oldversion < 2026061905) {
+        // Report data_structure_graph edge colour differences separately from missing/extra edges.
+        // Note: prototypes are reloaded by update_question_types() at the end of this function.
+        upgrade_plugin_savepoint(true, 2026061905, 'qtype', 'coderunner');
+    }
+
+    if ($oldversion < 2026061906) {
+        // Show full multi-key B-tree node labels in data_structure_graph edge feedback.
+        // Note: prototypes are reloaded by update_question_types() at the end of this function.
+        upgrade_plugin_savepoint(true, 2026061906, 'qtype', 'coderunner');
+    }
+
+    if ($oldversion < 2026061907) {
+        // Add key-only nodefields modes for data_structure_graph questions.
+        // Note: prototypes are reloaded by update_question_types() at the end of this function.
+        upgrade_plugin_savepoint(true, 2026061907, 'qtype', 'coderunner');
+    }
+
+    if ($oldversion < 2026062300) {
+        // Add custom scoring rubrics to the data_structure_graph prototype.
+        // Note: prototypes are reloaded by update_question_types() at the end of this function.
+        upgrade_plugin_savepoint(true, 2026062300, 'qtype', 'coderunner');
+    }
+
+    if ($oldversion < 2026092200) {
+        // Add linked-list, stack and queue modes to the data_structure_graph prototype grader.
+        // Note: prototypes are reloaded by update_question_types() at the end of this function.
+        upgrade_plugin_savepoint(true, 2026092200, 'qtype', 'coderunner');
+    }
+
+    if ($oldversion < 2026092201) {
+        // Linked-list, stack and queue elements hold a single key; queues use head/tail.
+        // Note: prototypes are reloaded by update_question_types() at the end of this function.
+        upgrade_plugin_savepoint(true, 2026092201, 'qtype', 'coderunner');
+    }
+
     require_once(__DIR__ . '/upgradelib.php');
     update_question_types();
 

@@ -67,6 +67,7 @@ class ui_parameters_test extends \qtype_coderunner_testcase {
         $this->assertContains('gapfiller', $names);
         $this->assertContains('html', $names);
         $this->assertContains('scratchpad', $names);
+        $this->assertNotContains('datastructuregraph_rubric', $names);
     }
 
     // Test the dropdown list for the plugins.

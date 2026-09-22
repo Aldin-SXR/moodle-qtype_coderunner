@@ -32,6 +32,8 @@ defined('MOODLE_INTERNAL') || die();
 global $CFG;
 require_once($CFG->dirroot . '/question/type/coderunner/tests/test.php');
 require_once($CFG->dirroot . '/question/type/coderunner/questiontype.php');
+require_once($CFG->dirroot . '/question/type/edit_question_form.php');
+require_once($CFG->dirroot . '/question/type/coderunner/edit_coderunner_form.php');
 
 /**
  * @coversNothing
@@ -45,12 +47,36 @@ class graphui_save_test extends \qtype_coderunner_testcase {
     }
 
     public function test_question_saving_graph_ui() {
+        $this->assert_question_saves_with_ui('graph');
+    }
+
+    public function test_question_saving_datastructuregraph_ui() {
+        $this->assert_question_saves_with_ui('datastructuregraph');
+    }
+
+    public function test_question_saving_datastructuregraph_answer() {
+        $this->assert_question_saves_with_ui('datastructuregraph', $this->datastructuregraph_answer_json());
+    }
+
+    /**
+     * Assert that a question saves with the given UI plugin.
+     *
+     * @param string $uiplugin UI plugin name.
+     * @param string|null $answer optional sample answer.
+     */
+    private function assert_question_saves_with_ui(string $uiplugin, ?string $answer = null): void {
         $this->setAdminUser();
 
         $questiondata = \test_question_maker::get_question_data('coderunner');
-        $questiondata->options->uiplugin = 'graph';
+        $questiondata->options->uiplugin = $uiplugin;
         $formdata = \test_question_maker::get_question_form_data('coderunner');
-        $formdata->uiplugin = 'graph';
+        $formdata->uiplugin = $uiplugin;
+        if ($answer !== null) {
+            $questiondata->options->answer = $answer;
+            $questiondata->options->validateonsave = 0;
+            $formdata->answer = $answer;
+            $formdata->validateonsave = 0;
+        }
 
         $generator = $this->getDataGenerator()->get_plugin_generator('core_question');
         $cat = $generator->create_question_category([]);
@@ -88,5 +114,31 @@ class graphui_save_test extends \qtype_coderunner_testcase {
         }
 
         // TODO: Validate the test cases.
+    }
+
+    /**
+     * Return a sample data-structure graph serialisation.
+     *
+     * @return string
+     */
+    private function datastructuregraph_answer_json(): string {
+        return json_encode([
+            'type' => 'coderunner-datastructure-graph',
+            'version' => 1,
+            'settings' => [
+                'mode' => 'tree',
+                'isdirected' => false,
+                'childslots' => ['left', 'right'],
+                'nodefields' => 'key_value',
+                'maxnodekeys' => 0,
+            ],
+            'nodes' => [
+                ['id' => 'n1', 'key' => '10', 'value' => '', 'layout' => ['x' => 100, 'y' => 40]],
+                ['id' => 'n2', 'key' => '5', 'value' => '', 'layout' => ['x' => 60, 'y' => 120]],
+            ],
+            'edges' => [
+                ['id' => 'e1', 'from' => 'n1', 'to' => 'n2', 'cost' => '', 'color' => 'black', 'slot' => 'left'],
+            ],
+        ]);
     }
 }

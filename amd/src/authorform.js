@@ -93,7 +93,105 @@ define(['jquery', 'qtype_coderunner/userinterfacewrapper', 'core/str'], function
             brokenQuestion = $('#id_broken_question'),
             badQuestionLoad = $('#id_bad_question_load'),
             uiplugin = $('#id_uiplugin'),
-            uiparameters = $('#id_uiparameters');
+            uiparameters = $('#id_uiparameters'),
+            // The UI parameters PHP merged for the answer fields when the page was
+            // built (prototype + saved question), and the saved question's own
+            // parameters, so edits can be previewed without saving first.
+            savedMergedUiParams = parseJsonObject($('#id_answer').attr('data-params')) || {},
+            savedOwnUiParams = parseJsonObject(uiparameters.val()) || {},
+            prototypeRequests = {}, // Question type name -> promise of its prototype.
+            uiParamsRefreshCount = 0;
+
+        /**
+         * Parse a JSON object, returning null if the text is not one.
+         * Blank text is an empty object.
+         * @param {string} text The JSON text.
+         * @return {object|null} The parsed object or null.
+         */
+        function parseJsonObject(text) {
+            if (!text || text.trim() === '') {
+                return {};
+            }
+            try {
+                const value = JSON.parse(text);
+                return value !== null && typeof value === 'object' && !Array.isArray(value) ? value : null;
+            } catch (err) {
+                return null;
+            }
+        }
+
+        /**
+         * Get the prototype record of a question type, as returned by ajax.php,
+         * fetching it at most once per type.
+         * @param {string} qtype The question type name.
+         * @return {Promise} Resolves to the prototype record, or null on failure.
+         */
+        function getPrototype(qtype) {
+            if (!prototypeRequests[qtype]) {
+                prototypeRequests[qtype] = new Promise(function(resolve) {
+                    $.getJSON(M.cfg.wwwroot + '/question/type/coderunner/ajax.php',
+                        {qtype: qtype, courseid: courseId, sesskey: M.cfg.sesskey},
+                        function(outcome) {
+                            resolve(outcome && outcome.success ? outcome : null);
+                        }
+                    ).fail(function() {
+                        resolve(null);
+                    });
+                });
+            }
+            return prototypeRequests[qtype];
+        }
+
+        /**
+         * Apply the current UI parameters to the sample answer and answer preload
+         * straight away, so the author can use the reconfigured UI (for example a
+         * data-structure editor switched from tree to stack) without saving and
+         * reopening the question first.
+         *
+         * Mirrors the server-side merge: the prototype's UI parameters (when it
+         * uses the same UI plugin) overlaid with the question's own. If the
+         * prototype is unavailable, the page's PHP-merged parameters are used
+         * with the saved question's own keys removed. Parameters that are not
+         * plain JSON (e.g. Twig) need the server to evaluate them, so they only
+         * take effect after saving, as before.
+         *
+         * @param {boolean} force Reload the UIs even if the parameters are unchanged.
+         */
+        function refreshUiParams(force) {
+            const refresh = ++uiParamsRefreshCount;
+            const qtype = typeCombo.children('option:selected').text();
+            const prototype = qtype ? getPrototype(qtype) : Promise.resolve(null);
+            prototype.then(function(proto) {
+                if (refresh !== uiParamsRefreshCount) {
+                    return null; // A later edit has superseded this one.
+                }
+                const ownParams = parseJsonObject(uiparameters.val());
+                const protoParams = proto ? parseJsonObject(proto.uiparameters) : null;
+                let merged = null;
+                if (ownParams !== null && protoParams !== null) {
+                    const sameUi = (proto.uiplugin || '').toLowerCase() === (uiplugin.val() || '').toLowerCase();
+                    merged = Object.assign({}, sameUi ? protoParams : {}, ownParams);
+                } else if (ownParams !== null) {
+                    merged = Object.assign({}, savedMergedUiParams);
+                    Object.keys(savedOwnUiParams).forEach(function(key) {
+                        delete merged[key];
+                    });
+                    Object.assign(merged, ownParams);
+                }
+                const answer = $('#id_answer');
+                const json = merged === null ? null : JSON.stringify(merged);
+                if (json !== null && json !== answer.attr('data-params')) {
+                    answer.attr('data-params', json);
+                    $('#id_answerpreload').attr('data-params', json);
+                } else if (!force) {
+                    return null;
+                }
+                setUis();
+                return null;
+            }).catch(function() {
+                return null;
+            });
+        }
 
         /**
          * Set up the UI controller for a given textarea (one of template,
@@ -347,8 +445,10 @@ define(['jquery', 'qtype_coderunner/userinterfacewrapper', 'core/str'], function
          * Load the various customisation fields into the form from the
          * CodeRunner question type currently selected by the combobox.
          * Looks at the preexisting type of the selected field.
+         * @param {boolean} isTypeChange True when the author has just picked a new
+         * type, so its UI parameters should be applied to the answer UIs at once.
          */
-        function loadCustomisationFields() {
+        function loadCustomisationFields(isTypeChange) {
             let newType = typeCombo.children('option:selected').text();
 
             if (newType !== '' && newType !== 'Undefined') {
@@ -366,8 +466,14 @@ define(['jquery', 'qtype_coderunner/userinterfacewrapper', 'core/str'], function
                         // Clean all warnings regardless.
                         $('#id_qtype_coderunner_warning_div').empty();
                         if (outcome.success) {
+                            prototypeRequests[newType] = Promise.resolve(outcome);
                             copyFieldsFromQuestionType(newType, outcome);
-                            setUis();
+                            if (isTypeChange) {
+                                // Use the new prototype's UI parameters right away.
+                                refreshUiParams(true);
+                            } else {
+                                setUis();
+                            }
                             loadUiParametersDescription();
                             // Success, so remove the errors and change the current Qtype.
                             currentQtype = newType;
@@ -614,11 +720,11 @@ define(['jquery', 'qtype_coderunner/userinterfacewrapper', 'core/str'], function
                 // Author has customised the question. Ask if they want to reload inherited stuff.
                 str.get_string('question_type_changed', 'qtype_coderunner').then(function (s) {
                     if (window.confirm(s)) {
-                        loadCustomisationFields();
+                        loadCustomisationFields(true);
                     }
                 });
             } else {
-                loadCustomisationFields();
+                loadCustomisationFields(true);
             }
         });
 
@@ -644,6 +750,10 @@ define(['jquery', 'qtype_coderunner/userinterfacewrapper', 'core/str'], function
         uiplugin.on('change', function () {
             setUis();
             loadUiParametersDescription();
+        });
+
+        uiparameters.on('change', function() {
+            refreshUiParams(false);
         });
 
         precheck.on('change', set_testtype_visibilities);

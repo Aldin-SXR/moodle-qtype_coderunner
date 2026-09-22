@@ -1858,7 +1858,8 @@ class qtype_coderunner_edit_form extends question_edit_form {
             $error = preg_replace_callback(
                 $pattern,
                 function ($matches) use ($map, $leadinstring) {
-                    return $leadinstring . 'XXX' . $map[intval($matches[1])];
+                    $rownum = strval(intval($matches[1]));
+                    return $leadinstring . 'XXX' . ($map[$rownum] ?? $rownum);
                 },
                 $error
             );

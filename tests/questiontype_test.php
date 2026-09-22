@@ -75,4 +75,22 @@ class questiontype_test extends \advanced_testcase {
         $q = $this->get_test_question_data();
         $this->assertEquals([], $this->qtype->get_possible_responses($q));
     }
+
+    public function test_template_grader_error_fix_handles_no_testcases() {
+        $formclass = new \ReflectionClass(\qtype_coderunner_edit_form::class);
+        $form = $formclass->newInstanceWithoutConstructor();
+        $formquestion = (object) ['testcases' => []];
+
+        $property = $formclass->getProperty('formquestion');
+        $property->setAccessible(true);
+        $property->setValue($form, $formquestion);
+
+        $method = $formclass->getMethod('fix_template_grader_error');
+        $method->setAccessible(true);
+        $error = '<tr class="coderunner-failed-test failrow_0"><td><a href="#id_testcode_0">Test case 1</a></td></tr>';
+        $fixed = $method->invoke($form, $error);
+
+        $this->assertStringContainsString('failrow_0', $fixed);
+        $this->assertStringContainsString('#id_testcode_0', $fixed);
+    }
 }

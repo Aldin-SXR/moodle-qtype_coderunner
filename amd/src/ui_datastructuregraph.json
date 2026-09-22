@@ -1,0 +1,73 @@
+{
+    "name": "ui_datastructuregraph",
+    "parameters": {
+        "mode": {
+            "type": "string",
+            "default": "tree"
+        },
+        "listkind": {
+            "type": "string",
+            "default": "singly"
+        },
+        "autoprev": {
+            "type": "boolean",
+            "default": true
+        },
+        "showheadtail": {
+            "type": "boolean",
+            "default": true
+        },
+        "shownull": {
+            "type": "boolean",
+            "default": true
+        },
+        "isdirected": {
+            "type": "boolean",
+            "default": false
+        },
+        "nodefields": {
+            "type": "string",
+            "default": "key_value"
+        },
+        "maxnodekeys": {
+            "type": "integer",
+            "default": 0
+        },
+        "allowedgecosts": {
+            "type": "boolean",
+            "default": true
+        },
+        "allownodecolors": {
+            "type": "boolean",
+            "default": false
+        },
+        "allowedgecolors": {
+            "type": "boolean",
+            "default": false
+        },
+        "childslots": {
+            "type": "list",
+            "default": []
+        },
+        "locknodeset": {
+            "type": "boolean",
+            "default": false
+        },
+        "lockedgeset": {
+            "type": "boolean",
+            "default": false
+        },
+        "locknodepositions": {
+            "type": "boolean",
+            "default": false
+        },
+        "locknodefields": {
+            "type": "boolean",
+            "default": false
+        },
+        "lockedgefields": {
+            "type": "boolean",
+            "default": false
+        }
+    }
+}

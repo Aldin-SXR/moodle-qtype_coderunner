@@ -638,6 +638,1396 @@ print(SEPARATOR)
     </testcases>
   </question>
 
+<!-- question: data_structure_graph  -->
+  <question type="coderunner">
+    <name>
+      <text>BUILT_IN_PROTOTYPE_data_structure_graph</text>
+    </name>
+    <questiontext format="html">
+      <text><![CDATA[<p>Built-in prototypes are documented in the language strings.</p>]]></text>
+    </questiontext>
+    <generalfeedback format="html">
+      <text></text>
+    </generalfeedback>
+    <defaultgrade>1.0000000</defaultgrade>
+    <penalty>0.0000000</penalty>
+    <hidden>0</hidden>
+    <idnumber></idnumber>
+    <coderunnertype>data_structure_graph</coderunnertype>
+    <prototypetype>1</prototypetype>
+    <allornothing>1</allornothing>
+    <penaltyregime>10, 20, ...</penaltyregime>
+    <precheck>0</precheck>
+    <hidecheck>0</hidecheck>
+    <showsource>0</showsource>
+    <answerboxlines>18</answerboxlines>
+    <answerboxcolumns>100</answerboxcolumns>
+    <answerpreload></answerpreload>
+    <globalextra></globalextra>
+    <useace>1</useace>
+    <resultcolumns></resultcolumns>
+    <template><![CDATA[import collections
+import json
+
+STUDENT_RAW = """{{ STUDENT_ANSWER | e('py') }}"""
+CORRECT_RAW = """{{ QUESTION.answer | e('py') }}"""
+ALL_OR_NOTHING = """{{ QUESTION.allornothing | e('py') }}""".strip().lower() not in ("", "0", "false", "none")
+FEEDBACK_DETAIL = """{{ QUESTION.parameters.feedbackdetail | default("detailed") | e('py') }}""".strip().lower()
+RUBRIC_RAW = """{{ QUESTION.parameters.rubric | default(null) | json_encode | e('py') }}"""
+SERIALISATION_TYPE = "coderunner-datastructure-graph"
+if FEEDBACK_DETAIL in ("hide", "hidden", "none"):
+    FEEDBACK_DETAIL = "minimal"
+if FEEDBACK_DETAIL not in ("detailed", "summary", "minimal"):
+    FEEDBACK_DETAIL = "detailed"
+
+
+def as_string(value):
+    return "" if value is None else str(value)
+
+
+def graph_from_json(raw, label):
+    errors = []
+    if raw is None or raw.strip() == "":
+        return None, [f"{label}: no graph was supplied"]
+    try:
+        graph = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        return None, [f"{label}: invalid JSON ({exc})"]
+    if not isinstance(graph, dict) or graph.get("type") != SERIALISATION_TYPE:
+        return None, [f"{label}: not a data-structure graph serialisation"]
+    if not isinstance(graph.get("nodes"), list) or not isinstance(graph.get("edges"), list):
+        return None, [f"{label}: serialisation must contain node and edge lists"]
+    return graph, errors
+
+
+LINEAR_MODES = ("list", "stack", "queue")
+STRUCTURE_NAMES = {"list": "linked list", "stack": "stack", "queue": "queue"}
+
+
+def settings_for(graph, fallback=None):
+    fallback = fallback or {}
+    settings = graph.get("settings") if isinstance(graph.get("settings"), dict) else {}
+    mode = settings.get("mode", fallback.get("mode", "tree"))
+    if mode not in ("tree", "graph") + LINEAR_MODES:
+        mode = fallback.get("mode", "tree")
+    isdirected = settings.get("isdirected", fallback.get("isdirected", mode != "tree"))
+    nodefields = settings.get("nodefields", fallback.get("nodefields", "key_value"))
+    if nodefields not in ("key", "key_value", "keys", "keys_values"):
+        nodefields = fallback.get("nodefields", "key_value")
+    if nodefields not in ("key", "key_value", "keys", "keys_values"):
+        nodefields = "key_value"
+    childslots = settings.get("childslots", fallback.get("childslots", []))
+    if not isinstance(childslots, list):
+        childslots = []
+    childslots = [as_string(slot).strip() for slot in childslots if as_string(slot).strip()]
+    if mode == "tree" and len(childslots) == 1 and childslots[0].lower() == "none":
+        # ["none"] means an arbitrary number of unlabelled children.
+        childslots = []
+    elif mode == "tree" and not childslots:
+        childslots = ["left", "right"]
+    if mode != "tree":
+        childslots = []
+    listkind = as_string(settings.get("listkind", fallback.get("listkind", "singly"))).strip()
+    if listkind not in ("singly", "doubly"):
+        listkind = "singly"
+    if mode in LINEAR_MODES:
+        # Linked-list, stack and queue elements hold a single key and their
+        # links always run from one element to the next.
+        isdirected = True
+        nodefields = "key"
+    if mode == "list":
+        childslots = ["next", "prev"] if listkind == "doubly" else ["next"]
+    return {
+        "mode": mode,
+        "isdirected": bool(isdirected),
+        "childslots": childslots,
+        "nodefields": nodefields,
+        "listkind": listkind,
+    }
+
+
+def values_enabled(settings):
+    return settings["nodefields"] in ("key_value", "keys_values")
+
+
+def normalise_node_items(node, settings):
+    raw_items = node.get("keys")
+    items = []
+    include_values = values_enabled(settings)
+    if isinstance(raw_items, list):
+        for item in raw_items:
+            if isinstance(item, dict):
+                key = as_string(item.get("key")).strip()
+                value = as_string(item.get("value")).strip() if include_values else ""
+            else:
+                key = as_string(item).strip()
+                value = ""
+            items.append({"key": key, "value": value})
+    if not items:
+        value = as_string(node.get("value")).strip() if include_values else ""
+        items = [{"key": as_string(node.get("key")).strip(), "value": value}]
+    items = [item for index, item in enumerate(items) if index == 0 or item["key"] or item["value"]]
+    return items or [{"key": "", "value": ""}]
+
+
+def node_identity(items):
+    for item in items:
+        if item["key"]:
+            return item["key"]
+    return ""
+
+
+def node_label(node):
+    keys = [item["key"] for item in node["items"] if item["key"]]
+    return "|".join(keys) or node["identity"]
+
+
+def as_number(value):
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def node_layout(node):
+    layout = node.get("layout") if isinstance(node.get("layout"), dict) else {}
+    return as_number(layout.get("x")), as_number(layout.get("y"))
+
+
+def infer_tree_slot(from_node, to_node, tree_edges, childslots):
+    used = {edge["slot"] for edge in tree_edges if edge["from"] == from_node["identity"] and edge["slot"]}
+    preferred = ""
+    if "left" in childslots and "right" in childslots:
+        from_x = from_node.get("x")
+        to_x = to_node.get("x")
+        if from_x is not None and to_x is not None:
+            preferred = "left" if to_x < from_x else "right"
+    if preferred and preferred not in used:
+        return preferred
+    for slot in childslots:
+        if slot not in used:
+            return slot
+    return preferred or childslots[0]
+
+
+def normalise_tree_endpoints(from_node, to_node, settings):
+    if settings["mode"] != "tree":
+        return from_node, to_node, False
+    from_y = from_node.get("y")
+    to_y = to_node.get("y")
+    if from_y is not None and to_y is not None and from_y > to_y + 8:
+        return to_node, from_node, True
+    return from_node, to_node, False
+
+
+def normalise_graph(raw, label, expected_settings=None):
+    graph, errors = graph_from_json(raw, label)
+    if errors:
+        return None, errors
+
+    settings = settings_for(graph, expected_settings)
+    node_by_id = {}
+    node_by_identity = {}
+    for index, node in enumerate(graph["nodes"]):
+        if not isinstance(node, dict):
+            errors.append(f"{label}: node {index + 1} is not an object")
+            continue
+        node_id = as_string(node.get("id")).strip()
+        items = normalise_node_items(node, settings)
+        identity = node_identity(items)
+        color = as_string(node.get("color", "black")).strip() or "black"
+        if color not in ("black", "red"):
+            errors.append(f"{label}: node {identity or node_id or index + 1} has invalid color {color!r}")
+            color = "black"
+        if not identity:
+            errors.append(f"{label}: node {index + 1} has no key")
+            continue
+        if identity in node_by_identity:
+            errors.append(f"{label}: duplicate node key {identity!r}")
+            continue
+        if not node_id:
+            node_id = identity
+        x, y = node_layout(node)
+        node_record = {"identity": identity, "items": items, "color": color, "x": x, "y": y}
+        node_by_id[node_id] = node_record
+        node_by_identity[identity] = node_record
+
+    edge_counter = collections.Counter()
+    tree_edges = []
+    for index, edge in enumerate(graph["edges"]):
+        if not isinstance(edge, dict):
+            errors.append(f"{label}: edge {index + 1} is not an object")
+            continue
+        from_id = as_string(edge.get("from")).strip()
+        to_id = as_string(edge.get("to")).strip()
+        from_node = node_by_id.get(from_id)
+        to_node = node_by_id.get(to_id)
+        if from_node is None or to_node is None:
+            errors.append(f"{label}: edge {index + 1} references a missing node")
+            continue
+        from_node, to_node, reversed_by_layout = normalise_tree_endpoints(from_node, to_node, settings)
+        cost = as_string(edge.get("cost")).strip()
+        color = as_string(edge.get("color", "black")).strip() or "black"
+        if color not in ("black", "red"):
+            errors.append(f"{label}: edge {index + 1} has invalid color {color!r}")
+            color = "black"
+        slot = as_string(edge.get("slot")).strip()
+        if reversed_by_layout:
+            slot = ""
+        if settings["childslots"]:
+            if not slot:
+                slot = infer_tree_slot(from_node, to_node, tree_edges, settings["childslots"])
+            elif slot not in settings["childslots"]:
+                errors.append(f"{label}: edge {node_label(from_node)}->{node_label(to_node)} has invalid child slot {slot!r}")
+        elif settings["mode"] != "tree":
+            slot = ""
+
+        from_key = from_node["identity"]
+        to_key = to_node["identity"]
+        if not settings["isdirected"]:
+            from_key, to_key = sorted([from_key, to_key])
+            if settings["mode"] != "tree":
+                slot = ""
+        edge_counter[(from_key, to_key, cost, color, slot)] += 1
+        tree_edges.append({"from": from_node["identity"], "to": to_node["identity"], "slot": slot})
+
+    rep = {
+        "settings": settings,
+        "nodes": node_by_identity,
+        "labels": {key: node_label(node) for key, node in node_by_identity.items()},
+        "edges": edge_counter,
+        "tree_edges": tree_edges,
+    }
+    if settings["mode"] == "tree":
+        errors.extend(validate_tree(rep, label))
+    return rep, errors
+
+
+def normalise_answer(raw, label, expected_settings=None):
+    if expected_settings is None or expected_settings["mode"] not in LINEAR_MODES:
+        graph, errors = graph_from_json(raw, label)
+        if errors:
+            return None, errors
+        if settings_for(graph, expected_settings)["mode"] not in LINEAR_MODES:
+            return normalise_graph(raw, label, expected_settings)
+        return normalise_sequence(graph, label, settings_for(graph, expected_settings))
+    # A student answer to a linear question is always read with the question's
+    # own structure settings, whatever its serialisation claims.
+    graph, errors = graph_from_json(raw, label)
+    if errors:
+        return None, errors
+    return normalise_sequence(graph, label, dict(expected_settings))
+
+
+def position_text(settings, index, length):
+    ends = ("top", "bottom") if settings["mode"] == "stack" else ("head", "tail")
+    role = ""
+    if index == 0:
+        role = ends[0]
+    elif index == length - 1:
+        role = ends[1]
+    return f"position {index + 1}" + (f" ({role})" if role else "")
+
+
+def element_text(record, include_value):
+    return item_text(record["items"][0], include_value)
+
+
+def normalise_sequence(graph, label, settings):
+    """Read a linked list, stack or queue as an ordered sequence of elements.
+
+    Elements are identified by position rather than by key, so duplicate keys
+    are fine. Stack and queue order is the node order (top or head first);
+    linked-list order is found by following next links from the head.
+    """
+    errors = []
+    kind = STRUCTURE_NAMES[settings["mode"]]
+    records = []
+    by_id = {}
+    for index, node in enumerate(graph["nodes"]):
+        if not isinstance(node, dict):
+            errors.append(f"{label}: node {index + 1} is not an object")
+            continue
+        node_id = as_string(node.get("id")).strip() or f"#{index + 1}"
+        if node_id in by_id:
+            errors.append(f"{label}: duplicate node id {node_id!r}")
+            continue
+        items = normalise_node_items(node, settings)[:1]
+        color = as_string(node.get("color", "black")).strip() or "black"
+        if color not in ("black", "red"):
+            errors.append(f"{label}: node {items[0]['key'] or index + 1} has invalid color {color!r}")
+            color = "black"
+        record = {"id": node_id, "identity": items[0]["key"], "items": items, "color": color}
+        records.append(record)
+        by_id[node_id] = record
+
+    shape = {"cycle": False, "disconnected": False, "not_list": False}
+    if settings["mode"] == "list":
+        sequence, links = order_linked_list(graph["edges"], records, by_id, settings, label, errors, shape)
+    else:
+        sequence = records
+        links = collections.Counter()
+        for first, second in zip(sequence, sequence[1:]):
+            links[(first["identity"], second["identity"], "", "black", "next")] += 1
+    for position, record in enumerate(sequence):
+        if not record["identity"]:
+            errors.append(f"{label}: {kind} element at {position_text(settings, position, len(sequence))} has no key")
+    rep = {
+        "settings": settings,
+        "sequence": sequence,
+        "nodes": sequence,
+        "labels": {},
+        "edges": links,
+        "shape": shape,
+    }
+    return rep, errors
+
+
+def order_linked_list(raw_edges, records, by_id, settings, label, errors, shape):
+    next_of = collections.defaultdict(list)
+    incoming = collections.Counter()
+    links = collections.Counter()
+    for index, edge in enumerate(raw_edges):
+        if not isinstance(edge, dict):
+            errors.append(f"{label}: link {index + 1} is not an object")
+            continue
+        from_id = as_string(edge.get("from")).strip()
+        to_id = as_string(edge.get("to")).strip()
+        if from_id not in by_id or to_id not in by_id:
+            errors.append(f"{label}: link {index + 1} references a missing node")
+            continue
+        source = by_id[from_id]
+        target = by_id[to_id]
+        slot = as_string(edge.get("slot")).strip() or "next"
+        if slot not in settings["childslots"]:
+            errors.append(
+                f"{label}: link {source['identity']!r}->{target['identity']!r} has invalid link type {slot!r}"
+            )
+            continue
+        if slot == "next":
+            next_of[from_id].append(to_id)
+            incoming[to_id] += 1
+        links[(source["identity"], target["identity"], "", "black", slot)] += 1
+
+    for record in records:
+        if len(next_of[record["id"]]) > 1:
+            errors.append(f"{label}: node {record['identity']!r} has more than one next link")
+        if incoming[record["id"]] > 1:
+            errors.append(f"{label}: node {record['identity']!r} has more than one predecessor")
+
+    def walk(start):
+        chain = []
+        seen = set()
+        current = start
+        while current is not None:
+            if current["id"] in seen:
+                return chain, True
+            seen.add(current["id"])
+            chain.append(current)
+            targets = next_of[current["id"]]
+            current = by_id[targets[0]] if targets else None
+        return chain, False
+
+    if not records:
+        return [], links
+    heads = [record for record in records if incoming[record["id"]] == 0]
+    if len(heads) != 1:
+        shape["not_list"] = True
+        if not heads:
+            errors.append(f"{label}: linked list has no head (every node has a predecessor, so the links form a cycle)")
+        else:
+            names = ", ".join(repr(head["identity"]) for head in heads)
+            errors.append(f"{label}: linked list must have exactly one head, found {len(heads)} ({names})")
+    # With several candidate heads, grade the longest chain as the list.
+    best, cyclic = [], False
+    for start in heads or records[:1]:
+        chain, chain_cyclic = walk(start)
+        if len(chain) > len(best):
+            best, cyclic = chain, chain_cyclic
+    if cyclic:
+        shape["cycle"] = True
+        errors.append(f"{label}: linked list contains a cycle")
+    reached = {record["id"] for record in best}
+    unreached = [record for record in records if record["id"] not in reached]
+    if unreached:
+        shape["disconnected"] = True
+        names = ", ".join(repr(record["identity"]) for record in unreached)
+        errors.append(f"{label}: linked list is not connected; not reachable from the head: {names}")
+    return best, links
+
+
+def validate_tree(rep, label):
+    errors = []
+    keys = sorted(rep["nodes"].keys())
+    if not keys:
+        return [f"{label}: tree has no nodes"]
+    incoming = {key: 0 for key in keys}
+    children = {key: [] for key in keys}
+    used_slots = set()
+    for edge in rep["tree_edges"]:
+        incoming[edge["to"]] += 1
+        children[edge["from"]].append(edge["to"])
+        if edge["slot"]:
+            slot_key = (edge["from"], edge["slot"])
+            if slot_key in used_slots:
+                errors.append(f"{label}: node {edge['from']!r} has more than one {edge['slot']} child")
+            used_slots.add(slot_key)
+    roots = [key for key in keys if incoming[key] == 0]
+    if len(roots) != 1:
+        errors.append(f"{label}: tree must have exactly one root")
+    for key, count in incoming.items():
+        if count > 1:
+            errors.append(f"{label}: node {key!r} has more than one parent")
+    if len(roots) == 1:
+        visiting = set()
+        visited = set()
+
+        def visit(key):
+            if key in visiting:
+                errors.append(f"{label}: tree contains a cycle")
+                return
+            if key in visited:
+                return
+            visiting.add(key)
+            for child in children[key]:
+                visit(child)
+            visiting.remove(key)
+            visited.add(key)
+
+        visit(roots[0])
+        if len(visited) != len(keys):
+            errors.append(f"{label}: tree is not connected")
+    return errors
+
+
+def edge_text(edge):
+    start, end, cost, color, slot = edge
+    details = []
+    if slot:
+        details.append(f"slot={slot}")
+    if cost:
+        details.append(f"cost={cost}")
+    if color != "black":
+        details.append(f"color={color}")
+    suffix = "" if not details else " (" + ", ".join(details) + ")"
+    return f"{start}->{end}{suffix}"
+
+
+def edge_core(edge):
+    start, end, cost, color, slot = edge
+    return (start, end, cost, slot)
+
+
+def edge_core_text(core):
+    return edge_core_text_with_labels(core, {})
+
+
+def edge_core_text_with_labels(core, labels):
+    start, end, cost, slot = core
+    start = labels.get(start, start)
+    end = labels.get(end, end)
+    details = []
+    if slot:
+        details.append(f"slot={slot}")
+    if cost:
+        details.append(f"cost={cost}")
+    suffix = "" if not details else " (" + ", ".join(details) + ")"
+    return f"{start}->{end}{suffix}"
+
+
+def edge_core_counter(edges):
+    counter = collections.Counter()
+    for edge, count in edges.items():
+        counter[edge_core(edge)] += count
+    return counter
+
+
+def edge_color_counter(edges, core):
+    counter = collections.Counter()
+    for edge, count in edges.items():
+        if edge_core(edge) == core:
+            counter[edge[3]] += count
+    return counter
+
+
+def items_text(items):
+    return "[" + ", ".join(f"{item['key']}:{item['value']}" for item in items) + "]"
+
+
+def item_text(item, include_value):
+    if include_value:
+        return f"{item['key']}:{item['value']}"
+    return item["key"]
+
+
+CATEGORIES = ["nodes", "nodevalues", "edges", "edgecosts", "colors", "childslots"]
+POLICY_FIELDS = ["nodevalues", "edgecosts", "colors", "childslots"]
+DEFAULT_PENALTIES = {"missingNodes": 1.0, "extraNodes": 0.5, "missingEdges": 1.0, "extraEdges": 0.5}
+VALID_POLICIES = {"strict", "partial", "ignore", "tolerant"}
+PRESETS = {
+    "exact": {
+        "weights": {"nodes": 20, "nodevalues": 20, "edges": 25, "edgecosts": 10, "colors": 10, "childslots": 15},
+        "policies": {"nodevalues": "strict", "edgecosts": "strict", "colors": "strict", "childslots": "strict"},
+    },
+    "shape_only": {
+        "weights": {"nodes": 40, "nodevalues": 0, "edges": 60, "edgecosts": 0, "colors": 0, "childslots": 0},
+        "policies": {"nodevalues": "ignore", "edgecosts": "ignore", "colors": "ignore", "childslots": "ignore"},
+    },
+    "topology_keys": {
+        "weights": {"nodes": 35, "nodevalues": 15, "edges": 35, "edgecosts": 0, "colors": 0, "childslots": 15},
+        "policies": {"nodevalues": "partial", "edgecosts": "ignore", "colors": "ignore", "childslots": "strict"},
+    },
+    "redblack": {
+        "weights": {"nodes": 30, "nodevalues": 0, "edges": 30, "edgecosts": 0, "colors": 20, "childslots": 20},
+        "policies": {"nodevalues": "ignore", "edgecosts": "ignore", "colors": "strict", "childslots": "strict"},
+    },
+    "btree": {
+        "weights": {"nodes": 30, "nodevalues": 20, "edges": 25, "edgecosts": 0, "colors": 0, "childslots": 25},
+        "policies": {"nodevalues": "partial", "edgecosts": "ignore", "colors": "ignore", "childslots": "strict"},
+    },
+    "weighted_graph": {
+        "weights": {"nodes": 30, "nodevalues": 0, "edges": 35, "edgecosts": 35, "colors": 0, "childslots": 0},
+        "policies": {"nodevalues": "ignore", "edgecosts": "strict", "colors": "ignore", "childslots": "ignore"},
+    },
+    # For linked lists, stacks and queues: nodes = which keys are present,
+    # nodevalues = the key (and value) at each position, edges = the links
+    # between neighbours (next/prev pointers, or adjacency in a stack/queue).
+    "linked_list": {
+        "weights": {"nodes": 25, "nodevalues": 35, "edges": 40, "edgecosts": 0, "colors": 0, "childslots": 0},
+        "policies": {"nodevalues": "partial", "edgecosts": "ignore", "colors": "ignore", "childslots": "ignore"},
+    },
+    "sequence": {
+        "weights": {"nodes": 30, "nodevalues": 70, "edges": 0, "edgecosts": 0, "colors": 0, "childslots": 0},
+        "policies": {"nodevalues": "partial", "edgecosts": "ignore", "colors": "ignore", "childslots": "ignore"},
+    },
+}
+CAP_NAMES = ("notATree", "wrongRoot", "cycleInTree", "disconnected", "notAList", "wrongHead", "cycleInList")
+
+
+def clamp_number(value, fallback, minimum=None, maximum=None):
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        number = fallback
+    if minimum is not None:
+        number = max(minimum, number)
+    if maximum is not None:
+        number = min(maximum, number)
+    return number
+
+
+def apply_preset(name):
+    preset = PRESETS.get(name, PRESETS["exact"])
+    return {
+        "preset": name if name in PRESETS else "exact",
+        "weights": dict(preset["weights"]),
+        "policies": dict(preset["policies"]),
+        "penalties": dict(DEFAULT_PENALTIES),
+        "caps": {},
+        "tolerance": 0.0,
+    }
+
+
+def rubric_from_raw(raw):
+    try:
+        rubric = json.loads(raw) if raw and raw.strip() else None
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(rubric, dict):
+        return None
+
+    preset_name = as_string(rubric.get("preset")).strip()
+    merged = apply_preset(preset_name if preset_name in PRESETS else "exact")
+    merged["preset"] = preset_name if preset_name else merged["preset"]
+
+    weights = rubric.get("weights") if isinstance(rubric.get("weights"), dict) else {}
+    for category in CATEGORIES:
+        merged["weights"][category] = clamp_number(weights.get(category, merged["weights"].get(category, 0)), 0, 0)
+
+    policies = rubric.get("policies") if isinstance(rubric.get("policies"), dict) else {}
+    for field in POLICY_FIELDS:
+        policy = as_string(policies.get(field, merged["policies"].get(field, "strict"))).strip()
+        merged["policies"][field] = policy if policy in VALID_POLICIES else "strict"
+
+    penalties = rubric.get("penalties") if isinstance(rubric.get("penalties"), dict) else {}
+    for name, fallback in DEFAULT_PENALTIES.items():
+        merged["penalties"][name] = clamp_number(penalties.get(name, fallback), fallback, 0.0, 1.0)
+
+    caps = rubric.get("caps") if isinstance(rubric.get("caps"), dict) else {}
+    merged["caps"] = {
+        name: clamp_number(value, 100.0, 0.0, 100.0)
+        for name, value in caps.items()
+        if name in CAP_NAMES
+    }
+    merged["tolerance"] = clamp_number(rubric.get("tolerance", 0), 0.0, 0.0)
+
+    if sum(weight for weight in merged["weights"].values() if weight > 0) <= 0:
+        return None
+    return merged
+
+
+def tally(name, earned=0.0, possible=0.0, errors=None):
+    return {"name": name, "earned": float(earned), "possible": float(possible), "errors": errors or []}
+
+
+def apply_strict_policy(result, policy):
+    if policy == "strict" and result["errors"] and result["possible"] > 0:
+        result["earned"] = 0.0
+    return result
+
+
+def score_nodes(correct, student, rubric):
+    correct_keys = set(correct["nodes"])
+    student_keys = set(student["nodes"])
+    missing = sorted(correct_keys - student_keys)
+    extra = sorted(student_keys - correct_keys)
+    matched = len(correct_keys & student_keys)
+    errors = [f"missing node {key!r}" for key in missing]
+    errors.extend(f"extra node {key!r}" for key in extra)
+    possible = (
+        matched +
+        len(missing) * rubric["penalties"]["missingNodes"] +
+        len(extra) * rubric["penalties"]["extraNodes"]
+    )
+    return tally("nodes", matched, possible, errors)
+
+
+def node_value_units(node, settings):
+    nodefields = settings["nodefields"]
+    if nodefields == "key":
+        return []
+    include_values = values_enabled(settings)
+    units = []
+    for index, item in enumerate(node["items"]):
+        if nodefields in ("keys", "keys_values") or index > 0:
+            units.append(("key", index, item["key"]))
+        if include_values:
+            units.append(("value", index, item["value"]))
+    return units
+
+
+def score_nodevalues(correct, student, rubric):
+    policy = rubric["policies"]["nodevalues"]
+    if policy == "ignore":
+        return tally("nodevalues")
+    errors = []
+    earned = 0
+    possible = 0
+    for key in sorted(set(correct["nodes"]) & set(student["nodes"])):
+        expected_units = node_value_units(correct["nodes"][key], correct["settings"])
+        got_units = node_value_units(student["nodes"][key], correct["settings"])
+        max_units = max(len(expected_units), len(got_units))
+        possible += max_units
+        for index in range(max_units):
+            if index >= len(expected_units):
+                field, item_index, got = got_units[index]
+                errors.append(f"node {key!r} has extra {field} {item_index + 1} {got!r}")
+                continue
+            if index >= len(got_units):
+                field, item_index, expected = expected_units[index]
+                errors.append(f"node {key!r} is missing {field} {item_index + 1} {expected!r}")
+                continue
+            expected_field, expected_index, expected = expected_units[index]
+            got_field, got_index, got = got_units[index]
+            if expected_field == got_field and expected_index == got_index and expected == got:
+                earned += 1
+            else:
+                errors.append(
+                    f"node {key!r} {expected_field} {expected_index + 1} is {got!r}, expected {expected!r}"
+                )
+    return apply_strict_policy(tally("nodevalues", earned, possible, errors), policy)
+
+
+def edge_endpoint(edge):
+    start, end, cost, color, slot = edge
+    return (start, end)
+
+
+def edge_endpoint_text(endpoint, labels):
+    start, end = endpoint
+    return f"{labels.get(start, start)}->{labels.get(end, end)}"
+
+
+def edge_endpoint_counter(edges):
+    counter = collections.Counter()
+    for edge, count in edges.items():
+        counter[edge_endpoint(edge)] += count
+    return counter
+
+
+def score_edges(correct, student, rubric):
+    correct_edges = edge_endpoint_counter(correct["edges"])
+    student_edges = edge_endpoint_counter(student["edges"])
+    missing_edges = correct_edges - student_edges
+    extra_edges = student_edges - correct_edges
+    matched_edges = correct_edges & student_edges
+    missing_count = sum(missing_edges.values())
+    extra_count = sum(extra_edges.values())
+    matched_count = sum(matched_edges.values())
+    errors = []
+    for endpoint in sorted(missing_edges.elements()):
+        errors.append("missing edge " + edge_endpoint_text(endpoint, correct["labels"]))
+    for endpoint in sorted(extra_edges.elements()):
+        errors.append("extra edge " + edge_endpoint_text(endpoint, student["labels"]))
+    possible = (
+        matched_count +
+        missing_count * rubric["penalties"]["missingEdges"] +
+        extra_count * rubric["penalties"]["extraEdges"]
+    )
+    return tally("edges", matched_count, possible, errors)
+
+
+def grouped_edge_field_values(edges, field_index):
+    grouped = collections.defaultdict(list)
+    for edge, count in edges.items():
+        for i in range(count):
+            grouped[edge_endpoint(edge)].append(edge[field_index])
+    return grouped
+
+
+def values_match(expected, got, tolerance):
+    if tolerance is None:
+        return expected == got
+    expected_number = as_number(expected)
+    got_number = as_number(got)
+    if expected_number is None or got_number is None:
+        return expected == got
+    return abs(expected_number - got_number) <= tolerance
+
+
+def count_matching_values(expected_values, got_values, tolerance=None):
+    used = [False] * len(got_values)
+    matched = 0
+    for expected in expected_values:
+        for index, got in enumerate(got_values):
+            if not used[index] and values_match(expected, got, tolerance):
+                used[index] = True
+                matched += 1
+                break
+    return matched
+
+
+def score_edge_field(correct, student, rubric, name, field_index, label):
+    policy = rubric["policies"][name]
+    if policy == "ignore":
+        return tally(name)
+    if name == "childslots" and not correct["settings"]["childslots"]:
+        return tally(name)
+    tolerance = rubric["tolerance"] if policy == "tolerant" and name == "edgecosts" else None
+    correct_values = grouped_edge_field_values(correct["edges"], field_index)
+    student_values = grouped_edge_field_values(student["edges"], field_index)
+    errors = []
+    earned = 0
+    possible = 0
+    for endpoint in sorted(set(correct_values) & set(student_values)):
+        expected = correct_values[endpoint]
+        got = student_values[endpoint]
+        compared = min(len(expected), len(got))
+        possible += compared
+        matched = count_matching_values(expected, got, tolerance)
+        earned += min(matched, compared)
+        for index in range(compared - min(matched, compared)):
+            got_value = got[index] if index < len(got) else ""
+            expected_value = expected[index] if index < len(expected) else ""
+            errors.append(
+                f"edge {edge_endpoint_text(endpoint, correct['labels'])} has {label} {got_value!r}, expected {expected_value!r}"
+            )
+    return apply_strict_policy(tally(name, earned, possible, errors), policy)
+
+
+def score_colors(correct, student, rubric):
+    policy = rubric["policies"]["colors"]
+    if policy == "ignore":
+        return tally("colors")
+    errors = []
+    earned = 0
+    possible = 0
+    for key in sorted(set(correct["nodes"]) & set(student["nodes"])):
+        possible += 1
+        expected = correct["nodes"][key]["color"]
+        got = student["nodes"][key]["color"]
+        if expected == got:
+            earned += 1
+        else:
+            errors.append(f"node {key!r} has color {got!r}, expected {expected!r}")
+    edge_colors = score_edge_field(correct, student, rubric, "colors", 3, "color")
+    earned += edge_colors["earned"]
+    possible += edge_colors["possible"]
+    errors.extend(edge_colors["errors"])
+    return apply_strict_policy(tally("colors", earned, possible, errors), policy)
+
+
+def score_childslots(correct, student, rubric):
+    return score_edge_field(correct, student, rubric, "childslots", 4, "child slot")
+
+
+def score_edgecosts(correct, student, rubric):
+    return score_edge_field(correct, student, rubric, "edgecosts", 2, "cost")
+
+
+def tree_shape_info(rep):
+    keys = sorted(rep["nodes"].keys())
+    incoming = {key: 0 for key in keys}
+    children = {key: [] for key in keys}
+    neighbours = {key: [] for key in keys}
+    edge_count = 0
+    for edge in rep["tree_edges"]:
+        if edge["from"] not in incoming or edge["to"] not in incoming:
+            continue
+        incoming[edge["to"]] += 1
+        children[edge["from"]].append(edge["to"])
+        neighbours[edge["from"]].append(edge["to"])
+        neighbours[edge["to"]].append(edge["from"])
+        edge_count += 1
+    roots = [key for key in keys if incoming[key] == 0]
+    has_cycle = False
+    visiting = set()
+    visited = set()
+
+    def visit(key):
+        nonlocal has_cycle
+        if key in visiting:
+            has_cycle = True
+            return
+        if key in visited:
+            return
+        visiting.add(key)
+        for child in children[key]:
+            visit(child)
+        visiting.remove(key)
+        visited.add(key)
+
+    for key in keys:
+        if key not in visited:
+            visit(key)
+
+    connected = True
+    if keys:
+        seen = {keys[0]}
+        queue = collections.deque([keys[0]])
+        while queue:
+            key = queue.popleft()
+            for neighbour in neighbours[key]:
+                if neighbour not in seen:
+                    seen.add(neighbour)
+                    queue.append(neighbour)
+        connected = len(seen) == len(keys)
+
+    not_tree = len(roots) != 1 or any(count > 1 for count in incoming.values()) or edge_count != max(0, len(keys) - 1)
+    return {"roots": roots, "cycle": has_cycle, "disconnected": not connected, "not_tree": not_tree}
+
+
+def apply_sequence_caps(fraction, correct, student, rubric):
+    caps = rubric["caps"]
+    shape = student["shape"]
+    kind = STRUCTURE_NAMES[correct["settings"]["mode"]]
+    cap_messages = []
+
+    def apply_cap(name, condition, message):
+        nonlocal fraction
+        if not condition or name not in caps:
+            return
+        cap_fraction = caps[name] / 100.0
+        if fraction > cap_fraction:
+            fraction = cap_fraction
+            cap_messages.append(message() + f"; score capped at {caps[name]:g}%")
+
+    expected = correct["sequence"]
+    got = student["sequence"]
+    apply_cap("notAList", shape["not_list"], lambda: f"answer is not a single {kind}")
+    apply_cap("cycleInList", shape["cycle"], lambda: f"answer {kind} contains a cycle")
+    apply_cap("disconnected", shape["disconnected"], lambda: "answer is disconnected")
+    wrong_head = bool(expected) and bool(got) and expected[0]["identity"] != got[0]["identity"]
+    role = position_text(correct["settings"], 0, len(expected)).split("(")[-1].rstrip(")")
+    apply_cap(
+        "wrongHead",
+        wrong_head,
+        lambda: f"{role} is {got[0]['identity']!r}, expected {expected[0]['identity']!r}",
+    )
+    return fraction, cap_messages
+
+
+def apply_caps(fraction, correct, student, rubric):
+    caps = rubric["caps"]
+    if correct["settings"]["mode"] in LINEAR_MODES:
+        return apply_sequence_caps(fraction, correct, student, rubric)
+    if correct["settings"]["mode"] != "tree" or not caps:
+        return fraction, []
+    correct_info = tree_shape_info(correct)
+    student_info = tree_shape_info(student)
+    cap_messages = []
+
+    def apply_cap(name, condition, message):
+        nonlocal fraction
+        if not condition or name not in caps:
+            return
+        cap_fraction = caps[name] / 100.0
+        if fraction > cap_fraction:
+            fraction = cap_fraction
+            cap_messages.append(message + f"; score capped at {caps[name]:g}%")
+
+    apply_cap("notATree", student_info["not_tree"], "answer is not a valid tree")
+    apply_cap("cycleInTree", student_info["cycle"], "answer contains a tree cycle")
+    apply_cap("disconnected", student_info["disconnected"], "answer is disconnected")
+    wrong_root = (
+        len(correct_info["roots"]) == 1 and
+        len(student_info["roots"]) == 1 and
+        correct_info["roots"][0] != student_info["roots"][0]
+    )
+    apply_cap("wrongRoot", wrong_root, f"root is {student_info['roots'][0]!r}, expected {correct_info['roots'][0]!r}")
+    return fraction, cap_messages
+
+
+def category_fraction(result):
+    if result["possible"] <= 0:
+        return None
+    return max(0.0, min(1.0, result["earned"] / result["possible"]))
+
+
+def fmt_number(value):
+    if abs(value - round(value)) < 0.000001:
+        return str(int(round(value)))
+    return f"{value:.2f}".rstrip("0").rstrip(".")
+
+
+def rubric_breakdown_text(results, rubric):
+    parts = []
+    for category in CATEGORIES:
+        result = results.get(category)
+        weight = rubric["weights"].get(category, 0)
+        fraction = category_fraction(result) if result else None
+        if weight <= 0 or fraction is None:
+            continue
+        parts.append(
+            f"{category}: {fmt_number(result['earned'])}/{fmt_number(result['possible'])} ({fraction * 100:.0f}%)"
+        )
+    return "; ".join(parts) if parts else "No applicable weighted categories."
+
+
+def score_sequence_nodes(correct, student, rubric):
+    correct_keys = collections.Counter(record["identity"] for record in correct["sequence"])
+    student_keys = collections.Counter(record["identity"] for record in student["sequence"])
+    missing = correct_keys - student_keys
+    extra = student_keys - correct_keys
+    matched = sum((correct_keys & student_keys).values())
+    errors = [f"missing element {key!r}" for key in sorted(missing.elements())]
+    errors.extend(f"extra element {key!r}" for key in sorted(extra.elements()))
+    possible = (
+        matched +
+        sum(missing.values()) * rubric["penalties"]["missingNodes"] +
+        sum(extra.values()) * rubric["penalties"]["extraNodes"]
+    )
+    return tally("nodes", matched, possible, errors)
+
+
+def score_sequence_positions(correct, student, rubric):
+    policy = rubric["policies"]["nodevalues"]
+    if policy == "ignore":
+        return tally("nodevalues")
+    settings = correct["settings"]
+    include_values = values_enabled(settings)
+    expected = correct["sequence"]
+    got = student["sequence"]
+    errors = []
+    earned = 0
+    possible = 0
+    # Missing and extra elements are scored by the nodes category, so only the
+    # positions both answers have are compared here.
+    for index in range(min(len(expected), len(got))):
+        where = position_text(settings, index, len(expected))
+        expected_item = expected[index]["items"][0]
+        got_item = got[index]["items"][0]
+        possible += 1
+        if expected_item["key"] == got_item["key"]:
+            earned += 1
+        else:
+            errors.append(f"{where} is {got_item['key']!r}, expected {expected_item['key']!r}")
+        if include_values:
+            possible += 1
+            if expected_item["value"] == got_item["value"]:
+                earned += 1
+            else:
+                errors.append(f"value at {where} is {got_item['value']!r}, expected {expected_item['value']!r}")
+    return apply_strict_policy(tally("nodevalues", earned, possible, errors), policy)
+
+
+def score_sequence_colors(correct, student, rubric):
+    policy = rubric["policies"]["colors"]
+    if policy == "ignore":
+        return tally("colors")
+    expected = correct["sequence"]
+    got = student["sequence"]
+    errors = []
+    earned = 0
+    possible = 0
+    for index in range(min(len(expected), len(got))):
+        possible += 1
+        if expected[index]["color"] == got[index]["color"]:
+            earned += 1
+        else:
+            where = position_text(correct["settings"], index, len(expected))
+            errors.append(f"element at {where} has color {got[index]['color']!r}, expected {expected[index]['color']!r}")
+    return apply_strict_policy(tally("colors", earned, possible, errors), policy)
+
+
+def score_sequence_links(correct, student, rubric):
+    correct_links = edge_core_counter(correct["edges"])
+    student_links = edge_core_counter(student["edges"])
+    missing = correct_links - student_links
+    extra = student_links - correct_links
+    matched = sum((correct_links & student_links).values())
+    errors = ["missing link " + link_text(core) for core in sorted(missing.elements())]
+    errors.extend("extra link " + link_text(core) for core in sorted(extra.elements()))
+    possible = (
+        matched +
+        sum(missing.values()) * rubric["penalties"]["missingEdges"] +
+        sum(extra.values()) * rubric["penalties"]["extraEdges"]
+    )
+    return tally("edges", matched, possible, errors)
+
+
+def score_graphs_with_rubric(correct, student, student_errors, rubric):
+    linear = correct["settings"]["mode"] in LINEAR_MODES
+    if linear:
+        ordered_results = [
+            score_sequence_nodes(correct, student, rubric),
+            score_sequence_positions(correct, student, rubric),
+            score_sequence_links(correct, student, rubric),
+            tally("edgecosts"),
+            score_sequence_colors(correct, student, rubric),
+            tally("childslots"),
+        ]
+    else:
+        ordered_results = [
+            score_nodes(correct, student, rubric),
+            score_nodevalues(correct, student, rubric),
+            score_edges(correct, student, rubric),
+            score_edgecosts(correct, student, rubric),
+            score_colors(correct, student, rubric),
+            score_childslots(correct, student, rubric),
+        ]
+    results = {result["name"]: result for result in ordered_results}
+    weighted = 0.0
+    total_weight = 0.0
+    for result in ordered_results:
+        weight = rubric["weights"].get(result["name"], 0)
+        fraction = category_fraction(result)
+        if weight <= 0 or fraction is None:
+            continue
+        weighted += weight * fraction
+        total_weight += weight
+    if total_weight <= 0:
+        compare_errors, earned, possible = compare_structures(correct, student)
+        errors = student_errors + compare_errors
+        return {
+            "fraction": fraction_for(errors, earned, possible),
+            "errors": errors,
+            "breakdown": "",
+        }
+
+    errors = list(student_errors)
+    for result in ordered_results:
+        # Linear structures only report on the categories the rubric weights.
+        if linear and rubric["weights"].get(result["name"], 0) <= 0:
+            continue
+        errors.extend(result["errors"])
+    fraction = max(0.0, min(1.0, weighted / total_weight))
+    fraction, cap_messages = apply_caps(fraction, correct, student, rubric)
+    errors.extend(cap_messages)
+    return {
+        "fraction": fraction,
+        "errors": errors,
+        "breakdown": rubric_breakdown_text(results, rubric),
+    }
+
+
+def compare_graphs(correct, student):
+    errors = []
+    earned = 0
+    possible = 0
+    include_values = values_enabled(correct["settings"])
+    correct_keys = set(correct["nodes"])
+    student_keys = set(student["nodes"])
+    for key in sorted(correct_keys - student_keys):
+        errors.append(f"missing node {key!r}")
+    for key in sorted(student_keys - correct_keys):
+        errors.append(f"extra node {key!r}")
+        possible += 1
+
+    possible += len(correct_keys)
+    for key in sorted(correct_keys & student_keys):
+        earned += 1
+        expected = correct["nodes"][key]
+        got = student["nodes"][key]
+        expected_items = expected["items"]
+        got_items = got["items"]
+        max_items = max(len(expected_items), len(got_items))
+        possible += max_items * (2 if include_values else 1)
+        for index in range(max_items):
+            if index >= len(expected_items):
+                field = "key/value pair" if include_values else "key"
+                errors.append(f"node {key!r} has extra {field} {item_text(got_items[index], include_values)!r}")
+                continue
+            if index >= len(got_items):
+                field = "key/value pair" if include_values else "key"
+                errors.append(f"node {key!r} is missing {field} {item_text(expected_items[index], include_values)!r}")
+                continue
+            expected_item = expected_items[index]
+            got_item = got_items[index]
+            if expected_item["key"] != got_item["key"]:
+                errors.append(
+                    f"node {key!r} key {index + 1} is {got_item['key']!r}, expected {expected_item['key']!r}"
+                )
+            else:
+                earned += 1
+            if include_values:
+                if expected_item["value"] != got_item["value"]:
+                    errors.append(
+                        f"node {key!r} value {index + 1} is {got_item['value']!r}, expected {expected_item['value']!r}"
+                    )
+                else:
+                    earned += 1
+        possible += 1
+        if expected["color"] != got["color"]:
+            errors.append(f"node {key!r} has color {got['color']!r}, expected {expected['color']!r}")
+        else:
+            earned += 1
+
+    correct_edge_cores = edge_core_counter(correct["edges"])
+    student_edge_cores = edge_core_counter(student["edges"])
+    missing_edges = correct_edge_cores - student_edge_cores
+    extra_edges = student_edge_cores - correct_edge_cores
+    matched_edges = correct_edge_cores & student_edge_cores
+    possible += sum(correct_edge_cores.values())
+    earned += sum(matched_edges.values())
+    possible += sum(extra_edges.values())
+    possible += sum(matched_edges.values())
+    for core, count in matched_edges.items():
+        expected_colors = edge_color_counter(correct["edges"], core)
+        got_colors = edge_color_counter(student["edges"], core)
+        matched_colors = expected_colors & got_colors
+        earned += sum(matched_colors.values())
+        color_mismatches = count - sum(matched_colors.values())
+        expected_left = sorted((expected_colors - matched_colors).elements())
+        got_left = sorted((got_colors - matched_colors).elements())
+        for index in range(color_mismatches):
+            expected = expected_left[index] if index < len(expected_left) else "black"
+            got = got_left[index] if index < len(got_left) else "black"
+            errors.append(f"edge {edge_core_text_with_labels(core, correct['labels'])} has color {got!r}, expected {expected!r}")
+    for edge in sorted(missing_edges.elements()):
+        errors.append("missing edge " + edge_core_text_with_labels(edge, correct["labels"]))
+    for edge in sorted(extra_edges.elements()):
+        errors.append("extra edge " + edge_core_text_with_labels(edge, student["labels"]))
+    return errors, earned, possible
+
+
+def link_text(core):
+    start, end, cost, slot = core
+    return f"{start!r}->{end!r}" + (f" ({slot})" if slot else "")
+
+
+def compare_sequences(correct, student):
+    settings = correct["settings"]
+    kind = STRUCTURE_NAMES[settings["mode"]]
+    include_values = values_enabled(settings)
+    expected = correct["sequence"]
+    got = student["sequence"]
+    errors = []
+    earned = 0
+    possible = 0
+    if len(got) != len(expected):
+        errors.append(f"{kind} has {len(got)} element(s), expected {len(expected)}")
+    units = 2 if include_values else 1
+    for index in range(max(len(expected), len(got))):
+        if index >= len(got):
+            where = position_text(settings, index, len(expected))
+            errors.append(f"missing element {element_text(expected[index], include_values)!r} at {where}")
+            possible += units + 1
+            continue
+        if index >= len(expected):
+            where = position_text(settings, index, len(got))
+            errors.append(f"extra element {element_text(got[index], include_values)!r} at {where}")
+            possible += 1
+            continue
+        where = position_text(settings, index, len(expected))
+        expected_item = expected[index]["items"][0]
+        got_item = got[index]["items"][0]
+        possible += units + 1
+        if expected_item["key"] == got_item["key"]:
+            earned += 1
+        else:
+            errors.append(f"{where} is {got_item['key']!r}, expected {expected_item['key']!r}")
+        if include_values:
+            if expected_item["value"] == got_item["value"]:
+                earned += 1
+            else:
+                errors.append(f"value at {where} is {got_item['value']!r}, expected {expected_item['value']!r}")
+        if expected[index]["color"] == got[index]["color"]:
+            earned += 1
+        else:
+            errors.append(
+                f"element at {where} has color {got[index]['color']!r}, expected {expected[index]['color']!r}"
+            )
+
+    if settings["mode"] == "list":
+        # Stack and queue links are implied by the order checked above; linked
+        # lists also have their next (and prev) pointers checked.
+        correct_links = edge_core_counter(correct["edges"])
+        student_links = edge_core_counter(student["edges"])
+        matched = correct_links & student_links
+        possible += sum(correct_links.values()) + sum((student_links - correct_links).values())
+        earned += sum(matched.values())
+        for core in sorted((correct_links - student_links).elements()):
+            errors.append("missing link " + link_text(core))
+        for core in sorted((student_links - correct_links).elements()):
+            errors.append("extra link " + link_text(core))
+    return errors, earned, possible
+
+
+def compare_structures(correct, student):
+    if correct["settings"]["mode"] in LINEAR_MODES:
+        return compare_sequences(correct, student)
+    return compare_graphs(correct, student)
+
+
+def fraction_for(errors, earned, possible):
+    if not errors:
+        return 1.0
+    if ALL_OR_NOTHING:
+        return 0.0
+    possible += len(errors)
+    if possible <= 0:
+        return 0.0
+    return max(0.0, min(1.0, earned / possible))
+
+
+def feedback_summary(errors):
+    counts = collections.Counter()
+    for error in errors:
+        lower = error.lower()
+        if "element(s), expected" in lower:
+            counts["wrong number of elements"] += 1
+        elif lower.startswith("missing element"):
+            counts["missing element(s)"] += 1
+        elif lower.startswith("extra element"):
+            counts["extra element(s)"] += 1
+        elif lower.startswith(("position ", "value at position ", "element at position ")):
+            counts["element mismatch(es)"] += 1
+        elif lower.startswith("missing link"):
+            counts["missing link(s)"] += 1
+        elif lower.startswith("extra link"):
+            counts["extra link(s)"] += 1
+        elif lower.startswith("missing node"):
+            counts["missing node(s)"] += 1
+        elif lower.startswith("extra node"):
+            counts["extra node(s)"] += 1
+        elif lower.startswith("missing edge"):
+            counts["missing edge(s)"] += 1
+        elif lower.startswith("extra edge"):
+            counts["extra edge(s)"] += 1
+        elif " key " in lower or " value " in lower or "key/value pair" in lower:
+            counts["node key/value mismatch(es)"] += 1
+        elif " color " in lower or "colour" in lower:
+            counts["wrong color(s)"] += 1
+        elif "tree" in lower or "serialisation" in lower or "json" in lower or "no graph" in lower:
+            counts["structure validity issue(s)"] += 1
+        elif any(word in lower for word in ("linked list", "stack", "queue", "predecessor", "next link")):
+            counts["structure validity issue(s)"] += 1
+        else:
+            counts["other mismatch(es)"] += 1
+    # Always report the catch-all "other" bucket last, ahead of it the more
+    # specific categories in the order they were first seen.
+    other = "other mismatch(es)"
+    parts = [f"{count} {label}" for label, count in counts.items() if label != other]
+    if counts[other]:
+        parts.append(f"{counts[other]} {other}")
+    return "; ".join(parts)
+
+
+def feedback_text(errors):
+    if not errors:
+        return "OK"
+    if FEEDBACK_DETAIL == "minimal":
+        return "Structure differs from the expected answer."
+    if FEEDBACK_DETAIL == "summary":
+        return feedback_summary(errors)
+    return "\n".join(errors)
+
+
+RUBRIC = rubric_from_raw(RUBRIC_RAW)
+rubric_breakdown = ""
+correct, correct_errors = normalise_answer(CORRECT_RAW, "Correct answer")
+if correct_errors:
+    errors = correct_errors
+    earned = 0
+    possible = len(errors)
+    fraction = 0.0 if RUBRIC else fraction_for(errors, earned, possible)
+else:
+    student, student_errors = normalise_answer(STUDENT_RAW, "Student answer", correct["settings"])
+    if student is None:
+        errors = student_errors
+        earned = 0
+        possible = len(correct["nodes"]) * 3 + sum(correct["edges"].values()) + len(errors)
+        fraction = 0.0 if RUBRIC else fraction_for(errors, earned, possible)
+    elif RUBRIC:
+        rubric_result = score_graphs_with_rubric(correct, student, student_errors, RUBRIC)
+        errors = rubric_result["errors"]
+        fraction = rubric_result["fraction"]
+        rubric_breakdown = rubric_result["breakdown"]
+    else:
+        compare_errors, earned, possible = compare_structures(correct, student)
+        errors = student_errors + compare_errors
+        fraction = fraction_for(errors, earned, possible)
+
+got = feedback_text(errors)
+expected_label = "Correct graph"
+if correct is not None and correct["settings"]["mode"] in LINEAR_MODES:
+    expected_label = "Correct " + STRUCTURE_NAMES[correct["settings"]["mode"]]
+testresults = [
+    ["Test", "Expected", "Got", "iscorrect"],
+    ["Structure", expected_label, got, not errors],
+]
+if RUBRIC and rubric_breakdown and FEEDBACK_DETAIL != "minimal":
+    testresults.append(["Rubric", "Category breakdown", rubric_breakdown, not errors])
+marking_label = f"Rubric preset: {RUBRIC['preset']}" if RUBRIC else ("All correct" if ALL_OR_NOTHING else "Partial credit allowed")
+testresults.append(["Marking", marking_label, f"{fraction:.3f}", not errors])
+print(json.dumps({
+    "fraction": fraction,
+    "testresults": testresults
+}))]]></template>
+    <iscombinatortemplate>1</iscombinatortemplate>
+    <allowmultiplestdins>0</allowmultiplestdins>
+    <answer></answer>
+    <validateonsave>1</validateonsave>
+    <testsplitterre><![CDATA[|#<ab@17943918#@>#\n|ms]]></testsplitterre>
+    <language>python3</language>
+    <acelang></acelang>
+    <sandbox></sandbox>
+    <grader>TemplateGrader</grader>
+    <cputimelimitsecs></cputimelimitsecs>
+    <memlimitmb></memlimitmb>
+    <sandboxparams></sandboxparams>
+    <templateparams><![CDATA[{"feedbackdetail":"detailed"}]]></templateparams>
+    <hoisttemplateparams>1</hoisttemplateparams>
+    <extractcodefromjson>1</extractcodefromjson>
+    <templateparamslang>twig</templateparamslang>
+    <templateparamsevalpertry>0</templateparamsevalpertry>
+    <templateparamsevald><![CDATA[{"feedbackdetail":"detailed"}]]></templateparamsevald>
+    <twigall>0</twigall>
+    <uiplugin>datastructuregraph</uiplugin>
+    <uiparameters><![CDATA[{"mode":"tree","isdirected":false,"nodefields":"key_value","allowedgecosts":true,"allownodecolors":false,"allowedgecolors":false}]]></uiparameters>
+    <attachments>0</attachments>
+    <attachmentsrequired>0</attachmentsrequired>
+    <maxfilesize>0</maxfilesize>
+    <filenamesregex></filenamesregex>
+    <filenamesexplain></filenamesexplain>
+    <displayfeedback>0</displayfeedback>
+    <giveupallowed>0</giveupallowed>
+    <prototypeextra></prototypeextra>
+    <testcases>
+    </testcases>
+  </question>
+
 <!-- question: 32449  -->
   <question type="coderunner">
     <name>
