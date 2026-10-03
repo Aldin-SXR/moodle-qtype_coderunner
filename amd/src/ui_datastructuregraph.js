@@ -63,6 +63,13 @@ define(['jquery', 'core/str'], function($, Str) {
     const QUEUE_CELL_WIDTH = 72;
     const QUEUE_CELL_HEIGHT = 52;
     const SEQUENCE_ORIGIN = 90;
+    // Stack/queue cells are placed relative to the canvas height, which varies
+    // with the window. Their serialised layout uses this fixed nominal height
+    // instead, so resizing alone never changes the stored answer.
+    const SEQUENCE_SERIALISED_HEIGHT = 300;
+    // Fallbacks used to size the canvas bitmap before it has been laid out.
+    const TOOLBAR_HEIGHT = 38;
+    const PROPERTIES_WIDTH = 240;
     const MARKER = '#475467';
 
     // English fallbacks for the editor chrome, keyed by the short name used in
@@ -790,6 +797,21 @@ define(['jquery', 'core/str'], function($, Str) {
             }
         });
 
+        // The canvas area can change size without the wrapper doing so (the
+        // stylesheet's narrow layout, or the properties panel growing beneath
+        // it), so keep the bitmap matched to whatever size it is displayed at.
+        // The canvas wrapper's size is set by the grid alone, so changing the
+        // bitmap here can't feed back into it.
+        this.resizeObserver = null;
+        if (typeof window.ResizeObserver === 'function') {
+            this.resizeObserver = new window.ResizeObserver(function() {
+                if (t.fitCanvas()) {
+                    t.canvasResized();
+                }
+            });
+            this.resizeObserver.observe(this.canvasWrap[0]);
+        }
+
         this.resize(width, height);
         if (this.readOnly) {
             this.root.addClass('readonly');
@@ -1157,18 +1179,71 @@ define(['jquery', 'core/str'], function($, Str) {
     };
 
     DataStructureGraph.prototype.resize = function(width, height) {
-        const safeWidth = Math.max(320, width || 320);
+        // Fill the width we're given, never more (the stylesheet also caps us
+        // at the container's width); only an unknown width falls back to 320.
+        const safeWidth = width > 0 ? Math.floor(width) : 320;
         const safeHeight = Math.max(220, height || 220);
-        const propertyWidth = safeWidth >= 720 ? 240 : 0;
-        const toolbarHeight = 38;
         this.root.css({
             width: safeWidth + 'px',
             height: safeHeight + 'px'
         });
-        this.canvas.attr({
-            width: Math.max(300, safeWidth - propertyWidth - 4),
-            height: Math.max(160, safeHeight - toolbarHeight)
-        });
+        if (!this.fitCanvas()) {
+            // Before insertion into the page there is no layout to measure, so
+            // estimate the canvas area from the stylesheet's grid. The real size
+            // is picked up once the UI is displayed.
+            const narrow = typeof window.matchMedia === 'function' &&
+                window.matchMedia('(max-width: 700px)').matches;
+            this.setCanvasSize(
+                Math.max(1, safeWidth - (narrow ? 0 : PROPERTIES_WIDTH)),
+                Math.max(1, safeHeight - TOOLBAR_HEIGHT)
+            );
+        }
+        this.canvasResized();
+    };
+
+    /**
+     * Match the canvas bitmap to the size the canvas is displayed at.
+     *
+     * The canvas is stretched by the stylesheet to fill its grid cell, so its
+     * bitmap must follow that laid-out size or drawings come out distorted.
+     *
+     * @returns {boolean} True if the canvas has a laid-out size and its bitmap
+     *     now matches it; false if it isn't laid out (e.g. not yet in the page).
+     */
+    DataStructureGraph.prototype.fitCanvas = function() {
+        const canvas = this.canvas[0];
+        const width = canvas.clientWidth;
+        const height = canvas.clientHeight;
+        if (!width || !height) {
+            return false;
+        }
+        this.setCanvasSize(width, height);
+        return true;
+    };
+
+    /**
+     * Set the canvas bitmap size, if it differs from the current one (setting
+     * it always clears the canvas).
+     *
+     * @param {number} width Bitmap width in pixels.
+     * @param {number} height Bitmap height in pixels.
+     */
+    DataStructureGraph.prototype.setCanvasSize = function(width, height) {
+        const canvas = this.canvas[0];
+        width = Math.round(width);
+        height = Math.round(height);
+        if (canvas.width !== width) {
+            canvas.width = width;
+        }
+        if (canvas.height !== height) {
+            canvas.height = height;
+        }
+    };
+
+    /**
+     * Re-lay out and redraw after the canvas bitmap may have changed size.
+     */
+    DataStructureGraph.prototype.canvasResized = function() {
         if (this.isSequence && this.nodes) {
             this.layoutSequence();
         }
@@ -1176,7 +1251,11 @@ define(['jquery', 'core/str'], function($, Str) {
     };
 
     DataStructureGraph.prototype.destroy = function() {
-        this.sync();
+        this.sync(); // A no-op if the answer failed to load.
+        if (this.resizeObserver) {
+            this.resizeObserver.disconnect();
+            this.resizeObserver = null;
+        }
         if (this.announceTimer) {
             window.clearTimeout(this.announceTimer);
             this.announceTimer = null;
@@ -1415,6 +1494,9 @@ define(['jquery', 'core/str'], function($, Str) {
             this.nextNodeNumber = this.computeNextNumber(this.nodes, 'n');
             this.nextEdgeNumber = this.computeNextNumber(this.edges, 'e');
         } catch (error) {
+            // Discard anything loaded before the error was found.
+            this.nodes = [];
+            this.edges = [];
             this.fail = true;
             this.failString = 'datastructuregraph_ui_invalidserialisation';
         }
@@ -1500,6 +1582,11 @@ define(['jquery', 'core/str'], function($, Str) {
     };
 
     DataStructureGraph.prototype.sync = function() {
+        if (this.fail) {
+            // The textarea holds an answer this UI couldn't load. Leave it
+            // untouched so it survives the fallback to the raw textarea.
+            return;
+        }
         if (this.nodes.length === 0 && this.edges.length === 0 && this.textArea.val().trim() === '') {
             return;
         }
@@ -1526,13 +1613,16 @@ define(['jquery', 'core/str'], function($, Str) {
             type: SERIALISATION_TYPE,
             version: SERIALISATION_VERSION,
             settings: settings,
-            nodes: this.nodes.map(function(node) {
+            nodes: this.nodes.map(function(node, index) {
                 const keys = t.nodeKeys(node);
                 const first = keys[0] || {key: '', value: ''};
+                // Stack/queue positions follow from the order alone (and are
+                // recomputed on load), so store them for a fixed canvas size.
+                const pos = t.isSequence ? t.sequencePosition(index, SEQUENCE_SERIALISED_HEIGHT) : node;
                 const result = {
                     id: node.id,
                     key: first.key,
-                    layout: {x: Math.round(node.x), y: Math.round(node.y)}
+                    layout: {x: Math.round(pos.x), y: Math.round(pos.y)}
                 };
                 if (t.showNodeValues) {
                     result.value = first.value;
@@ -1681,10 +1771,12 @@ define(['jquery', 'core/str'], function($, Str) {
      * World-space centre of the stack/queue cell at a given index.
      *
      * @param {number} index Element index (0 is the top of a stack or head of a queue).
+     * @param {number} [canvasHeight] Canvas height to lay out against; defaults
+     *     to the current canvas bitmap height.
      * @returns {object} Point with x and y.
      */
-    DataStructureGraph.prototype.sequencePosition = function(index) {
-        const height = this.canvas ? this.canvas[0].height : 300;
+    DataStructureGraph.prototype.sequencePosition = function(index, canvasHeight) {
+        const height = canvasHeight || (this.canvas ? this.canvas[0].height : SEQUENCE_SERIALISED_HEIGHT);
         if (this.mode === 'stack') {
             // The bottom of the stack stays put and the top grows upwards.
             const base = Math.max(STACK_CELL_HEIGHT * 2, height - 44) - STACK_CELL_HEIGHT / 2;
@@ -2051,11 +2143,24 @@ define(['jquery', 'core/str'], function($, Str) {
         };
     };
 
+    /**
+     * Convert an event's client coordinates to canvas bitmap coordinates.
+     *
+     * The bitmap normally matches the displayed size, but scale between the
+     * two anyway so hit-testing stays right if they ever differ (e.g. before a
+     * pending resize is observed, or under a CSS transform).
+     *
+     * @param {object} e Event (or object) with clientX and clientY.
+     * @returns {object} Point with x and y in canvas pixels.
+     */
     DataStructureGraph.prototype.screenPosition = function(e) {
-        const rect = this.canvas[0].getBoundingClientRect();
+        const canvas = this.canvas[0];
+        const rect = canvas.getBoundingClientRect();
+        const scaleX = rect.width > 0 ? canvas.width / rect.width : 1;
+        const scaleY = rect.height > 0 ? canvas.height / rect.height : 1;
         return {
-            x: e.clientX - rect.left,
-            y: e.clientY - rect.top
+            x: (e.clientX - rect.left) * scaleX,
+            y: (e.clientY - rect.top) * scaleY
         };
     };
 

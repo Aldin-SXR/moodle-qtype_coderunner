@@ -42,6 +42,7 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'core/str'], function(adap
         lsp_url: '',
         lsp_base_url: '',
         use_simple_lsp: true,
+        rich_features: true,
         semantic_highlighting: false,
         disable_lsp_prefixes: false,
         lsp_workspace_config: '',
@@ -137,11 +138,21 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'core/str'], function(adap
     let monacoThemePromise = null;
     let monacoThemesAvailable = false;
 
+    /**
+     * Get the URL of the bundled Monaco 'vs' directory.
+     *
+     * @returns {string}
+     */
     function getMonacoBasePath() {
         const root = (window.M && M.cfg && M.cfg.wwwroot) ? M.cfg.wwwroot : '';
         return root + '/question/type/coderunner/monaco/vs';
     }
 
+    /**
+     * Turn off Monaco's built-in HTML completion items, if configurable.
+     *
+     * @param {object} monaco The monaco namespace.
+     */
     function disableHtmlCompletions(monaco) {
         try {
             const defaults = monaco && monaco.languages && monaco.languages.html && monaco.languages.html.htmlDefaults;
@@ -159,6 +170,11 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'core/str'], function(adap
         }
     }
 
+    /**
+     * Configure RequireJS paths and MonacoEnvironment so Monaco and its workers can load.
+     *
+     * @throws {Error} If RequireJS is not available.
+     */
     function ensureRequireConfigured() {
         if (typeof require === 'undefined' || !require || !require.config) {
             throw new Error('RequireJS not available');
@@ -184,6 +200,11 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'core/str'], function(adap
         };
     }
 
+    /**
+     * Load Monaco (once), registering the MongoDB language on the way.
+     *
+     * @returns {Promise} Resolves with the monaco namespace.
+     */
     function ensureMonacoLoaded() {
         if (window.monaco && window.monaco.editor) {
             return Promise.resolve(window.monaco);
@@ -230,6 +251,13 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'core/str'], function(adap
         return monacoLoadPromise;
     }
 
+    /**
+     * Interpret a boolean-ish UI parameter value.
+     *
+     * @param {*} value A boolean, 'true'/'1' string, or number.
+     * @param {boolean} fallback Value to use for any other type.
+     * @returns {boolean}
+     */
     function normaliseBoolean(value, fallback) {
         if (typeof value === 'boolean') {
             return value;
@@ -243,11 +271,24 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'core/str'], function(adap
         return fallback;
     }
 
+    /**
+     * Parse an integer UI parameter value.
+     *
+     * @param {*} value The value to parse.
+     * @param {number} fallback Value to use if it is not a number.
+     * @returns {number}
+     */
     function parseNumber(value, fallback) {
         const parsed = parseInt(value, 10);
         return isNaN(parsed) ? fallback : parsed;
     }
 
+    /**
+     * Map a CodeRunner/Ace language name to a Monaco language id.
+     *
+     * @param {string} lang The language name (trailing version digits are tolerated).
+     * @returns {string} The Monaco language id, or 'plaintext'.
+     */
     function mapLanguage(lang) {
         if (!lang) {
             return 'plaintext';
@@ -256,22 +297,56 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'core/str'], function(adap
         return LANGUAGE_MAP[key] || LANGUAGE_MAP[key.replace(/\d+$/, '')] || 'plaintext';
     }
 
+    /**
+     * Build the virtual workspace root URI for a language.
+     *
+     * @param {string} language Monaco language id.
+     * @returns {string}
+     */
+    function buildWorkspaceRootUri(language) {
+        return 'file:///coderunner/' + language;
+    }
+
+    /**
+     * Build a model URI that is unique per textarea, since Monaco refuses to create two models
+     * with the same URI (e.g. two questions of the same language on one quiz page).
+     * Student Java answers keep the fixed file name id_student_answer.java (as before) but each
+     * lives in its own per-textarea directory under the shared Java workspace root.
+     *
+     * @param {string} textareaId
+     * @param {string} language Monaco language id.
+     * @returns {string}
+     */
     function buildModelUri(textareaId, language) {
         const safeId = String(textareaId || 'answer').replace(/[^a-zA-Z0-9_.-]/g, '_');
         const ext = MODEL_EXTENSION_MAP[language] || 'txt';
+        const root = buildWorkspaceRootUri(language);
         if (language === 'java') {
             if (/^id_answer(preload)?/.test(safeId)) {
-                return 'file:///coderunner/java/' + safeId + '.' + ext;
+                return root + '/' + safeId + '.' + ext;
             }
-            return 'file:///coderunner/java/id_student_answer.' + ext;
+            return root + '/' + safeId + '/id_student_answer.' + ext;
         }
-        return 'file:///coderunner/' + language + '/' + safeId + '.' + ext;
+        return root + '/' + safeId + '.' + ext;
     }
 
+    /**
+     * Convert a VS Code (TextMate) theme JSON into a Monaco theme definition.
+     *
+     * @param {object} data The VS Code theme data.
+     * @param {string} base The Monaco base theme ('vs' or 'vs-dark').
+     * @returns {object} Monaco theme definition.
+     */
     function convertTheme(data, base) {
         const rules = [];
         const tokenColors = data.tokenColors || [];
         const hexPattern = /^#([0-9a-fA-F]{3,8})$/;
+        /**
+         * Strip the '#' from a valid hex colour.
+         *
+         * @param {string} value The colour string.
+         * @returns {string|undefined} Hex digits, or undefined if not a valid hex colour.
+         */
         function normaliseColor(value) {
             if (typeof value !== 'string') {
                 return undefined;
@@ -323,6 +398,12 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'core/str'], function(adap
         };
     }
 
+    /**
+     * Fetch a theme JSON file.
+     *
+     * @param {string} url The theme URL.
+     * @returns {Promise} Resolves with the parsed JSON.
+     */
     function fetchTheme(url) {
         if (typeof fetch !== 'function') {
             return Promise.reject(new Error('fetch unavailable'));
@@ -335,6 +416,12 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'core/str'], function(adap
         });
     }
 
+    /**
+     * Fetch and define the extra Monaco themes (once).
+     *
+     * @param {object} monaco The monaco namespace.
+     * @returns {Promise} Resolves with true if the themes were defined, else false.
+     */
     function loadMonacoThemes(monaco) {
         if (!monaco || !monaco.editor || typeof monaco.editor.defineTheme !== 'function') {
             monacoThemesAvailable = false;
@@ -364,6 +451,12 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'core/str'], function(adap
         return monacoThemePromise;
     }
 
+    /**
+     * If the code is Scratchpad UI JSON, extract its answer code; otherwise return it unchanged.
+     *
+     * @param {string} code The textarea contents.
+     * @returns {string}
+     */
     function extractFromScratchpadMaybe(code) {
         if (!code) {
             return '';
@@ -379,8 +472,19 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'core/str'], function(adap
         return code;
     }
 
+    /**
+     * Choose the editor theme: stored preference, then OS light/dark, then the theme parameter.
+     *
+     * @param {object} params The UI parameters.
+     * @returns {string} Monaco theme name.
+     */
     function resolveTheme(params) {
-        const stored = window.localStorage ? window.localStorage.getItem(STORAGE_THEME_KEY) : null;
+        let stored = null;
+        try {
+            stored = window.localStorage ? window.localStorage.getItem(STORAGE_THEME_KEY) : null;
+        } catch (err) {
+            // Storage blocked (e.g. privacy settings): fall back to the defaults below.
+        }
         if (stored) {
             return stored;
         }
@@ -412,6 +516,13 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'core/str'], function(adap
         return defaultLight;
     }
 
+    /**
+     * Build the language server configuration from the UI parameters.
+     *
+     * @param {object} params The UI parameters.
+     * @param {string} lang Monaco language id.
+     * @returns {object} Config with 'enabled' and, if enabled, lspUrl, lspBaseUrl and useSimple.
+     */
     function buildLspConfig(params, lang) {
         const base = params.lsp_base_url || '';
         const url = params.lsp_url || '';
@@ -437,12 +548,35 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'core/str'], function(adap
         };
     }
 
+    /**
+     * Log a failure to initialise the editor.
+     *
+     * @param {*} error
+     */
+    function logInitFailure(error) {
+        if (window.console && window.console.error) {
+            window.console.error('Failed to initialise Monaco UI', error);
+        }
+    }
+
+    /**
+     * Constructor for the Monaco UI wrapper.
+     *
+     * @param {string} textareaId The id of the textarea the editor replaces.
+     * @param {number} width The width in pixels (unused; the editor fills its container).
+     * @param {number} height The height in pixels.
+     * @param {object} params The UI parameters.
+     */
     function MonacoWrapper(textareaId, width, height, params) {
         this.textarea = document.getElementById(textareaId);
         this.failKey = 'monaco_ui_notready';
         this.failedFlag = false;
+        this.destroyed = false;
+        this.monaco = null;
+        this.model = null;
         this.editorApi = null;
         this.editor = null;
+        this.readyPromise = null;
         this.contentsChanged = false;
         this.allowFullscreen = true;
 
@@ -466,7 +600,7 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'core/str'], function(adap
         const useBuiltinServices = builtinWorkerLanguages.indexOf(monacoLang) !== -1;
         const lspConfig = useBuiltinServices ? { enabled: false } : buildLspConfig(appliedParams, monacoLang);
         const useSimple = useBuiltinServices ? false : normaliseBoolean(appliedParams.use_simple_lsp, DEFAULTS.use_simple_lsp);
-        const richFeatures = normaliseBoolean(appliedParams.rich_features, DEFAULTS.rich_features || false);
+        const richFeatures = normaliseBoolean(appliedParams.rich_features, DEFAULTS.rich_features);
 
         const disableLspPrefixes = normaliseBoolean(appliedParams.disable_lsp_prefixes, DEFAULTS.disable_lsp_prefixes);
         const prefixCode = disableLspPrefixes ? '' : (appliedParams.lsp_prefix_code || '');
@@ -474,7 +608,12 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'core/str'], function(adap
         const workspaceConfig = appliedParams.lsp_workspace_config || DEFAULTS.lsp_workspace_config;
         const readOnly = !!this.textarea.readOnly;
 
-        const optionsForAdapter = {
+        this.appliedParams = appliedParams;
+        this.readOnly = readOnly;
+        this.monacoLang = monacoLang;
+        this.initialValue = initialValue;
+        this.modelPath = buildModelUri(textareaId, monacoLang);
+        this.adapterOptions = {
             language: monacoLang,
             value: initialValue,
             prefixCode: prefixCode,
@@ -485,82 +624,141 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'core/str'], function(adap
             richFeatures: richFeatures,
             semanticHighlighting: semanticHighlighting,
             workspaceConfig: workspaceConfig,
-            path: buildModelUri(textareaId, monacoLang),
+            path: this.modelPath,
+            workspaceRootUri: buildWorkspaceRootUri(monacoLang),
             enableInlayHints: !readOnly
         };
-        const fontSize = parseNumber(appliedParams.font_size, DEFAULTS.font_size);
-        const tabSize = parseNumber(appliedParams.tab_size, DEFAULTS.tab_size);
-        const minimapEnabled = normaliseBoolean(appliedParams.minimap, DEFAULTS.minimap);
-        const wordWrap = appliedParams.word_wrap || DEFAULTS.word_wrap;
+        this.editorOptions = {
+            readOnly: readOnly,
+            fontSize: parseNumber(appliedParams.font_size, DEFAULTS.font_size),
+            minimap: { enabled: normaliseBoolean(appliedParams.minimap, DEFAULTS.minimap) },
+            wordWrap: appliedParams.word_wrap || DEFAULTS.word_wrap,
+            tabSize: parseNumber(appliedParams.tab_size, DEFAULTS.tab_size),
+            insertSpaces: true,
+            renderWhitespace: 'none',
+            fixedOverflowWidgets: true,
+            scrollBeyondLastLine: false,
+            scrollBeyondLastColumn: 0,
+            'semanticHighlighting.enabled': semanticHighlighting,
+            links: true,
+            codeLens: true,
+            lightbulb: {
+                enabled: true
+            },
+            stickyScroll: { enabled: false },
+            inlayHints: {
+                enabled: !readOnly
+            }
+        };
+    }
 
+    /**
+     * Load Monaco (plus themes) and create the editor model. The editor itself is created in
+     * postInsert(), once the container is in the live DOM and can be measured.
+     *
+     * @returns {Promise} Resolves when the model exists; rejects on any failure or if destroyed.
+     */
+    MonacoWrapper.prototype.ready = function() {
+        if (this.readyPromise) {
+            return this.readyPromise;
+        }
         const self = this;
-        this.initialisationPromise = ensureMonacoLoaded().then(function(monaco) {
+        const bailIfDestroyed = function() {
+            if (self.destroyed) {
+                throw new Error('Monaco UI destroyed during initialisation');
+            }
+        };
+        this.readyPromise = ensureMonacoLoaded().then(function(monaco) {
+            bailIfDestroyed();
             return loadMonacoThemes(monaco).catch(function() {
                 // Theme loading is best-effort.
             }).then(function() {
-                self.editorApi = adapter.createMonacoLspEditor(self.container, optionsForAdapter);
-                if (!self.editorApi || !self.editorApi.editor) {
-                    throw new Error('Monaco adapter did not return an editor instance');
-                }
-                self.editor = self.editorApi.editor;
-                const model = self.editorApi.model;
-
-                self.editor.updateOptions({
-                    readOnly: readOnly,
-                    fontSize: fontSize,
-                    minimap: { enabled: minimapEnabled },
-                    wordWrap: wordWrap,
-                    tabSize: tabSize,
-                    insertSpaces: true,
-                    renderWhitespace: 'none',
-                    fixedOverflowWidgets: true,
-                    scrollBeyondLastLine: false,
-                    scrollBeyondLastColumn: 0,
-                    'semanticHighlighting.enabled': semanticHighlighting,
-                    links: true,
-                    codeLens: true,
-                    lightbulb: {
-                        enabled: true
-                    },
-                    stickyScroll: { enabled: false },
-                    inlayHints: {
-                        enabled: !readOnly
-                    }
-                });
-
-                const theme = resolveTheme(appliedParams);
-                monaco.editor.setTheme(theme);
-
-                if (!readOnly) {
-                    self.editor.onDidChangeModelContent(function() {
-                        self.textarea.value = self.editor.getValue();
-                        self.contentsChanged = true;
-                    });
-
-                    self.editor.onDidBlurEditorText(function() {
-                        if (self.contentsChanged) {
-                            const changeEvent = new Event('change', { bubbles: true });
-                            self.textarea.dispatchEvent(changeEvent);
-                            self.contentsChanged = false;
-                        }
-                    });
-                }
-
-                Str.get_string('monaco_aria_label', 'qtype_coderunner').then(function(label) {
-                    self.container.setAttribute('aria-label', label);
-                }).catch(function() {
-                    self.container.setAttribute('aria-label', 'Monaco editor');
-                });
-
-                return { monaco: monaco, model: model };
+                return monaco;
             });
+        }).then(function(monaco) {
+            bailIfDestroyed();
+            if (typeof adapter.createMonacoModel !== 'function') {
+                throw new Error('Monaco adapter cannot create models');
+            }
+            const model = adapter.createMonacoModel(monaco, self.monacoLang, self.initialValue, self.modelPath);
+            if (!model) {
+                throw new Error('Monaco adapter did not return a model');
+            }
+            self.monaco = monaco;
+            self.model = model;
         }).catch(function(error) {
             self.failedFlag = true;
-            if (window.console && console.error) {
-                console.error('Failed to initialise Monaco UI', error);
+            if (!self.destroyed) {
+                logInitFailure(error);
             }
+            throw error;
         });
-    }
+        return this.readyPromise;
+    };
+
+    /**
+     * Create the editor now that the container is in the live DOM. Throws (so the wrapper
+     * falls back to the raw textarea) if the editor can't be created.
+     */
+    MonacoWrapper.prototype.postInsert = function() {
+        if (this.destroyed || !this.model) {
+            return;
+        }
+        const self = this;
+        try {
+            this.editorApi = adapter.createMonacoLspEditor(this.container,
+                Object.assign({}, this.adapterOptions, { monaco: this.monaco, model: this.model }));
+            if (!this.editorApi || !this.editorApi.editor) {
+                throw new Error('Monaco adapter did not return an editor instance');
+            }
+            const editor = this.editorApi.editor;
+            editor.updateOptions(this.editorOptions);
+            this.monaco.editor.setTheme(resolveTheme(this.appliedParams));
+            this.editor = editor;
+        } catch (error) {
+            // The adapter may have built an editor before throwing; don't leak it.
+            const knownEditor = this.editorApi ? this.editorApi.editor : null;
+            const container = this.container;
+            try {
+                this.monaco.editor.getEditors().forEach(function(ed) {
+                    const node = ed.getContainerDomNode ? ed.getContainerDomNode() : null;
+                    if (ed !== knownEditor && node && container.contains(node)) {
+                        ed.dispose();
+                    }
+                });
+            } catch (err) {
+                // Ignore disposal errors.
+            }
+            // Don't let sync()/destroy() copy a half-built editor into the textarea.
+            this.disposeEditor();
+            this.failedFlag = true;
+            logInitFailure(error);
+            throw error;
+        }
+
+        if (!this.readOnly) {
+            this.editor.onDidChangeModelContent(function() {
+                if (self.editor) {
+                    self.textarea.value = self.editor.getValue();
+                    self.contentsChanged = true;
+                }
+            });
+
+            this.editor.onDidBlurEditorText(function() {
+                if (self.contentsChanged) {
+                    const changeEvent = new Event('change', { bubbles: true });
+                    self.textarea.dispatchEvent(changeEvent);
+                    self.contentsChanged = false;
+                }
+            });
+        }
+
+        Str.get_string('monaco_aria_label', 'qtype_coderunner').then(function(label) {
+            self.container.setAttribute('aria-label', label);
+        }).catch(function() {
+            self.container.setAttribute('aria-label', 'Monaco editor');
+        });
+    };
 
     MonacoWrapper.prototype.getElement = function() {
         return this.container;
@@ -575,37 +773,42 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'core/str'], function(adap
     };
 
     MonacoWrapper.prototype.sync = function() {
-        if (this.editor) {
+        if (this.editor && !this.destroyed) {
             this.textarea.value = this.editor.getValue();
         }
     };
 
-    MonacoWrapper.prototype.destroy = function() {
-        const self = this;
-        const removeContainer = function(wrapper) {
-            if (wrapper.container && wrapper.container.parentNode) {
-                wrapper.container.parentNode.removeChild(wrapper.container);
-            }
-        };
-        if (this.initialisationPromise) {
-            this.initialisationPromise.finally(function() {
-                if (self.editorApi && self.editorApi.dispose) {
-                    self.editorApi.dispose();
-                }
-                self.editor = null;
-                self.editorApi = null;
-                removeContainer(self);
-                self.textarea.style.display = '';
-            });
-        } else {
-            if (this.editorApi && this.editorApi.dispose) {
+    /**
+     * Dispose the editor, its LSP binding and the model (whichever exist).
+     */
+    MonacoWrapper.prototype.disposeEditor = function() {
+        if (this.editorApi && this.editorApi.dispose) {
+            try {
                 this.editorApi.dispose();
+            } catch (err) {
+                // Ignore disposal errors.
             }
-            this.editor = null;
-            this.editorApi = null;
-            removeContainer(this);
-            this.textarea.style.display = '';
         }
+        if (this.model) {
+            try {
+                this.model.dispose();
+            } catch (err) {
+                // Ignore disposal errors.
+            }
+        }
+        this.editor = null;
+        this.editorApi = null;
+        this.model = null;
+    };
+
+    MonacoWrapper.prototype.destroy = function() {
+        this.sync();
+        this.destroyed = true;
+        this.disposeEditor();
+        if (this.container && this.container.parentNode) {
+            this.container.parentNode.removeChild(this.container);
+        }
+        this.textarea.style.display = '';
     };
 
     MonacoWrapper.prototype.resize = function(width, height) {

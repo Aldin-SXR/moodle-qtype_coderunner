@@ -551,36 +551,49 @@ class qtype_coderunner_question extends question_graded_automatically {
                 $merged['lsp_base_url'] = $lspbase;
             }
         }
-        if ($uiplugin === 'monaco') {
-            // Check if automatic prefix computation is disabled (default: false/enabled).
-            $disableprefixes = false; // Default value.
-            if (array_key_exists('disable_lsp_prefixes', $merged)) {
-                $disableprefixes = $merged['disable_lsp_prefixes'];
-                // Handle string values like 'true', '1', 'false', '0'.
-                if (is_string($disableprefixes)) {
-                    $disableprefixes = ($disableprefixes === 'true' || $disableprefixes === '1');
-                } else {
-                    $disableprefixes = (bool)$disableprefixes;
-                }
-            }
-            // Only compute and add prefix code if not disabled.
-            if (!$disableprefixes) {
-                if (!array_key_exists('lsp_prefix_code', $merged) || $merged['lsp_prefix_code'] === '') {
-                    $prefix = $this->compute_lsp_prefix_code();
-                    if ($prefix !== '') {
-                        $merged['lsp_prefix_code'] = $prefix;
-                    }
-                } else if ($merged['lsp_prefix_code'] !== '') {
-                    $prefix = $this->compute_lsp_prefix_code();
-                    if ($prefix !== '') {
-                        $merged['lsp_prefix_code'] = $prefix . "\n" . $merged['lsp_prefix_code'];
-                    }
-                }
+        if ($uiplugin === 'monaco' && $this->lsp_template_prefix_wanted($merged)) {
+            // The prefix is the expanded template up to STUDENT_ANSWER, so it
+            // reaches the student's browser. Only include it when the author
+            // has explicitly opted in and an LSP server will actually use it.
+            $prefix = $this->compute_lsp_prefix_code();
+            if ($prefix !== '') {
+                $authorprefix = $merged['lsp_prefix_code'] ?? '';
+                $merged['lsp_prefix_code'] = $authorprefix === '' ? $prefix : $prefix . "\n" . $authorprefix;
             }
         }
         return $merged;
     }
 
+
+    /**
+     * Decide whether the expanded template prefix should be sent to the
+     * Monaco UI for the LSP. Off unless the author sets lsp_template_prefix,
+     * because everything the template emits before STUDENT_ANSWER (template
+     * parameters, hidden helper code, the sample answer, ...) becomes visible
+     * in the page source. Also off when no LSP server would receive it.
+     *
+     * @param array $merged The merged UI parameters.
+     * @return bool True if the prefix should be computed and included.
+     */
+    private function lsp_template_prefix_wanted(array $merged): bool {
+        $flag = function ($name, $default) use ($merged) {
+            if (!array_key_exists($name, $merged)) {
+                return $default;
+            }
+            $value = $merged[$name];
+            if (is_string($value)) {
+                return in_array(strtolower(trim($value)), ['true', '1', 'yes'], true);
+            }
+            return (bool) $value;
+        };
+        if (!$flag('lsp_template_prefix', false) || $flag('disable_lsp_prefixes', false)) {
+            return false;
+        }
+        if (!$flag('lsp_enabled', true)) {
+            return false;
+        }
+        return !empty($merged['lsp_url']) || !empty($merged['lsp_base_url']);
+    }
 
     /**
      * Override default behaviour so that we can use a specialised behaviour
@@ -678,8 +691,7 @@ class qtype_coderunner_question extends question_graded_automatically {
                 return get_string('answerrequired', 'qtype_coderunner');
             } else if (strlen($response['answer']) < constants::FUNC_MIN_LENGTH) {
                 return get_string('answertooshort', 'qtype_coderunner', constants::FUNC_MIN_LENGTH);
-            } else if (!$this->looks_like_multifile_json($response['answer']) &&
-                       trim($response['answer']) == trim($this->answerpreload)) {
+            } else if ($this->answer_matches_preload($response['answer'])) {
                 return get_string('answerunchanged', 'qtype_coderunner');
             }
         }
@@ -692,16 +704,28 @@ class qtype_coderunner_question extends question_graded_automatically {
      * @return bool True if it looks like multifile JSON
      */
     private function looks_like_multifile_json($answer) {
-        if (strlen($answer) < 2) {
-            return false;
-        }
-        $trimmed = trim($answer);
-        if ($trimmed[0] !== '{') {
+        $trimmed = trim((string) $answer);
+        if (strlen($trimmed) < 2 || $trimmed[0] !== '{') {
             return false;
         }
         $data = json_decode($trimmed, true);
         $is_multifile = $data !== null && isset($data['files']) && is_array($data['files']);
         return $is_multifile;
+    }
+
+    /**
+     * Check whether an answer is just the unchanged answer preload. Multifile
+     * answers also carry UI state (open tabs, timestamps) that changes without
+     * any edit, so those are compared by file paths and contents only.
+     * @param string $answer The student's answer
+     * @return bool True if the answer is the same as the preload
+     */
+    private function answer_matches_preload($answer) {
+        $preload = (string) $this->answerpreload;
+        if ($this->looks_like_multifile_json($answer) && $this->looks_like_multifile_json($preload)) {
+            return $this->multifile_answers_equal($answer, $preload);
+        }
+        return trim($answer) == trim($preload);
     }
 
     /**
@@ -787,22 +811,7 @@ class qtype_coderunner_question extends question_graded_automatically {
 
 
     public function is_complete_response(array $response) {
-        // First check if it's gradable
-        if (!$this->is_gradable_response($response)) {
-            return false;
-        }
-
-        // For multifile questions, also check if the answer has been changed from preload
-        // An unchanged multifile answer should not be considered complete
-        if ($this->looks_like_multifile_json($response['answer']) &&
-            $this->looks_like_multifile_json($this->answerpreload)) {
-            // Both are multifile JSON, compare them
-            if ($this->multifile_answers_equal($response['answer'], $this->answerpreload)) {
-                return false;
-            }
-        }
-
-        return true;
+        return $this->is_gradable_response($response);
     }
 
 
@@ -842,11 +851,7 @@ class qtype_coderunner_question extends question_graded_automatically {
      * @return boolean
      */
     public function is_same_response(array $prevresponse, array $newresponse) {
-        $sameanswer = question_utils::arrays_same_at_key_missing_is_blank(
-            $prevresponse,
-            $newresponse,
-            'answer'
-        ) &&
+        $sameanswer = $this->same_answer_text($prevresponse['answer'] ?? '', $newresponse['answer'] ?? '') &&
                 question_utils::arrays_same_at_key_missing_is_blank(
                     $prevresponse,
                     $newresponse,
@@ -856,6 +861,22 @@ class qtype_coderunner_question extends question_graded_automatically {
         $attachments2 = $this->get_attached_files($newresponse);
         $sameattachments = $attachments1 === $attachments2;
         return $sameanswer && $sameattachments;
+    }
+
+
+    /**
+     * Compare two answers for is_same_response. Multifile answers are
+     * compared by file paths and contents, so changes to UI state alone (open
+     * tabs, folder expansion, timestamps) don't count as a new response.
+     * @param string $answer1 First answer
+     * @param string $answer2 Second answer
+     * @return bool True if the answers are the same
+     */
+    private function same_answer_text($answer1, $answer2) {
+        if ($this->looks_like_multifile_json($answer1) && $this->looks_like_multifile_json($answer2)) {
+            return $this->multifile_answers_equal($answer1, $answer2);
+        }
+        return (string) $answer1 === (string) $answer2;
     }
 
 

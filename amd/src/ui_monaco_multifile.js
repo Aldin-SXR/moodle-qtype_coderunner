@@ -61,7 +61,7 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
         lsp_url: '',
         lsp_base_url: '',
         use_simple_lsp: true,
-        rich_features: false,
+        rich_features: true,
         disable_lsp_prefixes: false,
         lsp_workspace_config: '',
         semantic_highlighting: false,
@@ -141,27 +141,52 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
         'one-light': 'One Light'
     };
 
+    /**
+     * The browser's localStorage, or null if it is unavailable (accessing it can throw).
+     *
+     * @returns {Storage|null}
+     */
+    function getLocalStorage() {
+        try {
+            return window.localStorage || null;
+        } catch (err) {
+            return null;
+        }
+    }
+
+    /**
+     * Read the user's stored Monaco theme preference.
+     *
+     * @returns {string|null} The theme name, or null if none is stored.
+     */
     function readStoredThemePreference() {
-        if (!window.localStorage) {
+        const storage = getLocalStorage();
+        if (!storage) {
             return null;
         }
         try {
-            const value = window.localStorage.getItem(STORAGE_THEME_KEY);
+            const value = storage.getItem(STORAGE_THEME_KEY);
             return value && value.length ? value : null;
         } catch (err) {
             return null;
         }
     }
 
+    /**
+     * Store (or clear, if falsy) the user's Monaco theme preference.
+     *
+     * @param {string} theme The theme name.
+     */
     function writeStoredThemePreference(theme) {
-        if (!window.localStorage) {
+        const storage = getLocalStorage();
+        if (!storage) {
             return;
         }
         try {
             if (theme) {
-                window.localStorage.setItem(STORAGE_THEME_KEY, theme);
+                storage.setItem(STORAGE_THEME_KEY, theme);
             } else {
-                window.localStorage.removeItem(STORAGE_THEME_KEY);
+                storage.removeItem(STORAGE_THEME_KEY);
             }
         } catch (err) {
             // Ignore write failures.
@@ -205,11 +230,21 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
         r: 'vs/basic-languages/r/r'
     };
 
+    /**
+     * Get the URL of the bundled Monaco 'vs' directory.
+     *
+     * @returns {string}
+     */
     function getMonacoBasePath() {
         const root = (window.M && M.cfg && M.cfg.wwwroot) ? M.cfg.wwwroot : '';
         return root + '/question/type/coderunner/monaco/vs';
     }
 
+    /**
+     * Turn off Monaco's built-in HTML completion items, if configurable.
+     *
+     * @param {object} monaco The monaco namespace.
+     */
     function disableHtmlCompletions(monaco) {
         try {
             const defaults = monaco && monaco.languages && monaco.languages.html && monaco.languages.html.htmlDefaults;
@@ -229,14 +264,11 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
 
     let initialisedLspAll = false;
 
-    function normalisePath(path) {
-        if (typeof path !== 'string') {
-            return '';
-        }
-        const trimmed = path.replace(/^\/+/, '');
-        return decodeURIComponent(trimmed);
-    }
-
+    /**
+     * Configure RequireJS paths and MonacoEnvironment so Monaco can load.
+     *
+     * @throws {Error} If RequireJS is not available.
+     */
     function ensureRequireConfigured() {
         if (typeof require === 'undefined' || !require || typeof require.config !== 'function') {
             throw new Error('RequireJS not available');
@@ -259,12 +291,24 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
 
     }
 
+    /**
+     * Log an error to the console, if available.
+     *
+     * @param {string} message The message.
+     * @param {*} data Optional extra data.
+     */
     function logError(message, data) {
         if (window.console && typeof window.console.error === 'function') {
             window.console.error(message, data || '');
         }
     }
 
+    /**
+     * Log a warning to the console, if available.
+     *
+     * @param {string} message The message.
+     * @param {*} data Optional extra data.
+     */
     function logWarn(message, data) {
         if (window.console && typeof window.console.warn === 'function') {
             window.console.warn(message, data || '');
@@ -290,7 +334,7 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
         return (parts.length ? parts.join('/') + '/' : '') + rewritten;
     };
 
-    MonacoMultifileWrapper.prototype.rewriteTppIncludes = function(text, uri) {
+    MonacoMultifileWrapper.prototype.rewriteTppIncludes = function(text) {
         if (!text || typeof text !== 'string') {
             return text;
         }
@@ -302,11 +346,20 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
 
     MonacoMultifileWrapper.prototype.getLspContentTransform = function() {
         if (!this._lspContentTransform) {
-            this._lspContentTransform = (text, uri) => this.rewriteTppIncludes(text, uri);
+            this._lspContentTransform = (text) => this.rewriteTppIncludes(text);
         }
         return this._lspContentTransform;
     };
 
+    /**
+     * Re-register a file's model with the language server, optionally notifying it of a rename.
+     *
+     * @param {VirtualFile} file The file whose model is (re)registered.
+     * @param {object} lspOptions LSP options for the file's language.
+     * @param {object} monacoInstance The monaco namespace.
+     * @param {object} adapterInstance The monaco_coderunner_adapter module.
+     * @param {string} oldUri The file's previous model URI, if it was renamed.
+     */
     function rebindLspForFile(file, lspOptions, monacoInstance, adapterInstance, oldUri) {
         if (!file || !monacoInstance || !adapterInstance) {
             return;
@@ -351,6 +404,34 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
     }
 
     const generateFileId = () => 'vf_' + Math.random().toString(36).slice(2, 11);
+
+    // Shown when an answer has no files. It is not written to the answer until the user edits.
+    const DEFAULT_FILE_PATH = 'index.html';
+    const DEFAULT_FILE_CONTENT = '<h1>Hello World</h1>';
+
+    /**
+     * Turn the stored answer text into answer data for VirtualFileSystem.fromJSON.
+     * Never throws. Old answers may hold extra fields (e.g. folderName); they are ignored.
+     *
+     * @param {string} text The answer text.
+     * @returns {Object} The answer data.
+     */
+    function parseAnswerText(text) {
+        const raw = typeof text === 'string' ? text : '';
+        if (raw.trim() === '') {
+            return {files: []};
+        }
+        try {
+            const parsed = JSON.parse(raw);
+            if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+                return parsed;
+            }
+        } catch (e) {
+            // Not JSON; handled below.
+        }
+        // Not a multi-file answer (e.g. plain code): show it as a single file.
+        return {files: [{path: DEFAULT_FILE_PATH, content: raw, locked: false}]};
+    }
 
     const DEVICON_CLASS_MAP = {
         html: 'devicon devicon-html5-plain',
@@ -406,7 +487,8 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
         c: 'codicon-symbol-method', h: 'codicon-symbol-method', cpp: 'codicon-symbol-method', cxx: 'codicon-symbol-method',
         hpp: 'codicon-symbol-method', tpp: 'codicon-symbol-method', hxx: 'codicon-symbol-method', ipp: 'codicon-symbol-method',
         cs: 'codicon-symbol-class',
-        go: 'codicon-symbol-interface', rs: 'codicon-symbol-interface', swift: 'codicon-symbol-interface', scala: 'codicon-symbol-interface',
+        go: 'codicon-symbol-interface', rs: 'codicon-symbol-interface',
+        swift: 'codicon-symbol-interface', scala: 'codicon-symbol-interface',
         sh: 'codicon-terminal', bash: 'codicon-terminal', ps1: 'codicon-terminal', bat: 'codicon-terminal',
         json: 'codicon-symbol-structure', yaml: 'codicon-symbol-structure', yml: 'codicon-symbol-structure',
         xml: 'codicon-symbol-boolean', svg: 'codicon-symbol-boolean',
@@ -502,6 +584,11 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
     };
 
     let vscodeIconBasePath = null;
+    /**
+     * Get (and cache) the URL of the VS Code icon directory.
+     *
+     * @returns {string}
+     */
     function getVscodeIconBasePath() {
         if (vscodeIconBasePath) {
             return vscodeIconBasePath;
@@ -511,6 +598,12 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
         return vscodeIconBasePath;
     }
 
+    /**
+     * Get the URL of a VS Code icon.
+     *
+     * @param {string} iconName The icon file name.
+     * @returns {string|null} The URL, or null if no name was given.
+     */
     function getVscodeIconUrl(iconName) {
         if (!iconName) {
             return null;
@@ -518,6 +611,13 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
         return getVscodeIconBasePath() + '/' + iconName;
     }
 
+    /**
+     * Find the VS Code icon URL for a file, by exact file name then extension.
+     *
+     * @param {string} filename The file name.
+     * @param {string} ext The file extension.
+     * @returns {string|null} The icon URL, or null if there is no specific icon.
+     */
     function resolveVscodeFileIcon(filename, ext) {
         const lowerName = filename ? String(filename).toLowerCase() : '';
         if (lowerName && Object.prototype.hasOwnProperty.call(VSCODE_FILENAME_ICON_MAP, lowerName)) {
@@ -549,6 +649,13 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
         return LANGUAGE_MAP[ext] || 'plaintext';
     }
 
+    /**
+     * Interpret a boolean-ish UI parameter value.
+     *
+     * @param {*} value A boolean, 'true'/'1' string, or number.
+     * @param {boolean} fallback Value to use for any other type.
+     * @returns {boolean}
+     */
     function normaliseBoolean(value, fallback) {
         if (typeof value === 'boolean') {
             return value;
@@ -562,15 +669,35 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
         return fallback;
     }
 
+    /**
+     * Parse an integer UI parameter value.
+     *
+     * @param {*} value The value to parse.
+     * @param {number} fallback Value to use if it is not a number.
+     * @returns {number}
+     */
     function parseNumber(value, fallback) {
         const parsed = parseInt(value, 10);
         return isNaN(parsed) ? fallback : parsed;
     }
 
+    /**
+     * Convert a VS Code (TextMate) theme JSON into a Monaco theme definition.
+     *
+     * @param {object} data The VS Code theme data.
+     * @param {string} base The Monaco base theme ('vs' or 'vs-dark').
+     * @returns {object} Monaco theme definition.
+     */
     function convertTheme(data, base) {
         const rules = [];
         const tokenColors = data.tokenColors || [];
         const hexPattern = /^#([0-9a-fA-F]{3,8})$/;
+        /**
+         * Strip the '#' from a valid hex colour.
+         *
+         * @param {string} colorValue The colour string.
+         * @returns {string|undefined} Hex digits, or undefined if not a valid hex colour.
+         */
         function normaliseColor(colorValue) {
             if (typeof colorValue !== 'string') {
                 return undefined;
@@ -623,6 +750,12 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
         };
     }
 
+    /**
+     * Fetch a theme JSON file.
+     *
+     * @param {string} url The theme URL.
+     * @returns {Promise} Resolves with the parsed JSON.
+     */
     function fetchTheme(url) {
         if (typeof fetch !== 'function') {
             return Promise.reject(new Error('fetch unavailable'));
@@ -635,6 +768,12 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
         });
     }
 
+    /**
+     * Fetch and define the extra Monaco themes (once).
+     *
+     * @param {object} monaco The monaco namespace.
+     * @returns {Promise} Resolves with true if the themes were defined, else false.
+     */
     function loadMonacoThemes(monaco) {
         if (!monaco || !monaco.editor || typeof monaco.editor.defineTheme !== 'function') {
             monacoThemesAvailable = false;
@@ -663,6 +802,12 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
         return monacoThemePromise;
     }
 
+    /**
+     * Escape a value for safe insertion into HTML.
+     *
+     * @param {*} value The value (null/undefined give '').
+     * @returns {string}
+     */
     function escapeHtml(value) {
         if (value === null || value === undefined) {
             return '';
@@ -679,10 +824,24 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
         });
     }
 
+    /**
+     * Escape a string for literal use in a regular expression.
+     *
+     * @param {string} str The string.
+     * @returns {string}
+     */
     function escapeRegExp(str) {
         return String(str).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     }
 
+    /**
+     * Build an HTML snippet of a search-result line with the match highlighted.
+     *
+     * @param {string} line The full line of text.
+     * @param {number} matchIndex Index of the match within the line.
+     * @param {number} matchLength Length of the match.
+     * @returns {string} Escaped HTML, trimmed to context around the match.
+     */
     function buildHighlightedSnippet(line, matchIndex, matchLength) {
         if (typeof line !== 'string') {
             return '';
@@ -696,9 +855,18 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
         const before = escapeHtml(slice.substring(0, relativeIndex));
         const matchText = escapeHtml(slice.substr(relativeIndex, matchLength));
         const after = escapeHtml(slice.substring(relativeIndex + matchLength));
-        return prefixEllipsis + before + '<span class="monaco-search-match" style="background: rgba(255,215,0,0.35); padding: 0 1px;">' + matchText + '</span>' + after + suffixEllipsis;
+        return prefixEllipsis + before +
+            '<span class="monaco-search-match" style="background: rgba(255,215,0,0.35); padding: 0 1px;">' +
+            matchText + '</span>' + after + suffixEllipsis;
     }
 
+    /**
+     * Normalise a list of file extensions (lower case, no leading dot).
+     *
+     * @param {Array|string} value An array or comma-separated string of extensions.
+     * @param {Array} fallback List to use if value is neither.
+     * @returns {string[]}
+     */
     function normaliseExtensionList(value, fallback) {
         let list = [];
         if (Array.isArray(value)) {
@@ -711,6 +879,11 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
         return list.map(ext => String(ext || '').replace(/^\./, '').toLowerCase()).filter(Boolean);
     }
 
+    /**
+     * Queue the Monaco language modules needed for the given extensions.
+     *
+     * @param {string[]} extensions File extensions.
+     */
     function queueLanguageModulesForExtensions(extensions) {
         if (!Array.isArray(extensions) || !extensions.length) {
             return;
@@ -731,6 +904,13 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
         }
     }
 
+    /**
+     * Load Monaco basic-language modules and apply their language configurations.
+     *
+     * @param {object} monaco The monaco namespace.
+     * @param {string[]} modules RequireJS module paths.
+     * @returns {Promise} Resolves when all modules have loaded or failed.
+     */
     function loadLanguageConfigurations(monaco, modules) {
         if (!modules.length || typeof require !== 'function') {
             return Promise.resolve();
@@ -754,6 +934,12 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
         return Promise.all(loads);
     }
 
+    /**
+     * Get the bracket pairs used for fallback folding in a language.
+     *
+     * @param {string} languageId Monaco language id.
+     * @returns {Array|null} Bracket pairs, or null if no language was given.
+     */
     function getFallbackBrackets(languageId) {
         if (!languageId) {
             return null;
@@ -764,6 +950,12 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
         return [['{', '}'], ['[', ']'], ['(', ')']];
     }
 
+    /**
+     * Load queued language modules and register bracket folding for queued languages.
+     *
+     * @param {object} monaco The monaco namespace.
+     * @returns {Promise} Resolves when the queued preparation completes.
+     */
     function scheduleLanguagePreparation(monaco) {
         if (!monaco) {
             return languagePreparationPromise;
@@ -796,6 +988,10 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
     /**
      * Register folding range provider for a language based on brackets
      * This provides brace/bracket-based code folding without needing workers
+     *
+     * @param {object} monaco The monaco namespace.
+     * @param {string} languageId Monaco language id.
+     * @param {Array} brackets Bracket pairs, e.g. [['{', '}'], ...].
      */
     function registerBracketFoldingProvider(monaco, languageId, brackets) {
         if (!monaco || !languageId || registeredFoldingLanguages.has(languageId)) {
@@ -812,8 +1008,6 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
                     const line = lines[lineNumber - 1];
 
                     for (let i = 0; i < line.length; i++) {
-                        const char = line[i];
-
                         // Check for opening brackets
                         for (const [open, close] of brackets) {
                             if (line.substr(i, open.length) === open) {
@@ -849,6 +1043,11 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
         });
     }
 
+    /**
+     * Load Monaco (once) and prepare any queued languages.
+     *
+     * @returns {Promise} Resolves with the monaco namespace.
+     */
     function ensureMonacoLoaded() {
         if (window.monaco && window.monaco.editor) {
             return scheduleLanguagePreparation(window.monaco).then(() => window.monaco);
@@ -877,6 +1076,9 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
     }
 
     let codiconStylesLoaded = false;
+    /**
+     * Mark codicon styles as loaded (they are bundled in Monaco's editor.main.css).
+     */
     function ensureCodiconStyles() {
         // Codicon styles are already bundled in monaco/vs/editor/editor.main.css
         // No need to load a separate CSS file
@@ -886,6 +1088,13 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
         codiconStylesLoaded = true;
     }
 
+    /**
+     * Create a jQuery icon element from an icon descriptor.
+     *
+     * @param {object} descriptor Icon descriptor ({type, src, className}).
+     * @param {string} baseClass Base CSS class (default 'monaco-tree-icon').
+     * @returns {jQuery}
+     */
     function createIconElement(descriptor, baseClass) {
         const resolvedBase = baseClass || 'monaco-tree-icon';
         const classes = [resolvedBase];
@@ -906,6 +1115,12 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
         return $(`<span class="${classes.join(' ')}"></span>`);
     }
 
+    /**
+     * Check whether a Monaco model exists and has not been disposed.
+     *
+     * @param {object} model The model.
+     * @returns {boolean}
+     */
     function modelIsAlive(model) {
         if (!model) {
             return false;
@@ -916,6 +1131,12 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
         return true;
     }
 
+    /**
+     * Choose the editor theme: stored preference, then OS light/dark, then the theme parameter.
+     *
+     * @param {object} params The UI parameters.
+     * @returns {string} Monaco theme name.
+     */
     function resolveTheme(params) {
         const stored = readStoredThemePreference();
         if (stored) {
@@ -949,6 +1170,12 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
         return defaultLight;
     }
 
+    /**
+     * Guess whether a theme is dark from its name.
+     *
+     * @param {string} theme The theme name.
+     * @returns {boolean}
+     */
     function isDarkTheme(theme) {
         if (!theme) {
             return false;
@@ -960,6 +1187,12 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
         return lower.indexOf('dark') !== -1 || lower.indexOf('black') !== -1;
     }
 
+    /**
+     * Get a human-readable label for a theme name.
+     *
+     * @param {string} theme The theme name.
+     * @returns {string}
+     */
     function describeTheme(theme) {
         if (!theme) {
             return '';
@@ -1035,7 +1268,7 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
         static fromJSON(data) {
             return new VirtualFile(
                 data.path,
-                data.content || '',
+                typeof data.content === 'string' ? data.content : String(data.content || ''),
                 normaliseBoolean(data.locked, false),
                 data.uid || generateFileId()
             );
@@ -1053,8 +1286,9 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
             this.maxFiles = maxFiles;
         }
 
-        addFile(file) {
-            if (this.files.size >= this.maxFiles && !this.files.has(file.path)) {
+        addFile(file, options = {}) {
+            // The limit applies to files the user adds; existing answers are always loaded in full.
+            if (!options.ignoreLimit && this.files.size >= this.maxFiles && !this.files.has(file.path)) {
                 throw new Error(`Maximum number of files (${this.maxFiles}) reached`);
             }
             // Ensure parent folders exist
@@ -1201,18 +1435,25 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
 
         static fromJSON(data, allowedExtensions, maxFiles) {
             const vfs = new VirtualFileSystem(allowedExtensions, maxFiles);
-            if (data && data.files) {
+            if (data && Array.isArray(data.files)) {
                 data.files.forEach(fileData => {
+                    if (!fileData || typeof fileData.path !== 'string' || fileData.path === '') {
+                        return; // Not a file record.
+                    }
                     const file = VirtualFile.fromJSON(fileData);
-                    vfs.addFile(file);
+                    vfs.addFile(file, {ignoreLimit: true});
                 });
             }
-            // Restore folder states
-            if (data && data.folders) {
+            // Restore folders (including empty ones) and their expanded state.
+            if (data && data.folders && typeof data.folders === 'object') {
                 Object.keys(data.folders).forEach(path => {
+                    if (!path) {
+                        return;
+                    }
+                    vfs.ensureFolder(path);
                     const folderData = data.folders[path];
                     if (vfs.folders.has(path)) {
-                        vfs.folders.set(path, folderData);
+                        vfs.folders.set(path, {expanded: !!(folderData && folderData.expanded)});
                     }
                 });
             }
@@ -1230,6 +1471,8 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
     function MonacoMultifileWrapper(textareaId, w, h, params) {
         this.textareaId = textareaId;
         this.textarea = document.getElementById(textareaId);
+        this.destroyed = false;
+        this.initialised = false; // True once the editor exists and sync() may write the answer.
 
         if (!this.textarea) {
             this.fail = true;
@@ -1239,7 +1482,7 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
         this.params = Object.assign({}, DEFAULTS, params);
         this.params.lsp_enabled = normaliseBoolean(this.params.lsp_enabled, DEFAULTS.lsp_enabled);
         this.params.use_simple_lsp = normaliseBoolean(this.params.use_simple_lsp, DEFAULTS.use_simple_lsp);
-        this.params.rich_features = normaliseBoolean(this.params.rich_features, DEFAULTS.rich_features || false);
+        this.params.rich_features = normaliseBoolean(this.params.rich_features, DEFAULTS.rich_features);
         this.params.disable_lsp_prefixes = normaliseBoolean(
             this.params.disable_lsp_prefixes,
             DEFAULTS.disable_lsp_prefixes || false
@@ -1256,6 +1499,8 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
             this.params.use_vscode_icons,
             DEFAULTS.use_vscode_icons
         );
+        this.params.autosave = normaliseBoolean(this.params.autosave, DEFAULTS.autosave);
+        this.maxFiles = parseNumber(this.params.max_files, DEFAULTS.max_files);
         this.params.allowed_extensions = normaliseExtensionList(
             this.params.allowed_extensions,
             DEFAULTS.allowed_extensions
@@ -1291,6 +1536,16 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
         this.workspaceRoot = 'workspace/' + this.workspaceInstanceId;
         this.fail = false;
         this.isReady = false;  // Not "ready": that name is the optional ready() UI API method.
+        this.readyPromise = null;
+        this.initialWidth = w;
+        this.initialHeight = h;
+        // Per-instance jQuery event namespace, so destroy() removes only this instance's handlers.
+        this.eventNamespace = '.mmf' + Math.random().toString(36).slice(2, 10);
+        this.globalListenersAttached = false;
+        this.answerSignatureCache = null;
+        this.initialSignature = null;
+        this.lastBackupSignature = null;
+        this.restoredBackupTimestamp = null;
         this.currentFile = null;
         this.monaco = null;
         this.editor = null;
@@ -1337,16 +1592,8 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
         this.outlineTreeContainer = null;
         this.problemsPanel = null;
         this.problemsListContainer = null;
-        this.apiTesterPanel = null;
         this.rightPanel = null;
         this.tabBarContainer = null;
-        this.requestBuilderContainer = null;
-        this.responseViewerContainer = null;
-        this.queryParamsContainer = null;
-        this.bodyEditor = null;
-        this.bodyType = 'json';
-        this.currentRoutes = null;
-        this.selectedRoute = null;
         this.currentOutlineSymbols = [];
         this.problemFilters = {
             error: true,
@@ -1356,7 +1603,7 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
         };
         this.currentProblems = [];
         this.markerChangeListener = null;
-        this.activeView = 'explorer'; // 'explorer', 'search', 'outline', 'problems', or 'api-tester'
+        this.activeView = 'explorer'; // 'explorer', 'search', 'outline' or 'problems'
         this.sidebarCollapsed = false;
         this.userSelectedTheme = readStoredThemePreference();
         this.currentTheme = resolveTheme(this.params);
@@ -1364,82 +1611,257 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
         this.themeMenu = null;
         this.themeButton = null;
         this.boundKeydownHandler = (e) => this.handleGlobalKeydown(e);
-        document.addEventListener('keydown', this.boundKeydownHandler, true);
 
         ensureCodiconStyles();
-
-        try {
-            this.init(w, h);
-        } catch (err) {
-            // Initialization failed
-            window.console.error('MonacoMultifileWrapper initialization failed:', err);
-            this.fail = true;
-        }
+        // Everything else (loading Monaco, building the workspace and the UI) happens in ready()
+        // and postInsert(), as the UI plugin contract requires a lightweight constructor.
     }
 
-    MonacoMultifileWrapper.prototype.init = function(w, h) {
+    /**
+     * Optional UI plugin API. Resolves when Monaco has loaded and the workspace and the UI
+     * element have been built from the answer; rejects otherwise, in which case the wrapper
+     * destroys this UI and shows the raw textarea instead.
+     *
+     * @returns {Promise}
+     */
+    MonacoMultifileWrapper.prototype.ready = function() {
+        if (this.readyPromise) {
+            return this.readyPromise;
+        }
+        const checkNotDestroyed = () => {
+            if (this.destroyed) {
+                throw new Error('Monaco multifile UI was destroyed while loading');
+            }
+        };
+        this.readyPromise = ensureMonacoLoaded().then(monaco => {
+            checkNotDestroyed();
+            this.monaco = monaco;
+            return loadMonacoThemes(monaco); // Never rejects; Monaco's built-in themes are the fallback.
+        }).then(() => {
+            checkNotDestroyed();
+            this.prepareWorkspace();
+            this.createUI(this.initialWidth, this.initialHeight);
+            if (!this.container) {
+                throw new Error('Failed to create container element');
+            }
+        }).catch(err => {
+            if (!this.destroyed) {
+                logError('MonacoMultifileWrapper initialisation failed:', err);
+            }
+            this.fail = true;
+            throw err;
+        });
+        return this.readyPromise;
+    };
+
+    /**
+     * Build the virtual file system from the answer (or from a newer local backup).
+     * Throws if the answer cannot be turned into a workspace.
+     */
+    MonacoMultifileWrapper.prototype.prepareWorkspace = function() {
         this.debouncedSyncToLocalStorage = debounce(this.syncToLocalStorage.bind(this), 2000);
         this.debouncedRefreshOutline = debounce(this.refreshOutline.bind(this), 1000);
-        // Load initial data from textarea
-        const textareaContent = this.textarea.value;
-        let initialData;
 
-        try {
-            initialData = JSON.parse(textareaContent);
-        } catch (e) {
-            // If not JSON, create a default single file structure
-            initialData = {
-                files: [{
-                    path: 'index.html',
-                    content: textareaContent || '<h1>Hello World</h1>',
-                    locked: false
-                }]
-            };
-        }
+        const answerText = this.textarea.value;
+        let initialData = parseAnswerText(answerText);
+        this.vfs = this.buildVfsFromData(initialData);
 
-        // Check for and apply localStorage data if newer
+        // Remember what the stored answer contains, so that merely loading it (or showing the
+        // default scaffold for an empty answer) never rewrites the textarea.
+        this.initialSignature = this.contentSignature(this.vfs);
+        this.answerSignatureCache = {text: answerText, signature: this.initialSignature};
+
+        this.removeLegacyAutosaveKeys();
         try {
-            const localDataStr = this.loadLocalBackupData();
-            if (localDataStr) {
-                const localData = JSON.parse(localDataStr);
-                const serverTimestamp = (initialData && initialData.timestamp) ? initialData.timestamp : 0;
-                if (localData && localData.timestamp > serverTimestamp) {
-                    initialData = localData;
-                    // Optional: notify user that unsaved changes were restored
-                }
+            const backup = this.loadNewerLocalBackup(initialData);
+            if (backup) {
+                this.vfs = backup.vfs;
+                initialData = backup.data;
+                this.lastBackupSignature = backup.signature;
+                this.restoredBackupTimestamp = backup.data.timestamp;
             }
         } catch (e) {
             logWarn('Failed to load from localStorage', e);
         }
 
-        this.vfs = VirtualFileSystem.fromJSON(
-            initialData,
-            this.params.allowed_extensions,
-            this.params.max_files
-        );
-
-        // If no files exist, create a default file
-        if (this.vfs.getAllFiles().length === 0) {
-            const defaultFile = new VirtualFile('index.html', '<h1>Hello World</h1>', false);
-            this.vfs.addFile(defaultFile);
-        }
-
-        // Store UI state for restoration after Monaco loads
-        this.initialUiState = initialData && typeof initialData === 'object'
-            ? initialData.uiState || null
+        // Store UI state for restoration once the editor exists
+        this.initialUiState = initialData && typeof initialData.uiState === 'object'
+            ? initialData.uiState
             : null;
+    };
 
-        // Create UI structure
-        try {
-            this.createUI(w, h);
-            if (!this.container) {
-                throw new Error('Failed to create container element');
+    /**
+     * Build a workspace from (parsed) answer data, adding the default file if there is none.
+     *
+     * @param {Object} data The parsed answer.
+     * @returns {VirtualFileSystem}
+     */
+    MonacoMultifileWrapper.prototype.buildVfsFromData = function(data) {
+        const vfs = VirtualFileSystem.fromJSON(data, this.params.allowed_extensions, this.maxFiles);
+        if (vfs.getAllFiles().length === 0) {
+            vfs.addFile(new VirtualFile(DEFAULT_FILE_PATH, DEFAULT_FILE_CONTENT, false), {ignoreLimit: true});
+        }
+        return vfs;
+    };
+
+    /**
+     * A string identifying everything the answer records that matters: file paths, contents
+     * and lock state, plus the folder list. UI-only state (open tabs, active file, which
+     * folders are expanded, file order, uids, timestamps) is deliberately left out.
+     *
+     * @param {VirtualFileSystem} vfs
+     * @returns {string}
+     */
+    MonacoMultifileWrapper.prototype.contentSignature = function(vfs) {
+        const files = vfs.getAllFiles().map(file => {
+            let content = file.content;
+            if (modelIsAlive(file.model)) {
+                try {
+                    content = file.model.getValue();
+                } catch (e) {
+                    // Fall back to the cached content.
+                }
             }
-        } catch (err) {
-            window.console.error('Failed to create UI:', err);
-            this.fail = true;
+            return [file.path, content || '', !!file.locked];
+        }).sort((a, b) => (a[0] < b[0] ? -1 : (a[0] > b[0] ? 1 : 0)));
+        const folders = vfs.getAllFolders().filter(path => path !== '');
+        return JSON.stringify({files: files, folders: folders});
+    };
+
+    /**
+     * The content signature of a serialised answer, as it would be loaded.
+     *
+     * @param {string} text The answer text (normally the textarea value).
+     * @returns {string|null} The signature, or null if the text could not be loaded.
+     */
+    MonacoMultifileWrapper.prototype.answerSignature = function(text) {
+        if (this.answerSignatureCache && this.answerSignatureCache.text === text) {
+            return this.answerSignatureCache.signature;
+        }
+        let signature = null;
+        try {
+            signature = this.contentSignature(this.buildVfsFromData(parseAnswerText(text)));
+        } catch (e) {
+            signature = null;
+        }
+        this.answerSignatureCache = {text: text, signature: signature};
+        return signature;
+    };
+
+    /**
+     * Called by the wrapper once getElement() is in the live DOM. Creates the editor (which
+     * needs to measure its container) and opens the initial files. If creating the editor
+     * throws, the wrapper falls back to the raw textarea.
+     */
+    MonacoMultifileWrapper.prototype.postInsert = function() {
+        if (this.destroyed) {
             return;
         }
+        this.attachGlobalListeners();
+        this.initialiseEditor();
+        this.initialised = true;
+        try {
+            this.openInitialFiles();
+        } catch (err) {
+            logError('Monaco multifile UI: failed to open the initial files', err);
+            this.showInitError(err);
+        }
+    };
+
+    MonacoMultifileWrapper.prototype.openInitialFiles = function() {
+        this.isReady = true;
+
+        // Restore UI state (open tabs and active file)
+        this.openTabs = [];
+        let activeFilePath = null;
+        if (this.initialUiState) {
+            if (Array.isArray(this.initialUiState.openTabs)) {
+                this.initialUiState.openTabs.forEach(path => {
+                    if (typeof path === 'string' && this.vfs.getFile(path)) {
+                        this.addOpenTab(path);
+                    }
+                });
+            }
+            activeFilePath = this.initialUiState.activeFile;
+        }
+
+        // If no open tabs restored, open all files by default
+        const files = this.vfs.getAllFiles();
+        if (this.openTabs.length === 0) {
+            files.forEach(f => this.addOpenTab(f.path));
+        }
+
+        this.renderFileTree();
+        this.renderTabs();
+
+        // Determine which file to open
+        let targetPath = null;
+        if (typeof activeFilePath === 'string' && this.vfs.getFile(activeFilePath)) {
+            targetPath = activeFilePath;
+        } else if (this.openTabs.length > 0) {
+            targetPath = this.openTabs[0];
+        } else if (files.length > 0) {
+            targetPath = files[0].path;
+        }
+
+        if (targetPath) {
+            this.openFile(targetPath);
+        }
+        this.pendingActivePath = null;
+
+        this.registerMarkerListener();
+        if (this.restoredBackupTimestamp) {
+            this.setAutosaveStatus('restored', {timestamp: this.restoredBackupTimestamp});
+        }
+
+        // LSP will be set up when each file is opened
+        // We don't register all files at once to avoid rapidly switching the editor between models
+    };
+
+    /**
+     * Show an error that happened after the UI was inserted. The answer in the textarea is
+     * left as it was.
+     *
+     * @param {*} err
+     */
+    MonacoMultifileWrapper.prototype.showInitError = function(err) {
+        if (!this.editorContainer) {
+            return;
+        }
+        const detail = err && err.message ? err.message : String(err);
+        const box = $('<div class="monaco-multifile-init-error" role="alert"></div>');
+        box.text('The editor could not be fully initialised (' + detail + '). Your saved answer has not been changed.');
+        box.css({
+            padding: '8px 12px',
+            color: '#b3261e',
+            background: 'rgba(179, 38, 30, 0.08)',
+            borderBottom: '1px solid rgba(179, 38, 30, 0.3)'
+        });
+        this.editorContainer.prepend(box);
+    };
+
+    /**
+     * Attach the document/form level listeners. Each one is removed again in destroy().
+     */
+    MonacoMultifileWrapper.prototype.attachGlobalListeners = function() {
+        if (this.globalListenersAttached || this.destroyed) {
+            return;
+        }
+        this.globalListenersAttached = true;
+
+        document.addEventListener('keydown', this.boundKeydownHandler, true);
+
+        // Close the context and theme menus on clicks elsewhere.
+        $(document).on('click' + this.eventNamespace, (e) => {
+            const $target = $(e.target);
+            if (this.contextMenu && !$target.closest('.monaco-multifile-context-menu').length) {
+                this.hideContextMenu();
+            }
+            if (this.themeMenu && this.themeMenu.is(':visible') && !$target.closest('.monaco-theme-control').length) {
+                this.hideThemeMenu();
+            }
+        });
+
         // Find parent form element
         let elem = this.textarea;
         while (elem && elem.tagName !== 'FORM') {
@@ -1447,83 +1869,61 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
         }
         this.form = elem;
         if (this.form) {
-            this.form.addEventListener('submit', () => {
+            this.formSubmitHandler = () => {
                 this.sync(true);
-            });
+            };
+            this.form.addEventListener('submit', this.formSubmitHandler);
 
             // Hook "Finish attempt..." link to sync before navigation
-            document.addEventListener('click', (e) => {
-                const target = e.target.closest('a.endtestlink');
-                if (target) {
-                    e.preventDefault();
-                    this.sync(false);
-                    // Trigger form submission to save state before navigating
-                    const finishInput = document.createElement('input');
-                    finishInput.type = 'hidden';
-                    finishInput.name = 'next';
-                    finishInput.value = '1';
-                    this.form.appendChild(finishInput);
-
-                    const pageInput = document.createElement('input');
-                    pageInput.type = 'hidden';
-                    pageInput.name = 'thispage';
-                    pageInput.value = '-1';
-                    this.form.appendChild(pageInput);
-
-                    this.form.submit();
+            this.endTestLinkHandler = (e) => {
+                const target = e.target && e.target.closest ? e.target.closest('a.endtestlink') : null;
+                if (!target) {
+                    return;
                 }
-            });
+                this.sync(false);
+                if (e.defaultPrevented) {
+                    return; // Another editor on the page is already submitting the form.
+                }
+                e.preventDefault();
+                const form = this.form;
+                // Trigger form submission to save state before navigating
+                const finishInput = document.createElement('input');
+                finishInput.type = 'hidden';
+                finishInput.name = 'next';
+                finishInput.value = '1';
+                form.appendChild(finishInput);
+
+                const pageInput = document.createElement('input');
+                pageInput.type = 'hidden';
+                pageInput.name = 'thispage';
+                pageInput.value = '-1';
+                form.appendChild(pageInput);
+
+                // Submit after the other editors' handlers for this click have synced too.
+                setTimeout(() => form.submit(), 0);
+            };
+            document.addEventListener('click', this.endTestLinkHandler);
         }
+    };
 
-        ensureMonacoLoaded().then(monaco => {
-            this.monaco = monaco;
-            return this.initialiseEditor();
-        }).then(() => {
-            this.isReady = true;
-
-            // Restore UI state (open tabs and active file)
-            let activeFilePath = null;
-            if (this.initialUiState) {
-                activeFilePath = this.restoreUiState(this.initialUiState);
-            }
-
-            // If no open tabs restored, open all files by default
-            if (this.openTabs.size === 0) {
-                const allFiles = this.vfs.getAllFiles();
-                allFiles.forEach(f => this.openTabs.add(f.path));
-            }
-
-            this.renderFileTree();
-            this.renderTabs();
-
-            // Determine which file to open
-            const files = this.vfs.getAllFiles();
-            let targetPath = null;
-
-            if (this.pendingActivePath) {
-                targetPath = this.pendingActivePath;
-            } else if (activeFilePath && this.vfs.getFile(activeFilePath)) {
-                targetPath = activeFilePath;
-            } else if (this.openTabs.size > 0) {
-                targetPath = Array.from(this.openTabs)[0];
-            } else if (files.length > 0) {
-                targetPath = files[0].path;
-            }
-
-            if (targetPath) {
-                this.openFile(targetPath);
-            }
-            this.pendingActivePath = null;
-
-            this.registerMarkerListener();
-
-            // LSP will be set up when each file is opened
-            // We don't register all files at once to avoid rapidly switching the editor between models
-        }).catch(err => {
-            // Failed to load Monaco
-            window.console.error('Failed to load Monaco:', err);
-            this.fail = true;
-        });
+    MonacoMultifileWrapper.prototype.detachGlobalListeners = function() {
+        if (this.boundKeydownHandler) {
+            document.removeEventListener('keydown', this.boundKeydownHandler, true);
+        }
+        if (this.eventNamespace) {
+            $(document).off(this.eventNamespace);
+            $(document).off(this.eventNamespace + 'resize');
+            $(document).off(this.eventNamespace + 'confirm');
+        }
+        if (this.form && this.formSubmitHandler) {
+            this.form.removeEventListener('submit', this.formSubmitHandler);
+        }
+        this.formSubmitHandler = null;
+        if (this.endTestLinkHandler) {
+            document.removeEventListener('click', this.endTestLinkHandler);
+            this.endTestLinkHandler = null;
+        }
+        this.globalListenersAttached = false;
     };
 
     MonacoMultifileWrapper.prototype.createUI = function(w, h) {
@@ -1532,7 +1932,6 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
         this.container.className = 'monaco-multifile-container';
         this.container.style.display = 'flex';
         // Fix width/height for hidden fields (answerpreload)
-        const width = w > 0 ? w : (this.textarea.clientWidth || 800);
         const height = h > 0 ? h : (this.textarea.clientHeight || 300);
         // Use 100% width to always fill parent, avoiding fullscreen sizing issues
         this.container.style.width = '100%';
@@ -1559,8 +1958,10 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
         const actionsDiv = $('<div class="monaco-sidebar-actions"></div>');
 
         // Actions will be populated by updateSidebarActions based on active view
-        const newFileBtn = $('<button type="button" class="monaco-icon-btn" title="New File"><span class="codicon codicon-new-file"></span></button>');
-        const newFolderBtn = $('<button type="button" class="monaco-icon-btn" title="New Folder"><span class="codicon codicon-new-folder"></span></button>');
+        const newFileBtn = $('<button type="button" class="monaco-icon-btn" title="New File">' +
+            '<span class="codicon codicon-new-file"></span></button>');
+        const newFolderBtn = $('<button type="button" class="monaco-icon-btn" title="New Folder">' +
+            '<span class="codicon codicon-new-folder"></span></button>');
 
         if (this.allowNewFiles) {
             newFileBtn.on('click', () => this.promptNewFile(''));
@@ -1767,8 +2168,8 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
         this.autosaveStatusBar.append(this.autosaveRestoreBtn);
         this.autosaveStatusDefaultColor = AUTOSAVE_STATUS_DEFAULT_COLOR;
 
-        // Hide autosave UI if in author mode or if autosave is disabled
-        if (this.authorMode || !this.params.autosave) {
+        // Hide autosave UI if in author/review mode, outside an attempt or if autosave is disabled
+        if (!this.isAutosaveEnabled()) {
             this.autosaveStatusBar.hide();
         }
 
@@ -1793,14 +2194,6 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
         rightPanel.append(this.editorContainer);
         this.rightPanel = rightPanel;
 
-        if (this.isFlightQuestion()) {
-            this.createApiTesterPanel();
-            if (this.apiTesterPanel) {
-                this.apiTesterPanel.hide();
-                this.rightPanel.append(this.apiTesterPanel);
-            }
-        }
-
         this.container.style.position = 'relative';
 
         // Create and insert activity bar before sidebar
@@ -1809,19 +2202,8 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
         this.container.appendChild(this.sidebar[0]);
         this.container.appendChild(rightPanel[0]);
 
-        // Create context menu
+        // Create context menu (the document-level handler that closes it is added in postInsert)
         this.createContextMenu();
-
-        // Add global click handler to close context menu
-        $(document).on('click', (e) => {
-            const $target = $(e.target);
-            if (this.contextMenu && !$target.closest('.monaco-multifile-context-menu').length) {
-                this.hideContextMenu();
-            }
-            if (this.themeMenu && this.themeMenu.is(':visible') && !$target.closest('.monaco-theme-control').length) {
-                this.hideThemeMenu();
-            }
-        });
     };
 
     MonacoMultifileWrapper.prototype.ensureOutlineLspProvider = function(language, lspOptions) {
@@ -1901,96 +2283,6 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
         if (this.editorContainer) {
             this.editorContainer.show();
         }
-        if (this.apiTesterPanel) {
-            this.apiTesterPanel.hide();
-        }
-        if (this.apiTesterTopBar) {
-            this.apiTesterTopBar.hide();
-        }
-        this.attachSharedControlsToMainBar();
-    };
-
-    MonacoMultifileWrapper.prototype.showApiTesterLayout = function() {
-        if (this.sidebar) {
-            this.sidebar.hide();
-            this.sidebar.addClass('collapsed');
-            this.sidebarCollapsed = true;
-        }
-        if (this.tabBarContainer) {
-            this.tabBarContainer.hide();
-        }
-        if (this.editorContainer) {
-            this.editorContainer.hide();
-        }
-        if (this.apiTesterPanel) {
-            this.apiTesterPanel.show();
-        }
-        if (this.apiTesterTopBar) {
-            this.apiTesterTopBar.show();
-        }
-        this.attachSharedControlsToApiTopBar();
-    };
-
-    MonacoMultifileWrapper.prototype.attachSharedControlsToApiTopBar = function() {
-        if (!this.apiTesterControls) {
-            return;
-        }
-        if (this.previewBtn && this.previewBtn.parent()[0] !== this.apiTesterControls[0]) {
-            this.previewBtn.detach();
-            this.apiTesterControls.append(this.previewBtn);
-            // Re-bind event handler to ensure context is correct
-            if (this.previewBtnHandler) {
-                this.previewBtn.off('click').on('click', this.previewBtnHandler);
-            }
-        } else if (this.previewBtn) {
-            if (this.previewBtnHandler) {
-                this.previewBtn.off('click').on('click', this.previewBtnHandler);
-            }
-        }
-        if (this.themeControl && this.themeControl.parent()[0] !== this.apiTesterControls[0]) {
-            this.themeControl.detach();
-            this.apiTesterControls.append(this.themeControl);
-            // Re-bind event handler to ensure context is correct
-            if (this.themeBtnHandler && this.themeButton) {
-                this.themeButton.off('click').on('click', this.themeBtnHandler);
-            }
-        } else if (this.themeControl) {
-            if (this.themeBtnHandler && this.themeButton) {
-                this.themeButton.off('click').on('click', this.themeBtnHandler);
-            }
-        }
-    };
-
-    MonacoMultifileWrapper.prototype.attachSharedControlsToMainBar = function() {
-        if (!this.tabControls) {
-            return;
-        }
-        if (this.previewBtn && this.previewBtn.parent()[0] !== this.tabControls[0]) {
-            this.previewBtn.detach();
-            this.tabControls.append(this.previewBtn);
-            // Re-bind event handler to ensure context is correct
-            if (this.previewBtnHandler) {
-                this.previewBtn.off('click').on('click', this.previewBtnHandler);
-            }
-        }
-        if (this.themeControl && this.themeControl.parent()[0] !== this.tabControls[0]) {
-            this.themeControl.detach();
-            this.tabControls.append(this.themeControl);
-            // Re-bind event handler to ensure context is correct
-            if (this.themeBtnHandler && this.themeButton) {
-                this.themeButton.off('click').on('click', this.themeBtnHandler);
-            }
-        }
-    };
-
-    MonacoMultifileWrapper.prototype.isFlightQuestion = function() {
-        const hasLspUrl = this.params && this.params.lsp_base_url && this.params.lsp_base_url.trim() !== '';
-        if (!hasLspUrl || !this.vfs) {
-            return false;
-        }
-        return this.vfs.getAllFiles().some(function(file) {
-            return file.path && file.path.toLowerCase().endsWith('.php');
-        });
     };
 
     MonacoMultifileWrapper.prototype.createActivityBar = function() {
@@ -2035,16 +2327,6 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
 
         const tabsToAdd = [explorerTab, searchTab, outlineTab, problemsTab];
 
-        // API Tester tab (Flight questions only)
-        if (this.isFlightQuestion()) {
-            const apiTesterTab = $('<button type="button" class="monaco-activity-tab" data-view="api-tester"></button>');
-            apiTesterTab.attr('title', 'API Tester');
-            apiTesterTab.attr('aria-label', 'API Tester');
-            apiTesterTab.append('<span class="codicon codicon-debug-console"></span>');
-            apiTesterTab.on('click', () => this.toggleView('api-tester'));
-            tabsToAdd.push(apiTesterTab);
-        }
-
         activityTabs.append(tabsToAdd);
 
         // Future: Activity actions at bottom
@@ -2057,13 +2339,6 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
     };
 
     MonacoMultifileWrapper.prototype.toggleView = function(viewName) {
-        if (viewName === 'api-tester') {
-            if (this.activeView === 'api-tester') {
-                return;
-            }
-            this.switchToView(viewName);
-            return;
-        }
         // If clicking active view, toggle sidebar collapse
         if (this.activeView === viewName && !this.sidebarCollapsed) {
             this.collapseSidebar();
@@ -2107,8 +2382,7 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
             'explorer': 'Explorer',
             'search': 'Search',
             'outline': 'Outline',
-            'problems': 'Problems',
-            'api-tester': 'API Tester'
+            'problems': 'Problems'
         };
         const title = titleMap[viewName] || 'Explorer';
         this.sidebar.find('.monaco-sidebar-title').text(title);
@@ -2122,8 +2396,6 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
             this.showOutlineView();
         } else if (viewName === 'problems') {
             this.showProblemsView();
-        } else if (viewName === 'api-tester') {
-            this.showApiTesterView();
         }
     };
 
@@ -2140,9 +2412,6 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
         }
         if (this.problemsPanel) {
             this.problemsPanel.hide();
-        }
-        if (this.apiTesterPanel) {
-            this.apiTesterPanel.hide();
         }
 
         // Show file tree
@@ -2167,9 +2436,6 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
         }
         if (this.problemsPanel) {
             this.problemsPanel.hide();
-        }
-        if (this.apiTesterPanel) {
-            this.apiTesterPanel.hide();
         }
 
         // Show search panel
@@ -2202,9 +2468,6 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
         if (this.problemsPanel) {
             this.problemsPanel.hide();
         }
-        if (this.apiTesterPanel) {
-            this.apiTesterPanel.hide();
-        }
 
         // Show outline panel
         if (this.outlinePanel) {
@@ -2231,24 +2494,13 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
             this.problemsPanel.show();
             this.refreshProblems();
         }
-        if (this.apiTesterPanel) {
-            this.apiTesterPanel.hide();
-        }
         this.updateSidebarActions('problems');
     };
 
-    MonacoMultifileWrapper.prototype.showApiTesterView = function() {
-        if (!this.apiTesterPanel) {
-            // Fallback if not available
-            this.showExplorerView();
+    MonacoMultifileWrapper.prototype.refreshOutline = function() {
+        if (this.destroyed) {
             return;
         }
-        this.showApiTesterLayout();
-        this.renderApiTesterPanel();
-        this.updateSidebarActions('api-tester');
-    };
-
-    MonacoMultifileWrapper.prototype.refreshOutline = function() {
         if (!this.outlineTreeContainer || !this.monaco || !this.editor || !this.vfs) {
             if (this.outlineTreeContainer) {
                 this.outlineTreeContainer.empty();
@@ -2266,16 +2518,8 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
 
         const self = this;
 
-        // Collect symbols from all files (excluding hidden files for students)
-        let filesToProcess = this.vfs.getAllFiles();
-
-        // Filter out hidden files for students
-        if (!this.authorMode) {
-            filesToProcess = filesToProcess.filter(function(file) {
-                const isHidden = file.hidden || (file.path && file.path.match(/^\/?_[^\/]+\.php$/));
-                return !isHidden;
-            });
-        }
+        // Collect symbols from all files
+        const filesToProcess = this.vfs.getAllFiles();
 
         // Process each file and collect symbols
         const fileSymbolPromises = filesToProcess.map(function(file) {
@@ -2297,7 +2541,6 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
             }
 
             const language = file.getLanguage ? file.getLanguage() : (file.language || 'plaintext');
-            const filePath = file.path || 'unknown';
 
             const lspOptions = self.getLspOptionsForLanguage(language);
 
@@ -2358,7 +2601,7 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
                                         model.dispose();
                                     }
                                     resolve({ file: file, symbols: symbols || [] });
-                                }).catch(function(err) {
+                                }).catch(function() {
                                     clearTimeout(timeout);
                                     // Dispose temporary model if created
                                     if (temporaryModel && model) {
@@ -2422,7 +2665,7 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
                             }
                             return { file: file, symbols: symbols || [] };
                         })
-                        .catch(function(err) {
+                        .catch(function() {
                             // Try built-in provider as fallback
                             return fetchWithBuiltInProviders();
                         });
@@ -2432,6 +2675,9 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
         });
 
         Promise.all(fileSymbolPromises).then(function(results) {
+            if (self.destroyed) {
+                return;
+            }
             // Transform and organize symbols by file
             const organizedSymbols = [];
             results.forEach(function(result) {
@@ -2448,7 +2694,10 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
 
             self.currentOutlineSymbols = organizedSymbols;
             self.renderOutlineTree();
-        }).catch(function(err) {
+        }).catch(function() {
+            if (self.destroyed) {
+                return;
+            }
             self.currentOutlineSymbols = [];
             self.renderOutlineTree();
         });
@@ -2459,6 +2708,7 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
      * This prevents errors when Monaco tries to navigate to undefined ranges.
      *
      * @param {Array} rawSymbols Array of DocumentSymbol objects
+     * @param {string} filePath Path of the file the symbols belong to
      * @returns {Array} Filtered array with only valid symbols
      */
     MonacoMultifileWrapper.prototype.transformSymbols = function(rawSymbols, filePath) {
@@ -2522,7 +2772,7 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
         let match;
         while ((match = propertyRegex.exec(objectText)) !== null) {
             const name = match[1];
-            if (!name) continue;
+            if (!name) {continue;}
             const valueMatch = objectText.slice(match.index).match(/:\s*([^,]+)/);
             const value = valueMatch ? valueMatch[1].trim() : '';
             const kind = value.startsWith('function') || value.startsWith('(')
@@ -2532,7 +2782,7 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
             // Calculate full range (property name + value)
             const fullLength = match[0].length + (valueMatch ? valueMatch[0].length : 0);
             const range = this.rangeFromIndex(model, startIndex + match.index, fullLength);
-            if (!range) continue;
+            if (!range) {continue;}
 
             // Calculate selection range (just the property name)
             const selectionRange = this.rangeFromIndex(model, startIndex + match.index, name.length);
@@ -2815,7 +3065,6 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
     };
 
         MonacoMultifileWrapper.prototype.generateJsSymbols = function(model, text, filePath) {
-        const symbols = [];
         const SymbolKind = this.monaco.languages.SymbolKind || { Class: 5, Method: 6, Function: 12, Variable: 13, Property: 7 };
         const self = this;
 
@@ -2946,13 +3195,12 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
         const openChar = text[startPos];
         if (openChar !== '{') {
             const braceIdx = text.indexOf('{', startPos);
-            if (braceIdx === -1) return null;
+            if (braceIdx === -1) {return null;}
             startPos = braceIdx;
         }
 
         let depth = 1;
         let i = startPos + 1;
-        const closeChar = '}';
 
         while (i < text.length && depth > 0) {
             const char = text[i];
@@ -2976,8 +3224,8 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
                 continue;
             }
 
-            if (char === '{') depth++;
-            else if (char === '}') depth--;
+            if (char === '{') {depth++;}
+            else if (char === '}') {depth--;}
 
             if (depth === 0) {
                 return {
@@ -3259,11 +3507,21 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
     MonacoMultifileWrapper.prototype.getSeverityInfo = function(severity) {
         const MarkerSeverity = this.monaco && this.monaco.MarkerSeverity ? this.monaco.MarkerSeverity : {};
         const severityMap = {};
-        severityMap[MarkerSeverity.Error] = { key: 'error', label: 'Error', className: 'monaco-problem-error', icon: 'codicon-error', rank: 0 };
-        severityMap[MarkerSeverity.Warning] = { key: 'warning', label: 'Warning', className: 'monaco-problem-warning', icon: 'codicon-warning', rank: 1 };
-        severityMap[MarkerSeverity.Info] = { key: 'info', label: 'Info', className: 'monaco-problem-info', icon: 'codicon-info', rank: 2 };
-        severityMap[MarkerSeverity.Hint] = { key: 'hint', label: 'Hint', className: 'monaco-problem-hint', icon: 'codicon-lightbulb', rank: 3 };
-        return severityMap[severity] || { key: 'info', label: 'Info', className: 'monaco-problem-info', icon: 'codicon-info', rank: 2 };
+        severityMap[MarkerSeverity.Error] = {
+            key: 'error', label: 'Error', className: 'monaco-problem-error', icon: 'codicon-error', rank: 0
+        };
+        severityMap[MarkerSeverity.Warning] = {
+            key: 'warning', label: 'Warning', className: 'monaco-problem-warning', icon: 'codicon-warning', rank: 1
+        };
+        severityMap[MarkerSeverity.Info] = {
+            key: 'info', label: 'Info', className: 'monaco-problem-info', icon: 'codicon-info', rank: 2
+        };
+        severityMap[MarkerSeverity.Hint] = {
+            key: 'hint', label: 'Hint', className: 'monaco-problem-hint', icon: 'codicon-lightbulb', rank: 3
+        };
+        return severityMap[severity] || {
+            key: 'info', label: 'Info', className: 'monaco-problem-info', icon: 'codicon-info', rank: 2
+        };
     };
 
     MonacoMultifileWrapper.prototype.refreshProblems = function(forceRender) {
@@ -3292,19 +3550,6 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
             }
 
             const relativePath = this.getRelativePathFromUri(marker.resource);
-
-            // Skip problems from hidden files for students
-            if (!this.authorMode && relativePath) {
-                const isHidden = relativePath.match(/^\/?_[^\/]+\.php$/);
-                if (isHidden) {
-                    continue;
-                }
-                // Also check if the file is marked as hidden in VFS
-                const file = this.vfs.getFile(relativePath);
-                if (file && file.hidden) {
-                    continue;
-                }
-            }
 
             const info = this.getSeverityInfo(marker.severity);
             const startLine = marker.startLineNumber || 1;
@@ -3716,28 +3961,6 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
         this.problemsPanel = panel;
     };
 
-    MonacoMultifileWrapper.prototype.createApiTesterPanel = function() {
-        if (this.apiTesterPanel) {
-            return;
-        }
-        const panel = $('<div class="monaco-api-tester-panel"></div>');
-        panel.css({
-            display: 'none',
-            flex: '1',
-            overflow: 'visible',
-            minHeight: 0
-        });
-        const topBar = $('<div class="monaco-multifile-tabbar-container monaco-api-topbar"></div>');
-        const topBarTitle = $('<div class="monaco-api-topbar-title"></div>').text('API Tester');
-        const topBarControls = $('<div class="monaco-api-topbar-controls"></div>');
-        topBar.append(topBarTitle, topBarControls);
-        this.apiTesterTopBar = topBar;
-        this.apiTesterControls = topBarControls;
-        panel.append(topBar);
-
-        this.apiTesterPanel = panel;
-    };
-
     MonacoMultifileWrapper.prototype.createContextMenu = function() {
         this.contextMenu = $('<div class="monaco-multifile-context-menu"></div>');
         this.contextMenu.css({
@@ -3758,6 +3981,10 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
             return;
         }
         if (event.defaultPrevented) {
+            return;
+        }
+        // Only act on shortcuts typed within this editor (there may be several on the page).
+        if (!this.container || !this.container.contains(document.activeElement)) {
             return;
         }
         const key = event.key || '';
@@ -3880,14 +4107,6 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
                 break;
             }
 
-            // Skip hidden files in search (unless in author mode)
-            if (!this.authorMode) {
-                const isHidden = file.hidden || (file.path && file.path.match(/^\/?_[^\/]+\.php$/));
-                if (isHidden) {
-                    continue;
-                }
-            }
-
             const content = file.model ? file.model.getValue() : (file.content || '');
             if (!content) {
                 continue;
@@ -3999,283 +4218,304 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
         });
     };
 
+    /**
+     * Create the Monaco editor in the (live) editor container. Synchronous; throws on failure.
+     * Themes have already been loaded in ready().
+     */
     MonacoMultifileWrapper.prototype.initialiseEditor = function() {
         if (this.editor || !this.monaco) {
-            return Promise.resolve();
+            return;
         }
 
-        return loadMonacoThemes(this.monaco).catch(() => false).then(() => {
-            const fontSize = parseNumber(this.params.font_size, DEFAULTS.font_size);
-            const tabSize = parseNumber(this.params.tab_size, DEFAULTS.tab_size);
-            const minimapEnabled = normaliseBoolean(this.params.minimap, DEFAULTS.minimap);
-            const wordWrapMode = this.params.word_wrap || DEFAULTS.word_wrap;
-            const semanticEnabled = normaliseBoolean(this.params.semantic_highlighting, DEFAULTS.semantic_highlighting || false);
+        const fontSize = parseNumber(this.params.font_size, DEFAULTS.font_size);
+        const tabSize = parseNumber(this.params.tab_size, DEFAULTS.tab_size);
+        const minimapEnabled = normaliseBoolean(this.params.minimap, DEFAULTS.minimap);
+        const wordWrapMode = this.params.word_wrap || DEFAULTS.word_wrap;
+        const semanticEnabled = normaliseBoolean(this.params.semantic_highlighting, DEFAULTS.semantic_highlighting || false);
 
-            this.editor = this.monaco.editor.create(this.editorContainer[0], {
-                fontSize: fontSize,
-                minimap: { enabled: minimapEnabled },
-                wordWrap: wordWrapMode,
-                tabSize: tabSize,
-                automaticLayout: true,
-                fixedOverflowWidgets: true,
-                scrollbar: {
-                    alwaysConsumeMouseWheel: false
-                },
-                scrollBeyondLastLine: false,
-                scrollBeyondLastColumn: 0,
-                folding: true,
-                foldingStrategy: 'auto',
-                links: true,                    // Enable document links (clickable imports/URLs)
-                codeLens: true,                 // Enable code lens (inline reference counts)
-                lightbulb: {                    // Enable lightbulb for code actions
-                    enabled: true
-                },
-                'semanticHighlighting.enabled': semanticEnabled,
-                // Disable sticky scroll to prevent crashes with LSP outline
-                stickyScroll: {
-                    enabled: false
-                }
-            });
-
-            // Enable in-editor navigation for hrefs that reference files in the virtual FS.
-            this.setupInlineHrefNavigation();
-
-            const theme = resolveTheme(this.params);
-            this.applyResolvedTheme(theme);
-
-            if (typeof this.monaco.editor.onDidChangeTheme === 'function') {
-                this.themeListener = this.monaco.editor.onDidChangeTheme(newTheme => {
-                    this.currentTheme = newTheme;
-                    this.applyThemeClass(newTheme);
-                    this.refreshThemeMenu();
-                    this.updateThemeButtonState();
-                });
+        this.editor = this.monaco.editor.create(this.editorContainer[0], {
+            fontSize: fontSize,
+            minimap: { enabled: minimapEnabled },
+            wordWrap: wordWrapMode,
+            tabSize: tabSize,
+            automaticLayout: true,
+            fixedOverflowWidgets: true,
+            scrollbar: {
+                alwaysConsumeMouseWheel: false
+            },
+            scrollBeyondLastLine: false,
+            scrollBeyondLastColumn: 0,
+            folding: true,
+            foldingStrategy: 'auto',
+            links: true,                    // Enable document links (clickable imports/URLs)
+            codeLens: true,                 // Enable code lens (inline reference counts)
+            lightbulb: {                    // Enable lightbulb for code actions
+                enabled: true
+            },
+            'semanticHighlighting.enabled': semanticEnabled,
+            // Disable sticky scroll to prevent crashes with LSP outline
+            stickyScroll: {
+                enabled: false
             }
+        });
 
-            // Register custom opener to handle "Go to Definition" across virtual files
-            if (this.editor._codeEditorService) {
-                const codeEditorService = this.editor._codeEditorService;
-                const originalOpenCodeEditor = codeEditorService.openCodeEditor.bind(codeEditorService);
+        // Enable in-editor navigation for hrefs that reference files in the virtual FS.
+        this.setupInlineHrefNavigation();
 
-                codeEditorService.openCodeEditor = async (input, source, sideBySide) => {
-                    // Extract the target URI and selection from the input
-                    const targetUri = input.resource;
-                    const selection = input.options ? input.options.selection : null;
+        const theme = resolveTheme(this.params);
+        this.applyResolvedTheme(theme);
 
-                    if (targetUri) {
-                        // Check if this is a hash link (fragment identifier)
-                        const fragment = targetUri.fragment;
-                        if (fragment) {
-                            // Handle hash links: search for matching id in current file
-                            const model = this.editor ? this.editor.getModel() : null;
-                            if (model) {
-                                const idPattern = new RegExp('id\\s*=\\s*["\']' + fragment.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '["\']', 'i');
-                                const lineCount = model.getLineCount();
+        if (typeof this.monaco.editor.onDidChangeTheme === 'function') {
+            this.themeListener = this.monaco.editor.onDidChangeTheme(newTheme => {
+                this.currentTheme = newTheme;
+                this.applyThemeClass(newTheme);
+                this.refreshThemeMenu();
+                this.updateThemeButtonState();
+            });
+        }
 
-                                for (let i = 1; i <= lineCount; i++) {
-                                    const lineContent = model.getLineContent(i);
-                                    const match = idPattern.exec(lineContent);
-                                    if (match) {
-                                        // Found the target element - navigate to it
-                                        const column = match.index + 1;
-                                        this.editor.setPosition({ lineNumber: i, column: column });
-                                        this.editor.revealLineInCenter(i);
-                                        return this.editor;
-                                    }
-                                }
-                            }
-                            // Hash link target not found - do nothing, return current editor
-                            return this.editor;
-                        }
+        // Register custom opener to handle "Go to Definition" across virtual files
+        if (this.editor._codeEditorService) {
+            const codeEditorService = this.editor._codeEditorService;
+            const originalOpenCodeEditor = codeEditorService.openCodeEditor.bind(codeEditorService);
 
-                        // Extract the file path relative to workspace root
-                        // URI format: file:///{workspaceRoot}/{filePath}
-                        const uriPath = targetUri.path;
-                        const workspacePrefix = '/' + this.workspaceRoot + '/';
+            const openInVirtualFileSystem = async (input, source, sideBySide) => {
+                // Extract the target URI and selection from the input
+                const targetUri = input.resource;
+                const selection = input.options ? input.options.selection : null;
 
-                        if (uriPath.startsWith(workspacePrefix)) {
-                            const filePath = uriPath.substring(workspacePrefix.length);
+                if (targetUri) {
+                    // Check if this is a hash link (fragment identifier)
+                    const fragment = targetUri.fragment;
+                    if (fragment) {
+                        // Handle hash links: search for matching id in current file
+                        const model = this.editor ? this.editor.getModel() : null;
+                        if (model) {
+                            const escapedFragment = fragment.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                            const idPattern = new RegExp('id\\s*=\\s*["\']' + escapedFragment + '["\']', 'i');
+                            const lineCount = model.getLineCount();
 
-                            // Check if this is one of our virtual files
-                            const targetFile = this.vfs.getFile(filePath);
-                            if (targetFile) {
-                                // Open the file in our multifile editor
-                                this.openFile(filePath);
-
-                                // If there's a fragment but no valid selection, don't try to apply selection
-                                // (this happens with hash links where Monaco creates a malformed selection)
-                                if (fragment) {
-                                    // Fragment exists - already handled above
+                            for (let i = 1; i <= lineCount; i++) {
+                                const lineContent = model.getLineContent(i);
+                                const match = idPattern.exec(lineContent);
+                                if (match) {
+                                    // Found the target element - navigate to it
+                                    const column = match.index + 1;
+                                    this.editor.setPosition({ lineNumber: i, column: column });
+                                    this.editor.revealLineInCenter(i);
                                     return this.editor;
                                 }
+                            }
+                        }
+                        // Hash link target not found - do nothing, return current editor
+                        return this.editor;
+                    }
 
-                                // If there's a selection/position, navigate to it
-                                if (selection && this.editor) {
-                                    // Validate and normalize selection object
-                                    // Monaco sometimes creates incomplete selection objects from hash links
-                                    const validSelection = {
-                                        startLineNumber: selection.startLineNumber,
-                                        startColumn: selection.startColumn,
-                                        endLineNumber: selection.endLineNumber !== undefined ? selection.endLineNumber : selection.startLineNumber,
-                                        endColumn: selection.endColumn !== undefined ? selection.endColumn : selection.startColumn
-                                    };
+                    // Extract the file path relative to workspace root
+                    // URI format: file:///{workspaceRoot}/{filePath}
+                    const uriPath = targetUri.path;
+                    const workspacePrefix = '/' + this.workspaceRoot + '/';
 
-                                    // Check if all required fields are valid numbers
-                                    if (validSelection.startLineNumber > 0 && validSelection.startColumn > 0 &&
-                                        validSelection.endLineNumber > 0 && validSelection.endColumn > 0) {
-                                        try {
-                                            this.editor.setSelection(validSelection);
-                                            this.editor.revealLineInCenter(validSelection.startLineNumber);
-                                        } catch (err) {}
-                                    }
-                                }
+                    if (uriPath.startsWith(workspacePrefix)) {
+                        const filePath = uriPath.substring(workspacePrefix.length);
 
+                        // Check if this is one of our virtual files
+                        const targetFile = this.vfs.getFile(filePath);
+                        if (targetFile) {
+                            // Open the file in our multifile editor
+                            this.openFile(filePath);
+
+                            // If there's a fragment but no valid selection, don't try to apply selection
+                            // (this happens with hash links where Monaco creates a malformed selection)
+                            if (fragment) {
+                                // Fragment exists - already handled above
                                 return this.editor;
                             }
-                        }
-                    }
 
-                    // Fall back to default behavior for non-virtual files
-                    return originalOpenCodeEditor(input, source, sideBySide);
-                };
-            }
+                            // If there's a selection/position, navigate to it
+                            if (selection && this.editor) {
+                                // Validate and normalize selection object
+                                // Monaco sometimes creates incomplete selection objects from hash links
+                                const validSelection = {
+                                    startLineNumber: selection.startLineNumber,
+                                    startColumn: selection.startColumn,
+                                    endLineNumber: selection.endLineNumber !== undefined
+                                        ? selection.endLineNumber : selection.startLineNumber,
+                                    endColumn: selection.endColumn !== undefined ? selection.endColumn : selection.startColumn
+                                };
 
-            // Also react to LSP workspace edits applied via the adapter.
-            if (!this.workspaceEditHook && typeof adapter.registerWorkspaceEditHook === 'function') {
-                this.workspaceEditHook = adapter.registerWorkspaceEditHook(meta => {
-
-                    // Handle file creation from LSP code actions (e.g., "Create class Foo")
-                    if (meta && meta.kind === 'create' && meta.uri) {
-
-                        // Parse the URI to get the full file path
-                        const uri = this.monaco.Uri.parse(meta.uri);
-                        const workspacePrefix = '/' + this.workspaceRoot + '/';
-                        let filePath;
-
-                        if (uri.path.startsWith(workspacePrefix)) {
-                            // Extract path relative to workspace root
-                            filePath = uri.path.substring(workspacePrefix.length);
-                        } else {
-                            // Fallback: extract filename only
-                            const pathParts = uri.path.split('/');
-                            filePath = pathParts[pathParts.length - 1];
-                        }
-
-                        // Check if file already exists
-                        if (this.vfs.getFile(filePath)) {
-                            return;
-                        }
-
-                        // Validate extension
-                        if (!this.vfs.isExtensionAllowed(filePath)) {
-                            return;
-                        }
-
-                        // Check file limit
-                        if (!this.vfs.canAddFile(filePath)) {
-                            return;
-                        }
-
-                        // Extract initial content from LSP text edits
-                        let initialContent = '';
-                        if (meta.initialContent && Array.isArray(meta.initialContent)) {
-                            // LSP text edits array: [{range, newText}]
-                            // For new files, should be a single edit inserting at position 0,0
-                            for (let i = 0; i < meta.initialContent.length; i++) {
-                                const edit = meta.initialContent[i];
-                                if (edit && edit.newText) {
-                                    initialContent += edit.newText;
+                                // Check if all required fields are valid numbers
+                                if (validSelection.startLineNumber > 0 && validSelection.startColumn > 0 &&
+                                    validSelection.endLineNumber > 0 && validSelection.endColumn > 0) {
+                                    try {
+                                        this.editor.setSelection(validSelection);
+                                        this.editor.revealLineInCenter(validSelection.startLineNumber);
+                                    } catch (err) {}
                                 }
                             }
+
+                            return this.editor;
                         }
+                    }
+                }
 
-                        // Create the file in the VFS with the extracted content
-                        const newFile = new VirtualFile(filePath, initialContent, false);
-                        this.vfs.addFile(newFile);
+                // Fall back to default behavior for non-virtual files
+                return originalOpenCodeEditor(input, source, sideBySide);
+            };
+            const openCodeEditorOverride = (input, source, sideBySide) => {
+                if (this.destroyed || !this.vfs) {
+                    return originalOpenCodeEditor(input, source, sideBySide);
+                }
+                return openInVirtualFileSystem(input, source, sideBySide);
+            };
+            codeEditorService.openCodeEditor = openCodeEditorOverride;
+            // Remembered so that destroy() can put the original back.
+            this.codeEditorServiceOverride = {
+                service: codeEditorService,
+                override: openCodeEditorOverride,
+                original: originalOpenCodeEditor
+            };
+        }
 
-                        this.renderFileTree();
-                        this.renderTabs();
-                        this.openFile(filePath);
+        // Also react to LSP workspace edits applied via the adapter.
+        if (!this.workspaceEditHook && typeof adapter.registerWorkspaceEditHook === 'function') {
+            this.workspaceEditHook = adapter.registerWorkspaceEditHook(meta => {
+                if (this.destroyed || !this.vfs || !this.monaco) {
+                    return;
+                }
 
-                        // Setup LSP for the new file
-                        const lspOptions = this.getLspOptionsForLanguage(newFile.getLanguage());
-                        const fileLspOptions = Object.assign({}, lspOptions, {
-                            prefixCode: this.getPrefixCodeForFile(newFile, lspOptions.prefixCode),
-                            contentTransform: lspOptions.contentTransform
-                        });
-                        rebindLspForFile(newFile, fileLspOptions, this.monaco, adapter);
-                        this.registerWorkspaceFilesWithLsp(newFile.getLanguage(), null);
+                // Handle file creation from LSP code actions (e.g., "Create class Foo")
+                if (meta && meta.kind === 'create' && meta.uri) {
 
-                        // Notify LSP server that file was created (after didOpen)
-                        if (newFile.model && newFile.model.uri) {
-                            adapter.notifyFileCreated(this.monaco, newFile.model.uri.toString(), fileLspOptions);
-                        }
+                    // Parse the URI to get the full file path
+                    const uri = this.monaco.Uri.parse(meta.uri);
+                    const workspacePrefix = '/' + this.workspaceRoot + '/';
+                    let filePath;
 
-                        this.sync();
+                    if (uri.path.startsWith(workspacePrefix)) {
+                        // Extract path relative to workspace root
+                        filePath = uri.path.substring(workspacePrefix.length);
+                    } else {
+                        // Fallback: extract filename only
+                        const pathParts = uri.path.split('/');
+                        filePath = pathParts[pathParts.length - 1];
+                    }
 
+                    // Check if file already exists, or the path is unusable
+                    if (this.isReadOnlyMode || this.vfs.getFile(filePath) || this.validatePath(filePath, 'file')) {
                         return;
                     }
 
-                    // Workspace edits have been applied and commands will be executed automatically
-                    // by the adapter when the edited files' content changes are synced.
-                    // The LSP server (e.g., jdtls) will send updated diagnostics when it receives
-                    // the refresh command (e.g., java.project.refreshDiagnostics).
+                    // Validate extension
+                    if (!this.vfs.isExtensionAllowed(filePath)) {
+                        return;
+                    }
 
-                    const activeUri = this.activeFile && this.activeFile.model && this.activeFile.model.uri
-                        ? this.activeFile.model.uri.toString()
-                        : null;
-                    const touched = Array.isArray(meta && meta.uris) ? meta.uris : [];
-                    const affectedOriginFiles = Array.isArray(meta && meta.affectedOriginFiles) ? meta.affectedOriginFiles : [];
+                    // Check file limit
+                    if (!this.vfs.canAddFile(filePath)) {
+                        return;
+                    }
 
-                    // If this workspace edit affected the current active file (which triggered the action),
-                    // send an empty didChange to force the LSP to re-analyze it
-                    if (affectedOriginFiles.length > 0 && activeUri && affectedOriginFiles.indexOf(activeUri) !== -1) {
-
-                        // Send a content sync for the active file to trigger diagnostic refresh
-                        if (this.activeFile && this.activeFile.model) {
-                            const language = this.activeFile.getLanguage();
-                            const lspOptions = this.getLspOptionsForLanguage(language);
-                            if (lspOptions && lspOptions.enabled) {
-                                const prefixCode = this.getPrefixCodeForFile(this.activeFile, lspOptions.prefixCode);
-                                // Sync the current content which will trigger LSP re-analysis
-                                adapter.syncModelContent(this.monaco, this.activeFile.model, {
-                                    language: language,
-                                    lspUrl: lspOptions.lspUrl,
-                                    lspBaseUrl: lspOptions.lspBaseUrl,
-                                    prefixCode: prefixCode,
-                                    contentTransform: lspOptions.contentTransform,
-                                    forceVersionId: (this.activeFile.model.getVersionId() + 1)
-                                });
+                    // Extract initial content from LSP text edits
+                    let initialContent = '';
+                    if (meta.initialContent && Array.isArray(meta.initialContent)) {
+                        // LSP text edits array: [{range, newText}]
+                        // For new files, should be a single edit inserting at position 0,0
+                        for (let i = 0; i < meta.initialContent.length; i++) {
+                            const edit = meta.initialContent[i];
+                            if (edit && edit.newText) {
+                                initialContent += edit.newText;
                             }
                         }
                     }
-                });
-            }
 
-            // Track content changes on any model so we can refresh the active tab when another file is modified.
-            if (!this.modelChangeListener && typeof this.monaco.editor.onDidChangeModelContent === 'function') {
-                this.modelChangeListener = this.monaco.editor.onDidChangeModelContent(event => {
-                    const model = event && event.model;
-                    
-                    if (!model || !model.uri) {
-                        return;
-                    }
-                    if (!this.activeFile || !this.activeFile.model || !this.activeFile.model.uri) {
-                        return;
-                    }
-                    if (model.uri.toString() === this.activeFile.model.uri.toString()) {
-                        return; // Ignore changes to the active model itself.
-                    }
-                    const changedFile = this.resolveFileForModel(model);
-                    if (!changedFile || changedFile.path === this.activeFile.path) {
-                        return;
-                    }
-                    this.fullSyncModel(this.activeFile.model, this.activeFile, null, {force: true});
-                });
-            }
+                    // Create the file in the VFS with the extracted content
+                    const newFile = new VirtualFile(filePath, initialContent, false);
+                    this.vfs.addFile(newFile);
 
-            // Register all workspace files with LSP after editor is ready.
-            if (!initialisedLspAll && this.vfs) {
+                    this.renderFileTree();
+                    this.renderTabs();
+                    this.openFile(filePath);
+
+                    // Setup LSP for the new file
+                    const lspOptions = this.getLspOptionsForLanguage(newFile.getLanguage());
+                    const fileLspOptions = Object.assign({}, lspOptions, {
+                        prefixCode: this.getPrefixCodeForFile(newFile, lspOptions.prefixCode),
+                        contentTransform: lspOptions.contentTransform
+                    });
+                    rebindLspForFile(newFile, fileLspOptions, this.monaco, adapter);
+                    this.registerWorkspaceFilesWithLsp(newFile.getLanguage(), null);
+
+                    // Notify LSP server that file was created (after didOpen)
+                    if (newFile.model && newFile.model.uri) {
+                        adapter.notifyFileCreated(this.monaco, newFile.model.uri.toString(), fileLspOptions);
+                    }
+
+                    this.sync();
+
+                    return;
+                }
+
+                // Workspace edits have been applied and commands will be executed automatically
+                // by the adapter when the edited files' content changes are synced.
+                // The LSP server (e.g., jdtls) will send updated diagnostics when it receives
+                // the refresh command (e.g., java.project.refreshDiagnostics).
+
+                const activeUri = this.activeFile && this.activeFile.model && this.activeFile.model.uri
+                    ? this.activeFile.model.uri.toString()
+                    : null;
+                const affectedOriginFiles = Array.isArray(meta && meta.affectedOriginFiles) ? meta.affectedOriginFiles : [];
+
+                // If this workspace edit affected the current active file (which triggered the action),
+                // send an empty didChange to force the LSP to re-analyze it
+                if (affectedOriginFiles.length > 0 && activeUri && affectedOriginFiles.indexOf(activeUri) !== -1) {
+
+                    // Send a content sync for the active file to trigger diagnostic refresh
+                    if (this.activeFile && this.activeFile.model) {
+                        const language = this.activeFile.getLanguage();
+                        const lspOptions = this.getLspOptionsForLanguage(language);
+                        if (lspOptions && lspOptions.enabled) {
+                            const prefixCode = this.getPrefixCodeForFile(this.activeFile, lspOptions.prefixCode);
+                            // Sync the current content which will trigger LSP re-analysis
+                            adapter.syncModelContent(this.monaco, this.activeFile.model, {
+                                language: language,
+                                lspUrl: lspOptions.lspUrl,
+                                lspBaseUrl: lspOptions.lspBaseUrl,
+                                prefixCode: prefixCode,
+                                contentTransform: lspOptions.contentTransform,
+                                forceVersionId: (this.activeFile.model.getVersionId() + 1)
+                            });
+                        }
+                    }
+                }
+            });
+        }
+
+        // Track content changes on any model so we can refresh the active tab when another file is modified.
+        if (!this.modelChangeListener && typeof this.monaco.editor.onDidChangeModelContent === 'function') {
+            this.modelChangeListener = this.monaco.editor.onDidChangeModelContent(event => {
+                const model = event && event.model;
+                if (this.destroyed || !model || !model.uri) {
+                    return;
+                }
+                if (!this.activeFile || !this.activeFile.model || !this.activeFile.model.uri) {
+                    return;
+                }
+                if (model.uri.toString() === this.activeFile.model.uri.toString()) {
+                    return; // Ignore changes to the active model itself.
+                }
+                const changedFile = this.resolveFileForModel(model);
+                if (!changedFile || changedFile.path === this.activeFile.path) {
+                    return;
+                }
+                this.fullSyncModel(this.activeFile.model, this.activeFile, null, {force: true});
+            });
+        }
+
+        // Register all workspace files with LSP after editor is ready.
+        // An LSP failure must not prevent the editor itself from working.
+        if (!initialisedLspAll && this.vfs) {
+            try {
                 const seen = new Set();
                 this.vfs.getAllFiles().forEach(f => {
                     const lang = f.getLanguage();
@@ -4287,9 +4527,11 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
                         this.registerWorkspaceFilesWithLsp(lang, null);
                     }
                 });
-                initialisedLspAll = true;
+            } catch (err) {
+                logWarn('Failed to register workspace files with the LSP', err);
             }
-        });
+            initialisedLspAll = true;
+        }
     };
 
     MonacoMultifileWrapper.prototype.applyThemeClass = function(theme) {
@@ -4750,6 +4992,7 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
             const isExpanded = this.vfs.isFolderExpanded(subfolder);
 
             const folderItem = $('<div class="monaco-folder-item"></div>');
+            folderItem.attr('data-path', subfolder);
             folderItem.css({
                 padding: '4px 8px',
                 paddingLeft: (8 + indent) + 'px',
@@ -4779,15 +5022,15 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
             const folderIcon = createIconElement(folderIconDescriptor, 'monaco-tree-icon');
             folderIcon.css({marginRight: '6px'});
 
-            const folderLabel = $(`<span>${folderName}</span>`);
+            const folderLabel = $('<span class="monaco-folder-name"></span>').text(folderName);
 
             folderItem.append(chevron, folderIcon, folderLabel);
 
             folderItem.on('click', (e) => {
                 e.stopPropagation();
                 const currentState = this.vfs.isFolderExpanded(subfolder);
+                // Expanding/collapsing is UI state only, so the answer is not synced here.
                 this.vfs.setFolderExpanded(subfolder, !currentState);
-                this.sync();
                 this.renderFileTree();
             });
 
@@ -4872,25 +5115,9 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
         const files = this.vfs.getFilesInFolder(folderPath);
         files.sort((a, b) => a.getName().localeCompare(b.getName()));
 
-        // Filter out hidden files for students (show them to authors)
-        const visibleFiles = files.filter(file => {
-            // In author mode, show all files
-            if (this.authorMode) {
-                return true;
-            }
-            // For students, hide files marked as hidden or stub files
-            if (file.hidden) {
-                return false;
-            }
-            const fileName = file.getName();
-            if (fileName.match(/^_[^\/]+\.php$/)) {
-                return false;
-            }
-            return true;
-        });
-
-        visibleFiles.forEach(file => {
+        files.forEach(file => {
             const fileItem = $('<div class="monaco-file-item"></div>');
+            fileItem.attr('data-path', file.path);
             fileItem.css({
                 padding: '4px 8px',
                 paddingLeft: (8 + indent) + 'px',
@@ -4913,7 +5140,6 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
             }
 
             const locked = this.isFileLocked(file);
-            const isHidden = file.hidden || (file.path && file.path.match(/^\/?_[^\/]+\.php$/));
 
             if (this.activeFile && this.activeFile.path === file.path) {
                 fileItem.addClass('active');
@@ -4921,20 +5147,12 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
             if (locked) {
                 fileItem.addClass('locked');
             }
-            if (isHidden) {
-                fileItem.addClass('hidden-stub');
-                // Add subtle visual styling for hidden stub files in author mode
-                fileItem.css({
-                    opacity: '0.6',
-                    fontStyle: 'italic'
-                });
-            }
 
             const iconDescriptor = this.getIconDescriptorForFile(file);
             const fileIcon = createIconElement(iconDescriptor, 'monaco-tree-icon');
             fileIcon.css({marginRight: '6px'});
 
-            const fileName = $(`<span class="monaco-file-name">${file.getName()}</span>`);
+            const fileName = $('<span class="monaco-file-name"></span>').text(file.getName());
             fileName.css({flex: 1});
 
             fileItem.append(fileIcon, fileName);
@@ -4945,22 +5163,6 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
             if (locked) {
                 const lockIcon = $('<span class="monaco-lock-icon codicon codicon-lock" title="Locked file"></span>');
                 fileItem.append(lockIcon);
-            }
-
-            // Add hidden indicator badge for authors
-            if (isHidden && this.authorMode) {
-                const hiddenBadge = $('<span class="monaco-hidden-badge" title="Hidden from students (type stubs)"></span>');
-                hiddenBadge.text('stub');
-                hiddenBadge.css({
-                    fontSize: '9px',
-                    padding: '1px 4px',
-                    backgroundColor: '#666',
-                    color: '#fff',
-                    borderRadius: '2px',
-                    marginLeft: '4px',
-                    fontStyle: 'normal'
-                });
-                fileItem.append(hiddenBadge);
             }
 
             fileItem.on('click', () => this.openFile(file.path));
@@ -5028,6 +5230,21 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
         });
     };
 
+    /**
+     * Find the explorer row for the given file or folder path.
+     *
+     * @param {string} itemClass Either 'monaco-file-item' or 'monaco-folder-item'.
+     * @param {string} path The VFS path of the item.
+     * @returns {jQuery|null} The row, or null if it is not currently rendered.
+     */
+    MonacoMultifileWrapper.prototype.findTreeItem = function(itemClass, path) {
+        if (!this.fileTree) {
+            return null;
+        }
+        const match = this.fileTree.find('.' + itemClass).filter((i, elem) => elem.getAttribute('data-path') === path);
+        return match.length ? match.first() : null;
+    };
+
     MonacoMultifileWrapper.prototype.getOrderedOpenFiles = function() {
         if (!this.vfs) {
             return [];
@@ -5062,7 +5279,7 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
             fileIcon.css({marginRight: '6px'});
 
             // Add file name
-            const fileName = $(`<span class="monaco-tab-name">${file.getName()}</span>`);
+            const fileName = $('<span class="monaco-tab-name"></span>').text(file.getName());
 
             tab.append(fileIcon, fileName);
 
@@ -5096,7 +5313,7 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
     };
 
     MonacoMultifileWrapper.prototype.openFile = function(path) {
-        if (!this.monaco || !this.editor) {
+        if (this.destroyed || !this.monaco || !this.editor || !this.vfs) {
             return;
         }
 
@@ -5291,6 +5508,10 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
         }
 
         this._refreshTimer = setTimeout(() => {
+            this._refreshTimer = null;
+            if (this.destroyed || !this.vfs) {
+                return;
+            }
             const files = this.vfs.getAllFiles().filter(f =>
                 f && f.path !== changedFile.path && f.getLanguage() === language
             );
@@ -5542,14 +5763,14 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
      * @param {Object} model
      * @param {Object} file
      * @param {Object} lspOptionsOverride
-     * @param {Object|boolean} options - boolean keeps backward compat (forceSync); object supports {force: bool, adapterOnly: bool, preserveVersion: bool}
+     * @param {Object|boolean} options - boolean keeps backward compat (forceSync);
+     *     object supports {force: bool, adapterOnly: bool, preserveVersion: bool}
      */
 
     MonacoMultifileWrapper.prototype.fullSyncModel = function(model, file, lspOptionsOverride, options) {
         const opts = typeof options === 'object' && options !== null
             ? options
             : {force: !!options, adapterOnly: false, preserveVersion: false};
-        const targetPath = (file && file.path) || (this.activeFile && this.activeFile.path) || 'unknown';
         if (!model || !modelIsAlive(model) || !this.params.lsp_enabled || !this.monaco) {
             return;
         }
@@ -5650,13 +5871,23 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
     };
 
     MonacoMultifileWrapper.prototype.showContextMenu = function(event, type, target) {
+        if (!this.contextMenu || !this.vfs) {
+            return;
+        }
+        if (this.isReadOnlyMode) {
+            // Every menu item changes the workspace.
+            this.hideContextMenu();
+            return;
+        }
         this.contextMenu.empty();
         this.contextMenuTarget = {type, target};
         this.syncContextMenuTheme();
 
         let menuItemCount = 0;
         const addMenuItem = (icon, text, handler) => {
-            const item = $(`<div class="monaco-multifile-context-menu-item">${icon} ${text}</div>`);
+            // The icon markup is a fixed string; the label is always inserted as text.
+            const item = $('<div class="monaco-multifile-context-menu-item"></div>');
+            item.append($(icon), $('<span></span>').text(text));
             item.css({
                 padding: '6px 12px',
                 cursor: 'pointer',
@@ -5685,7 +5916,8 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
             }
             if (this.lockUiEnabled && this.authorMode) {
                 if (locked) {
-                    addMenuItem('<span class="codicon codicon-unlock"></span>', 'Unlock File', () => this.toggleFileLock(target, false));
+                    addMenuItem('<span class="codicon codicon-unlock"></span>', 'Unlock File',
+                        () => this.toggleFileLock(target, false));
                 } else {
                     addMenuItem('<span class="codicon codicon-lock"></span>', 'Lock File', () => this.toggleFileLock(target, true));
                 }
@@ -5695,7 +5927,8 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
                 addMenuItem('<span class="codicon codicon-new-file"></span>', 'New File', () => this.promptNewFile(''));
             }
             if (this.lockUiEnabled && this.authorMode) {
-                addMenuItem('<span class="codicon codicon-lock"></span>', 'New Locked File', () => this.promptNewFile('', {locked: true}));
+                addMenuItem('<span class="codicon codicon-lock"></span>', 'New Locked File',
+                    () => this.promptNewFile('', {locked: true}));
             }
             if (this.allowNewFolders) {
                 addMenuItem('<span class="codicon codicon-new-folder"></span>', 'New Folder', () => this.promptNewFolder(''));
@@ -5705,12 +5938,13 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
                 addMenuItem('<span class="codicon codicon-new-file"></span>', 'New File', () => this.promptNewFile(target));
             }
             if (this.lockUiEnabled && this.authorMode) {
-                addMenuItem('<span class="codicon codicon-lock"></span>', 'New Locked File', () => this.promptNewFile(target, {locked: true}));
+                addMenuItem('<span class="codicon codicon-lock"></span>', 'New Locked File',
+                    () => this.promptNewFile(target, {locked: true}));
             }
             if (this.allowNewFolders) {
                 addMenuItem('<span class="codicon codicon-new-folder"></span>', 'New Folder', () => this.promptNewFolder(target));
             }
-            if (target !== '') {
+            if (target !== '' && (this.authorMode || this.allowNewFolders)) {
                 addMenuItem('<span class="codicon codicon-trash"></span>', 'Delete Folder', () => this.deleteFolder(target));
             }
         }
@@ -5750,6 +5984,11 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
         const newPath = targetFolder ? targetFolder + '/' + fileName : fileName;
 
         if (newPath === file.path) {
+            return;
+        }
+        const pathError = this.validatePath(newPath, 'file', file.path);
+        if (pathError) {
+            this.showToast(pathError, 'error');
             return;
         }
 
@@ -5800,7 +6039,7 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
     };
 
     MonacoMultifileWrapper.prototype.toggleFileLock = function(path, locked) {
-        if (!this.authorMode || !this.lockUiEnabled) {
+        if (!this.authorMode || !this.lockUiEnabled || this.isReadOnlyMode) {
             return;
         }
         const file = this.vfs.getFile(path);
@@ -5821,7 +6060,7 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
     MonacoMultifileWrapper.prototype.promptNewFile = function(folderPath, options) {
         const settings = Object.assign({locked: false}, options || {});
         this.hideContextMenu();
-        if (!this.authorMode && this.params.disable_new_files) {
+        if (!this.allowNewFiles) {
             this.showToast('Creating new files is disabled for this question.', 'warning');
             return;
         }
@@ -5830,15 +6069,7 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
         let targetElement = null;
         if (folderPath) {
             // Find the folder item in the tree
-            this.fileTree.find('.monaco-folder-item').each((i, elem) => {
-                const $elem = $(elem);
-                const folderLabel = $elem.find('span').last().text();
-                const expectedName = folderPath.split('/').pop();
-                if (folderLabel === expectedName) {
-                    targetElement = $elem;
-                    return false; // Break the loop
-                }
-            });
+            targetElement = this.findTreeItem('monaco-folder-item', folderPath);
         } else {
             // Add to root - use the file tree itself
             targetElement = this.fileTree;
@@ -5871,17 +6102,74 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
     };
 
     /**
+     * Check that a new or renamed file/folder path is acceptable.
+     *
+     * @param {string} path The full path (relative to the workspace root).
+     * @param {string} kind Either 'file' or 'folder'.
+     * @param {string} [ignorePath] The path of the item being renamed or moved, if any.
+     * @returns {string|null} A message describing the problem, or null if the path is fine.
+     */
+    MonacoMultifileWrapper.prototype.validatePath = function(path, kind, ignorePath) {
+        const what = kind === 'folder' ? 'Folder' : 'File';
+        if (typeof path !== 'string' || path.trim() === '') {
+            return what + ' names cannot be empty.';
+        }
+        // eslint-disable-next-line no-control-regex
+        if (/[\u0000-\u001f\u007f]/.test(path)) {
+            return what + ' names cannot contain control characters.';
+        }
+        if (path.charAt(0) === '/') {
+            return what + ' names cannot start with "/".';
+        }
+        if (path.indexOf('//') !== -1 || path.charAt(path.length - 1) === '/') {
+            return what + ' names cannot contain empty path segments.';
+        }
+        const segments = path.split('/');
+        if (segments.some(segment => segment === '.' || segment === '..')) {
+            return what + ' names cannot contain "." or ".." segments.';
+        }
+        if (segments.some(segment => segment.trim() === '')) {
+            return what + ' names cannot be blank.';
+        }
+        // Names that differ only in case would clash on case-insensitive file systems.
+        const lowerPath = path.toLowerCase();
+        const lowerIgnore = typeof ignorePath === 'string' ? ignorePath.toLowerCase() : null;
+        const lowerFiles = this.vfs.getAllFiles().map(f => f.path.toLowerCase()).filter(p => p !== lowerIgnore);
+        const lowerFolders = this.vfs.getAllFolders().filter(p => p !== '').map(p => p.toLowerCase());
+        if (lowerFiles.indexOf(lowerPath) !== -1 || lowerFolders.indexOf(lowerPath) !== -1) {
+            return 'A file or folder called "' + path + '" already exists (names are not case-sensitive).';
+        }
+        // No parent folder of the new path may be an existing file.
+        for (let i = 1; i < segments.length; i++) {
+            const parent = segments.slice(0, i).join('/').toLowerCase();
+            if (lowerFiles.indexOf(parent) !== -1) {
+                return '"' + segments.slice(0, i).join('/') + '" is a file, not a folder.';
+            }
+        }
+        return null;
+    };
+
+    /**
      * Create a new file with validation
      * @param {string} folderPath - The folder path to create the file in
      * @param {string} filename - The filename
      * @param {Object} settings - File settings (e.g., locked)
      */
     MonacoMultifileWrapper.prototype.createNewFile = function(folderPath, filename, settings) {
+        if (!this.allowNewFiles || !this.vfs) {
+            return;
+        }
         if (!filename) {
+            this.showToast('Please enter a file name.', 'error');
             return;
         }
 
         const fullPath = folderPath ? folderPath + '/' + filename : filename;
+        const pathError = this.validatePath(fullPath, 'file');
+        if (pathError) {
+            this.showToast(pathError, 'error');
+            return;
+        }
 
         // Validate extension
         const ext = getExtension(filename);
@@ -5902,13 +6190,18 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
 
         // Check file limit
         if (!this.vfs.canAddFile(filename)) {
-            this.showToast(`Cannot add more files. Maximum: ${this.params.max_files}`, 'error');
+            this.showToast(`Cannot add more files. Maximum: ${this.maxFiles}`, 'error');
             return;
         }
 
         // Create new file
-        const newFile = new VirtualFile(fullPath, '', this.lockUiEnabled && !!settings.locked);
-        this.vfs.addFile(newFile);
+        const newFile = new VirtualFile(fullPath, '', this.lockUiEnabled && !!(settings && settings.locked));
+        try {
+            this.vfs.addFile(newFile);
+        } catch (err) {
+            this.showToast(err.message, 'error');
+            return;
+        }
 
         if (folderPath) {
             this.vfs.setFolderExpanded(folderPath, true);
@@ -5929,7 +6222,7 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
 
     MonacoMultifileWrapper.prototype.promptNewFolder = function(parentPath) {
         this.hideContextMenu();
-        if (!this.authorMode && this.params.disable_new_folders) {
+        if (!this.allowNewFolders) {
             this.showToast('Creating new folders is disabled for this question.', 'warning');
             return;
         }
@@ -5938,15 +6231,7 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
         let targetElement = null;
         if (parentPath) {
             // Find the folder item in the tree
-            this.fileTree.find('.monaco-folder-item').each((i, elem) => {
-                const $elem = $(elem);
-                const folderLabel = $elem.find('span').last().text();
-                const expectedName = parentPath.split('/').pop();
-                if (folderLabel === expectedName) {
-                    targetElement = $elem;
-                    return false; // Break the loop
-                }
-            });
+            targetElement = this.findTreeItem('monaco-folder-item', parentPath);
         } else {
             // Add to root - use the file tree itself
             targetElement = this.fileTree;
@@ -5984,11 +6269,20 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
      * @param {string} foldername - The folder name
      */
     MonacoMultifileWrapper.prototype.createNewFolder = function(parentPath, foldername) {
+        if (!this.allowNewFolders || !this.vfs) {
+            return;
+        }
         if (!foldername) {
+            this.showToast('Please enter a folder name.', 'error');
             return;
         }
 
         const fullPath = parentPath ? parentPath + '/' + foldername : foldername;
+        const pathError = this.validatePath(fullPath, 'folder');
+        if (pathError) {
+            this.showToast(pathError, 'error');
+            return;
+        }
 
         try {
             this.vfs.createFolder(fullPath, true); // Create expanded
@@ -6015,19 +6309,7 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
         const oldName = file.getName();
 
         // Find the file item in the tree
-        let targetElement = null;
-        this.fileTree.find('.monaco-file-item').each((i, elem) => {
-            const $elem = $(elem);
-            const fileLabel = $elem.find('span').last().text();
-            if (fileLabel === oldName) {
-                // Check if this is the right file by matching path
-                const fileIcon = $elem.find('.monaco-tree-icon');
-                if (fileIcon.length > 0) {
-                    targetElement = $elem;
-                    return false; // Break the loop
-                }
-            }
-        });
+        const targetElement = this.findTreeItem('monaco-file-item', oldPath);
 
         if (!targetElement) {
             // Fallback to prompt if we can't find the element
@@ -6069,6 +6351,11 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
 
         const dir = file.getDirectory();
         const newPath = dir ? dir + '/' + newName : newName;
+        const pathError = this.validatePath(newPath, 'file', oldPath);
+        if (pathError) {
+            this.showToast(pathError, 'error');
+            return;
+        }
         const wasActive = this.activeFile && this.activeFile.path === oldPath;
         const tabWasOpen = this.isTabOpen(oldPath);
 
@@ -6111,6 +6398,9 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
 
     MonacoMultifileWrapper.prototype.deleteFolder = function(folderPath) {
         this.hideContextMenu();
+        if (this.isReadOnlyMode) {
+            return;
+        }
 
         this.showConfirmModal(
             'Delete Folder',
@@ -6314,13 +6604,6 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
         this.sync();
     };
 
-    MonacoMultifileWrapper.prototype.getUiState = function() {
-        return {
-            openTabs: this.getOrderedOpenFiles().map(f => f.path),
-            activeFile: this.activeFile ? this.activeFile.path : null
-        };
-    };
-
     MonacoMultifileWrapper.prototype.resolvePath = function(basePath, relativePath) {
         // Resolve a relative path against a base file path
         // basePath: e.g., "folder/index.html"
@@ -6354,62 +6637,10 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
         return dirParts.join('/');
     };
 
-    MonacoMultifileWrapper.prototype.getFlightUrl = function() {
-        // Get the Flight server HTTP URL from the WebSocket lsp_base_url
-        if (!this.isFlightQuestion()) {
-            return null;
-        }
-
-        const lspBaseUrl = this.params.lsp_base_url;
-        if (!lspBaseUrl || !this.workspaceInstanceId) {
-            return null;
-        }
-
-        // Convert WSS to HTTPS for HTTP URL
-        const httpBaseUrl = lspBaseUrl.replace(/^wss:/, 'https:').replace(/^ws:/, 'http:');
-
-        // Format: https://[flight-server]/cr/[workspace-id]/
-        return httpBaseUrl.replace(/\/$/, '') + '/cr/' + this.workspaceInstanceId + '/';
-    };
-
-    MonacoMultifileWrapper.prototype.replaceLocalhostWithFlightUrl = function(html, flightUrl) {
-        if (!flightUrl) {
-            return html;
-        }
-
-        // Remove trailing slash from Flight URL for replacement
-        const flightUrlNoSlash = flightUrl.replace(/\/$/, '');
-
-        // Comprehensive localhost replacement patterns
-        // Pattern 1: http://localhost with optional port
-        html = html.replace(/http:\/\/localhost(?::[\d]+)?/gi, flightUrlNoSlash);
-
-        // Pattern 2: https://localhost with optional port
-        html = html.replace(/https:\/\/localhost(?::[\d]+)?/gi, flightUrlNoSlash);
-
-        // Pattern 3: //localhost (protocol-relative URLs)
-        html = html.replace(/\/\/localhost(?::[\d]+)?/gi, '//' + flightUrlNoSlash.replace(/^https?:\/\//, ''));
-
-        // Pattern 4: 'localhost' or "localhost" in quotes (common in fetch/ajax calls)
-        // This must be done carefully to avoid breaking relative paths
-        html = html.replace(/(['"])localhost\b/gi, '$1' + flightUrlNoSlash);
-
-        return html;
-    };
-
     MonacoMultifileWrapper.prototype.findMainHtmlFile = function() {
         // Find the main HTML file to preview
-        // Priority: frontend/index.html (Flight only) > index.html > main.html > first .html file
+        // Priority: index.html > main.html > first .html file
         const files = this.vfs.getAllFiles();
-
-        // NEW: For Flight questions, check frontend/index.html first
-        if (this.isFlightQuestion()) {
-            let mainFile = files.find(f => f.path === 'frontend/index.html');
-            if (mainFile) {
-                return mainFile;
-            }
-            // Fall through to standard logic if frontend/index.html doesn't exist
-        }
 
         // Check for index.html
         let mainFile = files.find(f => f.getName().toLowerCase() === 'index.html');
@@ -6555,11 +6786,57 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
         this.previewSourceMap = sourceMap;
 
         // Inject console capture and error reporting with source map.
-        const sourceMapJson = JSON.stringify(sourceMap);
-        const mainFilePathForScript = mainFile.path;
+        // Values are embedded as JSON, with '<' escaped so that nothing can close the script element.
+        const toScriptLiteral = (value) => JSON.stringify(value).replace(/</g, '\\u003c');
+        const sourceMapJson = toScriptLiteral(sourceMap);
+        const mainFilePathLiteral = toScriptLiteral(mainFile.path);
         const runtimeScript = `(function() {
+    // The preview runs in a sandboxed frame with an opaque origin, where touching
+    // localStorage/sessionStorage throws a SecurityError. Provide in-memory stand-ins
+    // so that student pages that use them keep working (data lasts for this page view only).
+    function makeMemoryStorage() {
+        let data = Object.create(null);
+        return {
+            getItem: function(key) {
+                key = String(key);
+                return Object.prototype.hasOwnProperty.call(data, key) ? data[key] : null;
+            },
+            setItem: function(key, value) {
+                data[String(key)] = String(value);
+            },
+            removeItem: function(key) {
+                delete data[String(key)];
+            },
+            clear: function() {
+                data = Object.create(null);
+            },
+            key: function(index) {
+                const keys = Object.keys(data);
+                return index >= 0 && index < keys.length ? keys[index] : null;
+            },
+            get length() {
+                return Object.keys(data).length;
+            }
+        };
+    }
+    ['localStorage', 'sessionStorage'].forEach(function(name) {
+        let usable = false;
+        try {
+            usable = !!window[name];
+        } catch (e) {
+            usable = false;
+        }
+        if (!usable) {
+            try {
+                Object.defineProperty(window, name, {value: makeMemoryStorage(), configurable: true});
+            } catch (e) {
+                // Nothing more we can do.
+            }
+        }
+    });
+
     const sourceMap = ${sourceMapJson};
-    const mainFilePath = "${mainFilePathForScript}";
+    const mainFilePath = ${mainFilePathLiteral};
 
     function mapLineToSource(lineNo) {
         for (let i = 0; i < sourceMap.length; i++) {
@@ -6658,20 +6935,8 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
     };
 
     window.addEventListener('error', function(e) {
-        // --- DEBUGGING START ---
-        window.parent.postMessage({
-            type: 'debug',
-            message: 'Error caught in iframe:',
-            e_filename: e.filename,
-            e_lineno: e.lineno,
-            e_colno: e.colno,
-            e_message: e.message,
-            sourceMap_dump: JSON.stringify(sourceMap)
-        }, '*');
-        // --- DEBUGGING END ---
-
         let mappedSource = null;
-        let displayFilename = e.filename;
+        let displayFilename = e.filename || '';
         let displayLineno = e.lineno;
 
         // Check if the error is from a synthetic script or the srcdoc itself
@@ -6722,6 +6987,92 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
             timestamp: new Date().toISOString()
         }, '*');
     });
+
+    // Navigation. This document is an srcdoc whose relative URLs would resolve against the
+    // Moodle page, so links and forms that point at the student's own files are handed to the
+    // editor (which renders the target file), and other navigation is kept out of the frame.
+    function classifyUrl(url) {
+        if (url === null || url === undefined) {
+            return 'none';
+        }
+        url = String(url).trim();
+        if (url === '') {
+            return 'none';
+        }
+        if (url.charAt(0) === '#') {
+            return 'hash';
+        }
+        if (/^javascript:/i.test(url)) {
+            return 'script';
+        }
+        if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(url) || url.indexOf('//') === 0 || url.charAt(0) === '/') {
+            return 'external';
+        }
+        return 'relative';
+    }
+
+    function scrollToFragment(hash) {
+        let id = hash.substring(1);
+        try {
+            id = decodeURIComponent(id);
+        } catch (e) {
+            // Use it as it is.
+        }
+        if (!id) {
+            window.scrollTo(0, 0);
+            return;
+        }
+        const target = document.getElementById(id) || document.getElementsByName(id)[0];
+        if (target && typeof target.scrollIntoView === 'function') {
+            target.scrollIntoView({behavior: 'smooth', block: 'start'});
+        }
+    }
+
+    function requestNavigation(url) {
+        window.parent.postMessage({type: 'navigate', href: String(url)}, '*');
+    }
+
+    // Registered on window in the bubbling phase so that the page's own handlers run first
+    // and can still take over by calling preventDefault().
+    window.addEventListener('click', function(e) {
+        if (e.defaultPrevented || !e.target || typeof e.target.closest !== 'function') {
+            return;
+        }
+        const link = e.target.closest('a[href], area[href]');
+        if (!link) {
+            return;
+        }
+        const href = link.getAttribute('href');
+        const kind = classifyUrl(href);
+        if (kind === 'none' || kind === 'script') {
+            return;
+        }
+        e.preventDefault();
+        if (kind === 'hash') {
+            scrollToFragment(href.trim());
+        } else if (kind === 'relative') {
+            requestNavigation(href.trim());
+        } else {
+            console.warn('Preview: navigation to ' + href + ' is disabled in the preview.');
+        }
+    });
+
+    window.addEventListener('submit', function(e) {
+        if (e.defaultPrevented || !e.target) {
+            return;
+        }
+        const form = e.target;
+        const submitter = e.submitter;
+        const action = (submitter && submitter.getAttribute && submitter.getAttribute('formaction')) ||
+            form.getAttribute('action');
+        const kind = classifyUrl(action);
+        e.preventDefault();
+        if (kind === 'relative') {
+            requestNavigation(action.trim());
+        } else if (kind === 'external') {
+            console.warn('Preview: submitting forms to ' + action + ' is disabled in the preview.');
+        }
+    });
 })();`;
 
         let injectedScript = '';
@@ -6742,70 +7093,17 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
             html = injectedScript + html;
         }
 
-        // NEW: Replace localhost references with Flight URL for Flight questions
-        if (this.isFlightQuestion()) {
-            const flightUrl = this.getFlightUrl();
-            if (flightUrl) {
-                html = this.replaceLocalhostWithFlightUrl(html, flightUrl);
-            }
-        }
-
         return html;
     };
 
     MonacoMultifileWrapper.prototype.showPreview = function() {
-        // For Flight questions, deploy to server first (so backend is running)
-        // but then render frontend HTML directly instead of showing iframe to Flight server
-        if (this.isFlightQuestion()) {
-            // Show preview modal immediately with loading state
-            if (!this.previewModal) {
-                this.createPreviewModal();
-            }
-            this.previewModal.css('display', 'flex');
-            if (this.previewLoadingOverlay) {
-                this.previewLoadingOverlay.css('display', 'flex');
-                // Update loading text to show deployment status
-                const loadingText = this.previewLoadingOverlay.find('.monaco-loading-text');
-                if (loadingText.length) {
-                    loadingText.text('Deploying to server...');
-                }
-            }
-
-            // Deploy silently (no success toast)
-            this.deployToFlightServer(true).then(() => {
-                // Update loading text
-                if (this.previewLoadingOverlay) {
-                    const loadingText = this.previewLoadingOverlay.find('.monaco-loading-text');
-                    if (loadingText.length) {
-                        loadingText.text('Loading preview...');
-                    }
-                }
-                this.showDirectHtmlPreview();
-            }).catch(err => {
-                if (this.previewLoadingOverlay) {
-                    this.previewLoadingOverlay.css('display', 'none');
-                }
-                this.showToast('Failed to deploy to Flight server: ' + (err.message || err), 'error');
-            });
+        if (this.destroyed || !this.vfs) {
             return;
         }
-
-        // For non-Flight questions, show preview directly
-        this.showDirectHtmlPreview();
-    };
-
-    MonacoMultifileWrapper.prototype.showDirectHtmlPreview = function() {
         // Find main HTML file
         const mainFile = this.findMainHtmlFile();
         if (!mainFile) {
             this.showToast('No HTML file found to preview. Please create an index.html or main.html file.', 'warning');
-            return;
-        }
-
-        // Build preview HTML (with Flight URL replacement if applicable)
-        const previewHTML = this.buildPreviewHTML(mainFile);
-        if (!previewHTML) {
-            this.showToast('Failed to build preview.', 'error');
             return;
         }
 
@@ -6819,713 +7117,28 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
         this.previewHistoryIndex = 0;
         this.updateNavigationButtons();
 
-        // Show loading indicator
+        this.renderPreviewFile(mainFile);
+
+        // Show modal using CSS instead of jQuery's show()
+        this.previewModal.css('display', 'flex');
+    };
+
+    /**
+     * Render an HTML file of the workspace in the preview frame, with its local CSS/JS
+     * inlined and the console bridge injected.
+     *
+     * @param {VirtualFile} file The HTML file to show.
+     */
+    MonacoMultifileWrapper.prototype.renderPreviewFile = function(file) {
+        const previewHTML = this.buildPreviewHTML(file);
+        if (previewHTML === null) {
+            this.showToast('Failed to build preview.', 'error');
+            return;
+        }
         if (this.previewLoadingOverlay) {
             this.previewLoadingOverlay.css('display', 'flex');
         }
-
         this.updatePreviewIframe(previewHTML);
-
-        // Show modal using CSS instead of jQuery's show()
-        this.previewModal.css('display', 'flex');
-    };
-
-    MonacoMultifileWrapper.prototype.deployToFlightServer = function(silent) {
-        const lspBaseUrl = this.params.lsp_base_url;
-        if (!lspBaseUrl) {
-            return Promise.reject(new Error('LSP base URL not configured'));
-        }
-
-        // Get workspace ID (already generated in constructor)
-        const workspaceId = this.workspaceInstanceId;
-
-        // Show loading toast only if not silent
-        if (!silent) {
-            this.showToast('Deploying to Flight server...', 'info');
-        }
-
-        // Prepare deployment payload
-        const files = [];
-        this.vfs.getAllFiles().forEach(f => {
-            // Skip hidden files (stub files starting with underscore or marked as hidden)
-            if (f.hidden) {
-                return; // Skip files marked as hidden
-            }
-            if (f.path && f.path.match(/^\/?_[^\/]+\.php$/)) {
-                return; // Skip PHP stub files starting with underscore
-            }
-
-            const content = f.model && modelIsAlive(f.model) ? f.model.getValue() : f.content;
-            files.push({
-                path: f.path,
-                content: content || '',
-                locked: false,
-                uid: 'null'
-            });
-        });
-
-        const payload = {
-            folderName: workspaceId,
-            files: files,
-            folders: {},
-            uiState: { openTabs: [], activeFile: '' },
-            timestamp: Date.now()
-        };
-
-        // Convert WSS to HTTPS for deployment endpoint
-        const httpBaseUrl = lspBaseUrl.replace(/^wss:/, 'https:').replace(/^ws:/, 'http:');
-        const deployUrl = httpBaseUrl.replace(/\/$/, '') + '/api/workspace/create';
-
-        return fetch(deployUrl, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify(payload)
-        }).then(response => {
-            if (!response.ok) {
-                throw new Error('Deployment failed: ' + response.statusText);
-            }
-            return response.json();
-        }).then(data => {
-            // Show success toast only if not silent
-            if (!silent) {
-                this.showToast('Successfully deployed to Flight server', 'success');
-            }
-            return data;
-        });
-    };
-
-    MonacoMultifileWrapper.prototype.showFlightPreview = function() {
-        // Create preview modal if it doesn't exist
-        if (!this.previewModal) {
-            this.createPreviewModal();
-        }
-
-        // Build preview URL pointing to deployed workspace
-        const lspBaseUrl = this.params.lsp_base_url;
-        const workspaceId = this.workspaceInstanceId;
-        // Convert WSS to HTTPS for preview URL
-        const httpBaseUrl = lspBaseUrl.replace(/^wss:/, 'https:').replace(/^ws:/, 'http:');
-        const previewUrl = httpBaseUrl.replace(/\/$/, '') + '/cr/' + workspaceId + '/';
-
-        // Show loading indicator
-        if (this.previewLoadingOverlay) {
-            this.previewLoadingOverlay.css('display', 'flex');
-        }
-
-        // Clear previous preview content and create iframe
-        const previewArea = this.previewModal.find('.monaco-preview-iframe-container');
-        previewArea.empty();
-
-        const iframe = $('<iframe></iframe>');
-        iframe.attr('src', previewUrl);
-        iframe.css({
-            width: '100%',
-            height: '100%',
-            border: 'none'
-        });
-
-        // Handle iframe load
-        iframe.on('load', () => {
-            if (this.previewLoadingOverlay) {
-                this.previewLoadingOverlay.css('display', 'none');
-            }
-        });
-
-        previewArea.append(iframe);
-
-        // Show modal using CSS instead of jQuery's show()
-        this.previewModal.css('display', 'flex');
-    };
-
-    MonacoMultifileWrapper.prototype.deployToFlightWorkspace = async function() {
-        await this.deployToFlightServer();
-        const lspBaseUrl = this.params.lsp_base_url;
-        const httpBaseUrl = lspBaseUrl.replace(/^wss:/, 'https:').replace(/^ws:/, 'http:');
-        return httpBaseUrl.replace(/\/$/, '') + '/cr/' + this.workspaceInstanceId;
-    };
-
-    MonacoMultifileWrapper.prototype.scanForRoutes = function() {
-        if (!this.vfs) {
-            return [];
-        }
-
-        const routes = [];
-        const files = this.vfs.getAllFiles();
-
-        files.forEach((file) => {
-            if (!file || !file.path || !file.path.toLowerCase().endsWith('.php')) {
-                return;
-            }
-            if (file.hidden || (file.path && file.path.match(/^\/?_[^\/]+\.php$/))) {
-                return;
-            }
-
-            const content = file.model && modelIsAlive(file.model) ? file.model.getValue() : (file.content || '');
-
-            // Pattern 1: Flight::route('METHOD /path', callback)
-            const routePattern = /Flight::route\s*\(\s*['"]([A-Z]+)\s+(\/[^'"]*)['"]/g;
-            let match;
-            while ((match = routePattern.exec(content)) !== null) {
-                routes.push({
-                    method: match[1],
-                    path: match[2],
-                    file: file.path,
-                    type: 'Flight::route'
-                });
-            }
-
-            // Pattern 2: Flight::get('/path', callback)
-            const getPattern = /Flight::get\s*\(\s*['"]([^'"]+)['"]/g;
-            while ((match = getPattern.exec(content)) !== null) {
-                routes.push({
-                    method: 'GET',
-                    path: match[1],
-                    file: file.path,
-                    type: 'Flight::get'
-                });
-            }
-
-            // Pattern 3: Flight::post, put, patch, delete
-            ['post', 'put', 'patch', 'delete'].forEach(method => {
-                const pattern = new RegExp(`Flight::${method}\\s*\\(\\s*['"]([^'"]+)['"]`, 'g');
-                let specificMatch;
-                while ((specificMatch = pattern.exec(content)) !== null) {
-                    routes.push({
-                        method: method.toUpperCase(),
-                        path: specificMatch[1],
-                        file: file.path,
-                        type: `Flight::${method}`
-                    });
-                }
-            });
-        });
-
-        routes.forEach((route) => {
-            route.pathParams = [];
-            const paramPattern = /@(\w+)/g;
-            let paramMatch;
-            while ((paramMatch = paramPattern.exec(route.path)) !== null) {
-                route.pathParams.push(paramMatch[1]);
-            }
-        });
-
-        return routes;
-    };
-
-    MonacoMultifileWrapper.prototype.renderApiTesterPanel = function() {
-        if (!this.apiTesterPanel) {
-            return;
-        }
-
-        this.apiTesterPanel.empty();
-
-        if (this.apiTesterTopBar) {
-            this.apiTesterPanel.append(this.apiTesterTopBar);
-            // IMPORTANT: Re-query the controls after re-appending
-            this.apiTesterControls = this.apiTesterTopBar.find('.monaco-api-topbar-controls');
-            this.attachSharedControlsToApiTopBar();
-        }
-
-        const header = $('<div class="monaco-api-tester-header"></div>');
-        const title = $('<h3 class="monaco-panel-title">API Tester</h3>');
-        const scanBtn = $('<button class="monaco-icon-btn" type="button"></button>');
-        scanBtn.append(
-            $('<span class="codicon codicon-refresh"></span>'),
-            $('<span>Scan Routes</span>')
-        );
-        scanBtn.on('click', () => {
-            const previousSelection = this.selectedRoute;
-            this.currentRoutes = this.scanForRoutes();
-            if (previousSelection && Array.isArray(this.currentRoutes)) {
-                this.selectedRoute = this.currentRoutes.find((route) =>
-                    route.method === previousSelection.method &&
-                    route.path === previousSelection.path &&
-                    route.file === previousSelection.file
-                ) || null;
-            } else {
-                this.selectedRoute = null;
-            }
-            this.renderApiTesterPanel();
-        });
-
-        header.append(title, scanBtn);
-        this.apiTesterPanel.append(header);
-
-        if (!this.currentRoutes) {
-            const prompt = $('<div class="monaco-api-tester-empty"></div>');
-            prompt.html(
-                '<span class="codicon codicon-search"></span>' +
-                '<p>Click "Scan Routes" to detect endpoints in your code</p>'
-            );
-            this.apiTesterPanel.append(prompt);
-            return;
-        }
-
-        if (this.currentRoutes.length === 0) {
-            const noRoutes = $('<div class="monaco-api-tester-empty"></div>');
-            noRoutes.html(
-                '<span class="codicon codicon-warning"></span>' +
-                '<p>No routes found. Define routes using Flight::get(), Flight::post(), etc.</p>'
-            );
-            this.apiTesterPanel.append(noRoutes);
-            return;
-        }
-
-        const routeSelector = $('<div class="monaco-api-tester-route-selector"></div>');
-        const routeLabel = $('<label>Select Route:</label>');
-        const routeDropdown = $('<select class="monaco-select"></select>');
-        routeDropdown.append($('<option>').val('').text('-- Select a route --'));
-
-        this.currentRoutes.forEach((route, index) => {
-            const option = $('<option></option>')
-                .val(index)
-                .text(`${route.method} ${route.path} (${route.file})`);
-            routeDropdown.append(option);
-        });
-
-        routeDropdown.on('change', (e) => {
-            const routeIndex = parseInt(e.target.value, 10);
-            if (!isNaN(routeIndex)) {
-                this.selectedRoute = this.currentRoutes[routeIndex];
-                this.renderRequestBuilder();
-                if (this.responseViewerContainer) {
-                    this.responseViewerContainer.empty();
-                }
-            } else {
-                this.selectedRoute = null;
-                this.renderRequestBuilder();
-                if (this.responseViewerContainer) {
-                    this.responseViewerContainer.empty();
-                }
-            }
-        });
-
-        const preselectedIndex = this.selectedRoute && this.currentRoutes
-            ? this.currentRoutes.findIndex(route =>
-                route.method === this.selectedRoute.method &&
-                route.path === this.selectedRoute.path &&
-                route.file === this.selectedRoute.file)
-            : -1;
-        if (preselectedIndex >= 0) {
-            routeDropdown.val(String(preselectedIndex));
-        }
-
-        routeSelector.append(routeLabel, routeDropdown);
-        this.apiTesterPanel.append(routeSelector);
-
-        this.requestBuilderContainer = $('<div class="monaco-api-tester-request-builder"></div>');
-        this.responseViewerContainer = $('<div class="monaco-api-tester-response"></div>');
-        this.apiTesterPanel.append(this.requestBuilderContainer, this.responseViewerContainer);
-
-        this.renderRequestBuilder();
-    };
-
-    MonacoMultifileWrapper.prototype.renderRequestBuilder = function() {
-        if (!this.requestBuilderContainer) {
-            return;
-        }
-        this.requestBuilderContainer.empty();
-        if (!this.selectedRoute) {
-            return;
-        }
-
-        const builder = $('<div class="monaco-request-builder"></div>');
-
-        // Method badge and path display
-        const methodBadge = $('<span class="monaco-method-badge"></span>')
-            .addClass(`monaco-method-${this.selectedRoute.method.toLowerCase()}`)
-            .text(this.selectedRoute.method);
-
-        const pathDisplay = $('<div class="monaco-path-display"></div>');
-        pathDisplay.append(methodBadge, $('<span></span>').text(this.selectedRoute.path));
-        builder.append(pathDisplay);
-
-        // Create tabs container
-        const tabsContainer = $('<div class="monaco-request-tabs"></div>');
-
-        // Determine which tabs to show
-        const hasBody = ['POST', 'PUT', 'PATCH'].includes(this.selectedRoute.method);
-
-        // Always show Params tab
-        const paramsTab = $('<button type="button" class="monaco-request-tab active" data-tab="params">Params</button>');
-        tabsContainer.append(paramsTab);
-
-        // Show Body tab for POST/PUT/PATCH
-        if (hasBody) {
-            const bodyTab = $('<button type="button" class="monaco-request-tab" data-tab="body">Body</button>');
-            tabsContainer.append(bodyTab);
-        }
-
-        // Always show Headers tab
-        const headersTab = $('<button type="button" class="monaco-request-tab" data-tab="headers">Headers</button>');
-        tabsContainer.append(headersTab);
-
-        builder.append(tabsContainer);
-
-        // Create tab content containers
-        const tabContents = $('<div class="monaco-request-tab-contents"></div>');
-
-        // Params tab content
-        const paramsContent = $('<div class="monaco-request-tab-content active" data-content="params"></div>');
-
-        // Path parameters
-        const pathParams = Array.isArray(this.selectedRoute.pathParams) ? this.selectedRoute.pathParams : [];
-        if (pathParams.length > 0) {
-            const pathParamsSection = $('<div class="monaco-params-section"></div>');
-            const pathParamsHeader = $('<h4>Path Parameters</h4>');
-            pathParamsSection.append(pathParamsHeader);
-
-            pathParams.forEach(param => {
-                const paramRow = $('<div class="monaco-param-row"></div>');
-                const paramLabel = $('<label></label>').text(`@${param}:`);
-                const paramInput = $('<input type="text" class="monaco-input">')
-                    .attr('placeholder', `Value for ${param}`)
-                    .attr('data-param', param);
-                paramRow.append(paramLabel, paramInput);
-                pathParamsSection.append(paramRow);
-            });
-
-            paramsContent.append(pathParamsSection);
-        }
-
-        // Query parameters
-        const querySection = $('<div class="monaco-params-section"></div>');
-        const queryHeader = $('<h4>Query Parameters</h4>');
-        const addQueryBtn = $('<button type="button" class="monaco-icon-btn-small"></button>');
-        addQueryBtn.html('<span class="codicon codicon-add"></span> Add');
-        addQueryBtn.on('click', () => this.addQueryParam());
-        queryHeader.append(addQueryBtn);
-        querySection.append(queryHeader);
-
-        this.queryParamsContainer = $('<div class="monaco-query-params"></div>');
-        querySection.append(this.queryParamsContainer);
-        paramsContent.append(querySection);
-
-        tabContents.append(paramsContent);
-
-        // Body tab content (for POST/PUT/PATCH)
-        if (hasBody) {
-            const bodyContent = $('<div class="monaco-request-tab-content" data-content="body"></div>');
-            const bodySection = $('<div class="monaco-body-section"></div>');
-            const bodyHeader = $('<h4>Request Body</h4>');
-            const bodyTypeSelector = $('<select class="monaco-select-small"></select>');
-            bodyTypeSelector.append(
-                $('<option value="json">JSON</option>'),
-                $('<option value="form">Form Data</option>'),
-                $('<option value="text">Plain Text</option>')
-            );
-            bodyTypeSelector.val(this.bodyType || 'json');
-            bodyTypeSelector.on('change', (e) => {
-                this.bodyType = e.target.value;
-            });
-            bodyHeader.append(bodyTypeSelector);
-            bodySection.append(bodyHeader);
-
-            this.bodyEditor = $('<textarea class="monaco-body-editor" rows="12" placeholder="Enter request body"></textarea>');
-            bodySection.append(this.bodyEditor);
-            bodyContent.append(bodySection);
-            tabContents.append(bodyContent);
-        } else {
-            this.bodyEditor = null;
-        }
-
-        // Headers tab content
-        const headersContent = $('<div class="monaco-request-tab-content" data-content="headers"></div>');
-        const headersSection = $('<div class="monaco-params-section"></div>');
-        const headersHeader = $('<h4>Request Headers</h4>');
-        const addHeaderBtn = $('<button type="button" class="monaco-icon-btn-small"></button>');
-        addHeaderBtn.html('<span class="codicon codicon-add"></span> Add');
-        addHeaderBtn.on('click', () => this.addRequestHeader());
-        headersHeader.append(addHeaderBtn);
-        headersSection.append(headersHeader);
-
-        this.requestHeadersContainer = $('<div class="monaco-query-params"></div>');
-        headersSection.append(this.requestHeadersContainer);
-        headersContent.append(headersSection);
-        tabContents.append(headersContent);
-
-        builder.append(tabContents);
-
-        // Tab switching logic
-        tabsContainer.find('.monaco-request-tab').on('click', function() {
-            const tabName = $(this).attr('data-tab');
-            tabsContainer.find('.monaco-request-tab').removeClass('active');
-            $(this).addClass('active');
-            tabContents.find('.monaco-request-tab-content').removeClass('active');
-            tabContents.find(`[data-content="${tabName}"]`).addClass('active');
-        });
-
-        // Send button
-        const sendBtn = $('<button type="button" class="monaco-send-btn"></button>');
-        sendBtn.html('<span class="codicon codicon-play"></span> Send Request');
-        sendBtn.on('click', () => this.sendRequest());
-        builder.append(sendBtn);
-
-        this.requestBuilderContainer.append(builder);
-    };
-
-    MonacoMultifileWrapper.prototype.addQueryParam = function() {
-        if (!this.queryParamsContainer) {
-            return;
-        }
-        const paramRow = $('<div class="monaco-query-param-row"></div>');
-        const keyInput = $('<input type="text" class="monaco-input monaco-param-key" placeholder="Key">');
-        const valueInput = $('<input type="text" class="monaco-input monaco-param-value" placeholder="Value">');
-        const removeBtn = $('<button type="button" class="monaco-icon-btn-small"></button>');
-        removeBtn.html('<span class="codicon codicon-close"></span>');
-        removeBtn.on('click', () => paramRow.remove());
-        paramRow.append(keyInput, valueInput, removeBtn);
-        this.queryParamsContainer.append(paramRow);
-    };
-
-    MonacoMultifileWrapper.prototype.addRequestHeader = function() {
-        if (!this.requestHeadersContainer) {
-            return;
-        }
-        const headerRow = $('<div class="monaco-query-param-row"></div>');
-        const keyInput = $('<input type="text" class="monaco-input monaco-param-key" placeholder="Header Name">');
-        const valueInput = $('<input type="text" class="monaco-input monaco-param-value" placeholder="Header Value">');
-        const removeBtn = $('<button type="button" class="monaco-icon-btn-small"></button>');
-        removeBtn.html('<span class="codicon codicon-close"></span>');
-        removeBtn.on('click', () => headerRow.remove());
-        headerRow.append(keyInput, valueInput, removeBtn);
-        this.requestHeadersContainer.append(headerRow);
-    };
-
-    MonacoMultifileWrapper.prototype.sendRequest = async function() {
-        if (!this.selectedRoute) {
-            this.renderResponseError(new Error('Select a route to send a request.'));
-            return;
-        }
-        if (!this.isFlightQuestion()) {
-            this.renderResponseError(new Error('API testing is available for Flight questions only.'));
-            return;
-        }
-
-        try {
-            this.renderResponseLoading();
-
-            const workspaceUrl = await this.deployToFlightWorkspace();
-
-            let path = this.selectedRoute.path || '';
-            this.requestBuilderContainer.find('input[data-param]').each((i, input) => {
-                const param = $(input).attr('data-param');
-                const value = $(input).val() || '';
-                path = path.replace(`@${param}`, encodeURIComponent(value));
-            });
-
-            const queryParams = {};
-            if (this.queryParamsContainer) {
-                this.queryParamsContainer.find('.monaco-query-param-row').each((i, row) => {
-                    const key = $(row).find('.monaco-param-key').val();
-                    const value = $(row).find('.monaco-param-value').val();
-                    if (key) {
-                        queryParams[key] = value;
-                    }
-                });
-            }
-
-            const queryString = Object.keys(queryParams).length > 0
-                ? '?' + new URLSearchParams(queryParams).toString()
-                : '';
-
-            const baseUrl = workspaceUrl.replace(/\/$/, '');
-            const normalizedPath = path.startsWith('/') ? path : '/' + path;
-            const fullUrl = `${baseUrl}${normalizedPath}${queryString}`;
-
-            const options = {
-                method: this.selectedRoute.method,
-                headers: {}
-            };
-
-            // Add custom headers from Headers tab
-            if (this.requestHeadersContainer) {
-                this.requestHeadersContainer.find('.monaco-query-param-row').each((i, row) => {
-                    const key = $(row).find('.monaco-param-key').val();
-                    const value = $(row).find('.monaco-param-value').val();
-                    if (key) {
-                        options.headers[key] = value;
-                    }
-                });
-            }
-
-            if (['POST', 'PUT', 'PATCH'].includes(this.selectedRoute.method) && this.bodyEditor) {
-                const bodyContent = this.bodyEditor.val();
-                if (this.bodyType === 'form') {
-                    options.headers['Content-Type'] = 'application/x-www-form-urlencoded';
-                    options.body = bodyContent;
-                } else if (this.bodyType === 'text') {
-                    options.headers['Content-Type'] = 'text/plain';
-                    options.body = bodyContent;
-                } else {
-                    options.headers['Content-Type'] = 'application/json';
-                    options.body = bodyContent;
-                }
-            }
-
-            const startTime = Date.now();
-            const response = await fetch(fullUrl, options);
-            const endTime = Date.now();
-            const duration = endTime - startTime;
-
-            const responseText = await response.text();
-            let responseBody;
-            try {
-                responseBody = JSON.parse(responseText);
-            } catch (e) {
-                responseBody = responseText;
-            }
-
-            this.renderResponse({
-                status: response.status,
-                statusText: response.statusText,
-                headers: Object.fromEntries(response.headers.entries()),
-                body: responseBody,
-                duration: duration,
-                url: fullUrl,
-                baseUrl: baseUrl
-            });
-        } catch (error) {
-            this.renderResponseError(error);
-        }
-    };
-
-    MonacoMultifileWrapper.prototype.renderResponse = function(response) {
-        if (!this.responseViewerContainer) {
-            return;
-        }
-        this.responseViewerContainer.empty();
-
-        const viewer = $('<div class="monaco-response-viewer"></div>');
-
-        const statusLine = $('<div class="monaco-response-status"></div>');
-        const statusBadge = $('<span class="monaco-status-badge"></span>')
-            .addClass(response.status < 400 ? 'monaco-status-success' : 'monaco-status-error')
-            .text(`${response.status} ${response.statusText}`);
-        const duration = $('<span class="monaco-response-duration"></span>').text(`${response.duration}ms`);
-        statusLine.append(statusBadge, duration);
-        viewer.append(statusLine);
-
-        // Display URL with base hidden
-        let displayUrl = response.url || '';
-        if (response.baseUrl && displayUrl.startsWith(response.baseUrl)) {
-            displayUrl = '<base_url>' + displayUrl.substring(response.baseUrl.length);
-        }
-        const urlDisplay = $('<div class="monaco-response-url"></div>').text(displayUrl);
-        viewer.append(urlDisplay);
-
-        const tabsContainer = $('<div class="monaco-response-tabs"></div>');
-        const bodyTab = $('<button type="button" class="monaco-response-tab active">Body</button>');
-        const rawTab = $('<button type="button" class="monaco-response-tab">Raw Response</button>');
-        const headersTab = $('<button type="button" class="monaco-response-tab">Headers</button>');
-        tabsContainer.append(bodyTab, rawTab, headersTab);
-        viewer.append(tabsContainer);
-
-        // Body tab
-        const bodyContent = $('<div class="monaco-response-content"></div>');
-        const isJson = response && typeof response.body === 'object';
-        const rawText = response && response.body !== undefined ? String(response.body) === '[object Object]' ? JSON.stringify(response.body) : String(response.body) : '';
-        const contentType = response && response.headers ? (response.headers['content-type'] || response.headers['Content-Type'] || '') : '';
-        const looksHtml = contentType.toLowerCase().indexOf('text/html') !== -1 || /<[^>]+>/.test(rawText);
-
-        if (isJson) {
-            const jsonString = JSON.stringify(response.body, null, 2);
-            const bodyPre = $('<pre class="monaco-response-body"></pre>');
-            bodyPre.html(this.syntaxHighlightJSON(jsonString));
-            bodyContent.append(bodyPre);
-        } else {
-            const plainTextContainer = $('<div class="monaco-response-plain"></div>');
-            if (looksHtml) {
-                const textOnly = $('<div>').html(rawText).text();
-                plainTextContainer.text(textOnly || rawText);
-            } else {
-                plainTextContainer.text(rawText);
-            }
-            bodyContent.append(plainTextContainer);
-        }
-        viewer.append(bodyContent);
-
-        // Raw tab
-        const rawContent = $('<div class="monaco-response-content"></div>').css('display', 'none');
-        const rawPre = $('<pre class="monaco-response-body monaco-response-body-raw"></pre>');
-        rawPre.text(rawText);
-        rawContent.append(rawPre);
-        viewer.append(rawContent);
-
-        // Headers tab
-        const headersContent = $('<div class="monaco-response-content"></div>').css('display', 'none');
-        const headersList = $('<div class="monaco-headers-list"></div>');
-        if (response && response.headers) {
-            Object.entries(response.headers).forEach(([key, value]) => {
-                const headerRow = $('<div class="monaco-header-row"></div>');
-                const headerKey = $('<span class="monaco-header-key"></span>').text(`${key}:`);
-                const headerValue = $('<span class="monaco-header-value"></span>').text(value);
-                headerRow.append(headerKey, headerValue);
-                headersList.append(headerRow);
-            });
-        }
-        headersContent.append(headersList);
-        viewer.append(headersContent);
-
-        const activateTab = (target) => {
-            [bodyTab, rawTab, headersTab].forEach(tab => tab.removeClass('active'));
-            [bodyContent, rawContent, headersContent].forEach(content => content.hide());
-            target.tab.addClass('active');
-            target.content.show();
-        };
-
-        bodyTab.on('click', () => activateTab({tab: bodyTab, content: bodyContent}));
-        rawTab.on('click', () => activateTab({tab: rawTab, content: rawContent}));
-        headersTab.on('click', () => activateTab({tab: headersTab, content: headersContent}));
-
-        this.responseViewerContainer.append(viewer);
-    };
-
-    MonacoMultifileWrapper.prototype.renderResponseLoading = function() {
-        if (!this.responseViewerContainer) {
-            return;
-        }
-        this.responseViewerContainer.empty();
-        const loading = $('<div class="monaco-response-loading"></div>');
-        loading.html('<span class="codicon codicon-loading codicon-modifier-spin"></span> Sending request...');
-        this.responseViewerContainer.append(loading);
-    };
-
-    MonacoMultifileWrapper.prototype.renderResponseError = function(error) {
-        if (!this.responseViewerContainer) {
-            return;
-        }
-        this.responseViewerContainer.empty();
-        const errorDiv = $('<div class="monaco-response-error"></div>');
-        const errorIcon = $('<span class="codicon codicon-error"></span>');
-        const message = error && error.message ? error.message : error;
-        const errorMsg = $('<p></p>').text(`Request failed: ${message}`);
-        errorDiv.append(errorIcon, errorMsg);
-        this.responseViewerContainer.append(errorDiv);
-    };
-
-    MonacoMultifileWrapper.prototype.syntaxHighlightJSON = function(json) {
-        json = json.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-        return json.replace(
-            /("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?)/g,
-            function(match) {
-                let cls = 'json-number';
-                if (/^"/.test(match)) {
-                    if (/:$/.test(match)) {
-                        cls = 'json-key';
-                    } else {
-                        cls = 'json-string';
-                    }
-                } else if (/true|false/.test(match)) {
-                    cls = 'json-boolean';
-                } else if (/null/.test(match)) {
-                    cls = 'json-null';
-                }
-                return '<span class="' + cls + '">' + match + '</span>';
-            }
-        );
     };
 
     MonacoMultifileWrapper.prototype.createPreviewModal = function() {
@@ -7585,7 +7198,8 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
         refreshBtn.on('click', () => this.refreshPreview());
 
         // Add console toggle button
-        const consoleToggleBtn = $('<button type="button" class="monaco-preview-btn monaco-console-toggle-btn" title="Toggle console"></button>');
+        const consoleToggleBtn = $('<button type="button" class="monaco-preview-btn monaco-console-toggle-btn" ' +
+            'title="Toggle console"></button>');
         consoleToggleBtn.html('<span class="codicon codicon-terminal"></span> Console');
         consoleToggleBtn.on('click', () => this.toggleConsolePanel());
 
@@ -7767,33 +7381,37 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
         let startY = 0;
         let startHeight = 0;
 
+        // The document-level move/up handlers only exist while a resize drag is in progress.
+        const resizeEvents = 'mousemove' + this.eventNamespace + 'resize mouseup' + this.eventNamespace + 'resize';
+        this.stopConsoleResize = () => {
+            $(document).off(resizeEvents);
+            if (isResizing) {
+                isResizing = false;
+                $('body').css('user-select', '');
+            }
+        };
+
         resizeHandle.on('mousedown', (e) => {
             isResizing = true;
             startY = e.clientY;
             startHeight = this.consolePanel.height();
             e.preventDefault();
             $('body').css('user-select', 'none');
-        });
+            $(document).off(resizeEvents);
+            $(document).on('mousemove' + this.eventNamespace + 'resize', (moveEvent) => {
+                if (!isResizing || !this.consolePanel) {
+                    return;
+                }
+                const deltaY = startY - moveEvent.clientY;
+                const newHeight = startHeight + deltaY;
+                const minHeight = 100;
+                const maxHeight = previewArea.height() * 0.8;
 
-        $(document).on('mousemove', (e) => {
-            if (!isResizing) {
-                return;
-            }
-            const deltaY = startY - e.clientY;
-            const newHeight = startHeight + deltaY;
-            const minHeight = 100;
-            const maxHeight = previewArea.height() * 0.8;
-
-            if (newHeight >= minHeight && newHeight <= maxHeight) {
-                this.consolePanel.css('height', newHeight + 'px');
-            }
-        });
-
-        $(document).on('mouseup', () => {
-            if (isResizing) {
-                isResizing = false;
-                $('body').css('user-select', '');
-            }
+                if (newHeight >= minHeight && newHeight <= maxHeight) {
+                    this.consolePanel.css('height', newHeight + 'px');
+                }
+            });
+            $(document).on('mouseup' + this.eventNamespace + 'resize', () => this.stopConsoleResize());
         });
 
         this.consoleResizeHandle = resizeHandle;
@@ -7810,18 +7428,77 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
             }
         });
 
-        // Listen for messages from iframe
+        // Listen for messages from this instance's preview frame only. The frame has an
+        // opaque origin, so its identity is checked by comparing the message source window.
         this.messageListener = (event) => {
-            if (event.data && (event.data.type === 'console' || event.data.type === 'error')) {
-                this.handleConsoleMessage(event.data);
+            if (this.destroyed || !this.previewIframe || !this.previewIframe[0] ||
+                    event.source !== this.previewIframe[0].contentWindow) {
+                return;
+            }
+            const data = event.data;
+            if (!data || typeof data !== 'object') {
+                return;
+            }
+            if (data.type === 'console' || data.type === 'error') {
+                this.handleConsoleMessage({
+                    type: data.type,
+                    level: typeof data.level === 'string' ? data.level : 'log',
+                    message: data.message === undefined || data.message === null ? '' : String(data.message),
+                    filename: data.filename ? String(data.filename) : '',
+                    lineno: data.lineno,
+                    colno: data.colno,
+                    timestamp: data.timestamp
+                });
+            } else if (data.type === 'navigate' && typeof data.href === 'string') {
+                this.handlePreviewNavigation(data.href);
             }
         };
         window.addEventListener('message', this.messageListener);
     };
 
+    /**
+     * Handle a request from the preview frame to follow a relative link or form action.
+     *
+     * @param {string} href The link target, relative to the page currently shown.
+     */
+    MonacoMultifileWrapper.prototype.handlePreviewNavigation = function(href) {
+        if (!this.vfs || !Array.isArray(this.previewHistory)) {
+            return;
+        }
+        const currentPath = this.previewHistory[this.previewHistoryIndex] || '';
+        let target = href.split('#')[0].split('?')[0];
+        try {
+            target = decodeURIComponent(target);
+        } catch (e) {
+            // Use the raw value.
+        }
+        if (!target) {
+            return;
+        }
+        const resolved = this.resolvePath(currentPath, target);
+        const file = this.vfs.getFile(resolved);
+        if (file && /\.html?$/i.test(file.getName())) {
+            this.loadPreviewFile(resolved);
+        } else {
+            this.handleConsoleMessage({
+                type: 'console',
+                level: 'warn',
+                message: 'Preview: "' + href + '" is not an HTML file in this workspace.',
+                timestamp: new Date().toISOString()
+            });
+        }
+    };
+
     MonacoMultifileWrapper.prototype.closePreview = function() {
+        if (this.stopConsoleResize) {
+            this.stopConsoleResize();
+        }
         if (this.previewModal) {
             this.previewModal.css('display', 'none');
+        }
+        // Stop the student's page (timers, media etc.) while the preview is closed.
+        if (this.previewIframe && this.previewIframe[0]) {
+            this.previewIframe[0].setAttribute('srcdoc', '');
         }
     };
 
@@ -7858,19 +7535,11 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
         this.previewHistoryIndex = 0;
         this.updateNavigationButtons();
 
-        // Show loading indicator
-        if (this.previewLoadingOverlay) {
-            this.previewLoadingOverlay.css('display', 'flex');
-        }
-
         // Clear console
         this.clearConsole();
 
         // Build and update preview
-        const previewHTML = this.buildPreviewHTML(mainFile);
-        if (previewHTML) {
-            this.updatePreviewIframe(previewHTML);
-        }
+        this.renderPreviewFile(mainFile);
     };
 
     MonacoMultifileWrapper.prototype.toggleConsolePanel = function() {
@@ -8071,12 +7740,12 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
         const container = this.previewIframe.parent();
         const newIframe = this.buildPreviewIframeElement();
 
-        // Hide loading indicator and setup link interception when iframe loads
+        // Hide loading indicator when the iframe loads. The frame is cross-origin to us, so all
+        // other interaction (console output, link navigation) arrives via postMessage.
         newIframe.on('load', () => {
             if (this.previewLoadingOverlay) {
                 this.previewLoadingOverlay.css('display', 'none');
             }
-            this.setupPreviewLinkInterception(newIframe[0]);
         });
 
         newIframe[0].setAttribute('srcdoc', html);
@@ -8088,7 +7757,11 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
     };
 
     MonacoMultifileWrapper.prototype.buildPreviewIframeElement = function() {
-        const iframe = $('<iframe sandbox="allow-scripts allow-same-origin"></iframe>');
+        // No allow-same-origin: the student's page gets an opaque origin, so it cannot reach
+        // the Moodle page, its cookies or its storage. External resources (e.g. CSS/JS from a CDN)
+        // still load normally.
+        const iframe = $('<iframe sandbox="allow-scripts allow-forms allow-modals allow-popups"></iframe>');
+        iframe.attr('title', 'Preview');
         iframe.css({
             width: '100%',
             height: '100%',
@@ -8099,72 +7772,10 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
         return iframe;
     };
 
-    MonacoMultifileWrapper.prototype.setupPreviewLinkInterception = function(iframeElement) {
-        try {
-            const iframeDoc = iframeElement.contentDocument || iframeElement.contentWindow.document;
-            if (!iframeDoc) {
-                return;
-            }
-
-            // Add click handler to intercept link clicks
-            iframeDoc.addEventListener('click', (e) => {
-                const link = e.target.closest('a');
-                if (!link || !link.href) {
-                    return;
-                }
-
-                const href = link.getAttribute('href');
-                if (!href) {
-                    return;
-                }
-
-                // Treat anything with an explicit scheme, protocol-relative, or absolute path as external.
-                const hasScheme = /^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(href);
-                const isProtocolRelative = href.startsWith('//');
-                const isExternal = hasScheme || isProtocolRelative;
-                const isHashOnly = href.startsWith('#');
-                const isMailto = href.startsWith('mailto:');
-                const isTel = href.startsWith('tel:');
-                const isAbsolute = href.startsWith('/');
-
-                if (isExternal || isMailto || isTel || isAbsolute) {
-                    // Block navigation to external/absolute links inside preview
-                    e.preventDefault();
-                    e.stopPropagation();
-                    return;
-                }
-
-                // Hash-only: keep navigation inside the preview (avoid outer page hash updates)
-                if (isHashOnly) {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    try {
-                        const target = iframeDoc.querySelector(href);
-                        if (target && typeof target.scrollIntoView === 'function') {
-                            target.scrollIntoView({behavior: 'smooth', block: 'start'});
-                        } else {
-                            // Fallback: update the iframe's hash
-                            iframeDoc.location.hash = href;
-                        }
-                    } catch (err2) {
-                        // Ignore failures; better than navigating the outer page.
-                    }
-                    return;
-                }
-
-                // It's a relative link - try to load it from VFS
-                e.preventDefault();
-                const file = this.vfs.getFile(href);
-                if (file && file.getName().match(/\.html?$/i)) {
-                    this.loadPreviewFile(href);
-                }
-            }, true);
-        } catch (err) {
-            // Ignore errors accessing iframe document (CORS, etc.)
-        }
-    };
-
     MonacoMultifileWrapper.prototype.loadPreviewFile = function(filepath, skipHistory) {
+        if (!this.vfs) {
+            return;
+        }
         const file = this.vfs.getFile(filepath);
         if (!file) {
             return;
@@ -8179,8 +7790,8 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
             this.updateNavigationButtons();
         }
 
-        const html = file.content || '';
-        this.updatePreviewIframe(html);
+        // Same path as the main preview: current editor content, inlined CSS/JS, console bridge.
+        this.renderPreviewFile(file);
     };
 
     MonacoMultifileWrapper.prototype.navigateBack = function() {
@@ -8357,186 +7968,191 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
         };
     };
 
-    MonacoMultifileWrapper.prototype.restoreUiState = function(uiState) {
-        if (!uiState) {
-            return;
-        }
-
-        // Restore open tabs
-        if (uiState.openTabs && Array.isArray(uiState.openTabs)) {
-            // Only restore tabs for files that exist
-            this.openTabs = uiState.openTabs.filter(path => this.vfs.getFile(path));
-        }
-
-        // Active file will be restored when we open the first file
-        return uiState.activeFile;
-    };
-
+    /**
+     * Debounce a function; the returned function also has a cancel() method.
+     *
+     * @param {Function} func The function to debounce.
+     * @param {number} wait Delay in milliseconds.
+     * @returns {Function}
+     */
     function debounce(func, wait) {
         let timeout;
-        return function executedFunction(...args) {
+        const executedFunction = function(...args) {
             const later = () => {
                 clearTimeout(timeout);
+                timeout = null;
                 func(...args);
             };
             clearTimeout(timeout);
             timeout = setTimeout(later, wait);
         };
+        executedFunction.cancel = function() {
+            clearTimeout(timeout);
+            timeout = null;
+        };
+        return executedFunction;
     }
 
     /**
-     * The timestamp already stored in the answer field, when that answer holds
-     * exactly the given files. Used on the first sync after a page load so that
-     * reopening an attempt does not restamp (and so dirty) an unchanged answer.
-     *
-     * @param {string} filesJson Serialised files of the current workspace.
-     * @returns {number|null} The stored timestamp, or null if it does not match.
+     * Copy the live content of every editor model back into its VirtualFile.
      */
-    MonacoMultifileWrapper.prototype.timestampOfStoredAnswer = function(filesJson) {
-        try {
-            const stored = JSON.parse(this.textarea.value);
-            if (!stored || typeof stored.timestamp !== 'number') {
-                return null;
+    MonacoMultifileWrapper.prototype.captureModelContent = function() {
+        this.vfs.getAllFiles().forEach(file => {
+            if (modelIsAlive(file.model)) {
+                try {
+                    file.content = file.model.getValue();
+                } catch (e) {
+                    // Model already disposed, skip
+                }
             }
-            const storedFiles = JSON.stringify({files: stored.files, folders: stored.folders});
-            return storedFiles === filesJson ? stored.timestamp : null;
-        } catch (e) {
-            return null; // No answer yet, or not our JSON.
-        }
+        });
     };
 
     MonacoMultifileWrapper.prototype.sync = function(isSubmit = false) {
-        // Save current file content
-        if (this.activeFile && modelIsAlive(this.activeFile.model)) {
-            try {
-                this.activeFile.content = this.activeFile.model.getValue();
-            } catch (e) {
-                // Model already disposed, skip
+        // Never write the answer unless the editor is fully set up (and still alive), and
+        // never in review (read-only) mode.
+        if (this.destroyed || !this.initialised || !this.vfs || !this.textarea || this.isReadOnlyMode) {
+            return;
+        }
+        try {
+            this.captureModelContent();
+            // Only rewrite the answer if its content (files, contents, locks, folders) changed.
+            // UI-only changes such as switching tabs, expanding folders or just reloading the
+            // page must not touch it: Moodle would then treat the answer as edited (autosave
+            // churn, a spurious "answer has changed since it was checked" warning) and identical
+            // resubmissions would not be recognised as identical.
+            const signature = this.contentSignature(this.vfs);
+            if (signature === this.answerSignature(this.textarea.value)) {
+                return;
             }
-        }
-
-        // Serialize all files to JSON
-        const data = this.vfs.toJSON();
-        // The timestamp records when the files last changed, not when this sync
-        // ran. The sync timer fires every few seconds, so re-stamping it each
-        // time would keep rewriting an otherwise unchanged answer: Moodle then
-        // treats the answer as permanently edited (autosave churn, a spurious
-        // "your answer has changed since it was checked" warning) and identical
-        // resubmissions are no longer recognised as identical.
-        const filesJson = JSON.stringify(data);
-        if (filesJson !== this.lastSyncedFilesJson) {
-            const unchanged = this.timestampOfStoredAnswer(filesJson);
-            this.lastSyncedFilesJson = filesJson;
-            this.lastContentTimestamp = unchanged === null ? new Date().getTime() : unchanged;
-        }
-        data.uiState = this.getUiState();
-        data.timestamp = this.lastContentTimestamp; // When the files last changed.
-        data.folderName = this.workspaceInstanceId; // Add workspace ID for Flight deployment
-        const json = JSON.stringify(data, null, 2);
-        if (json !== this.textarea.value) {
+            const data = this.vfs.toJSON();
+            data.uiState = this.getUiState(); // Restores e.g. the author's choice of open tabs.
+            data.timestamp = new Date().getTime(); // When the files last changed.
+            const json = JSON.stringify(data, null, 2);
             this.textarea.value = json;
-        }
+            this.answerSignatureCache = {text: json, signature: signature};
 
-        // Trigger change event if this is a submit
-        if (isSubmit) {
-            this.textarea.dispatchEvent(new Event('change', { bubbles: true }));
-        }
-    };
-
-    MonacoMultifileWrapper.prototype.getLocalStorageKey = function() {
-        if (this.autosaveKeyInfo && this.autosaveKeyInfo.primary) {
-            return this.autosaveKeyInfo.primary;
-        }
-        // Attempt to extract a more specific identifier from textareaId.
-        // Expected format: id_q<questionid>_<field_name> or id_q<questionid>:<attemptid>_<field_name>
-        const textareaId = this.textarea.id || '';
-        let identifier = 'unknown';
-        let legacyIdentifier = null;
-        let questionId = null;
-        let attemptId = null;
-
-        // First, try to extract questionId and attemptId from textarea ID
-        const match = textareaId.match(/id_q(\d+)(?::(\d+))?_/);
-        if (match) {
-            questionId = match[1];
-            attemptId = match[2]; // This will be undefined if not present
-        }
-
-        // Check for data-questionid attribute (usually set by renderer)
-        const datasetQuestionId = this.textarea.dataset && this.textarea.dataset.questionid
-            ? this.textarea.dataset.questionid
-            : null;
-        if (datasetQuestionId) {
-            questionId = datasetQuestionId;
-        }
-
-        // Build identifier with attempt ID when available to isolate attempts
-        if (questionId) {
-            if (attemptId) {
-                // Include attempt ID for proper isolation between attempts
-                identifier = `q${questionId}_a${attemptId}`;
-                // Legacy key without attempt ID for migration
-                legacyIdentifier = `question_${questionId}`;
-            } else {
-                // No attempt ID available (e.g., question preview, authoring)
-                identifier = `question_${questionId}`;
+            // Trigger change event if this is a submit
+            if (isSubmit) {
+                this.textarea.dispatchEvent(new Event('change', {bubbles: true}));
             }
+        } catch (err) {
+            logWarn('Monaco multifile UI: failed to sync the answer', err);
         }
-
-        const primaryKey = `coderunner_autosave_multifile_${identifier}`;
-        const legacyKeys = [];
-        if (legacyIdentifier && legacyIdentifier !== identifier) {
-            legacyKeys.push(`coderunner_autosave_multifile_${legacyIdentifier}`);
-        }
-        this.autosaveKeyInfo = {
-            primary: primaryKey,
-            legacy: legacyKeys
-        };
-        return primaryKey;
     };
 
-MonacoMultifileWrapper.prototype.getLegacyAutosaveKeys = function() {
-    if (!this.autosaveKeyInfo) {
-        this.getLocalStorageKey();
-    }
-    if (this.autosaveKeyInfo && Array.isArray(this.autosaveKeyInfo.legacy)) {
-        return this.autosaveKeyInfo.legacy;
-    }
-    return [];
-};
+    /**
+     * The localStorage key for this answer's backup, or null if local backup does not apply.
+     * Only answers in a question attempt (textarea id "id_q<usageid>:<slot>_<field>") are backed
+     * up, keyed on the usage, slot and field so that backups never leak between attempts.
+     *
+     * @returns {string|null}
+     */
+    MonacoMultifileWrapper.prototype.getLocalStorageKey = function() {
+        if (this.autosaveKey !== undefined) {
+            return this.autosaveKey;
+        }
+        const match = /^id_q(\d+):(\d+)_(.+)$/.exec(this.textarea ? this.textarea.id || '' : '');
+        this.autosaveKey = match
+            ? 'coderunner_autosave_multifile_u' + match[1] + '_s' + match[2] + '_' +
+                match[3].replace(/[^a-zA-Z0-9_-]/g, '_')
+            : null;
+        return this.autosaveKey;
+    };
 
-    MonacoMultifileWrapper.prototype.loadLocalBackupData = function(options = {}) {
-        if (!window.localStorage) {
+    /**
+     * Whether answers are backed up to (and restored from) browser storage.
+     *
+     * @returns {boolean}
+     */
+    MonacoMultifileWrapper.prototype.isAutosaveEnabled = function() {
+        return !this.isReadOnlyMode && !this.authorMode && !!this.params.autosave && !!this.getLocalStorageKey();
+    };
+
+    /**
+     * Delete backups written by older versions of this UI, whose keys did not identify the
+     * attempt (so could hold another user's or another attempt's work).
+     */
+    MonacoMultifileWrapper.prototype.removeLegacyAutosaveKeys = function() {
+        const prefix = 'coderunner_autosave_multifile_';
+        const ids = [];
+        const match = /^id_q(\d+)(?::(\d+))?_/.exec(this.textarea.id || '');
+        const datasetQuestionId = this.textarea.dataset ? this.textarea.dataset.questionid : null;
+        [match ? match[1] : null, datasetQuestionId].forEach(questionId => {
+            if (questionId) {
+                ids.push('question_' + questionId);
+                if (match && match[2]) {
+                    ids.push('q' + questionId + '_a' + match[2]);
+                }
+            }
+        });
+        ids.push('unknown');
+        try {
+            if (!window.localStorage) {
+                return;
+            }
+            ids.forEach(id => window.localStorage.removeItem(prefix + id));
+        } catch (err) {
+            // Best effort only.
+        }
+    };
+
+    MonacoMultifileWrapper.prototype.loadLocalBackupData = function() {
+        const key = this.getLocalStorageKey();
+        if (!key) {
             return null;
         }
-        const opts = Object.assign({migrate: true}, options);
-        const primaryKey = this.getLocalStorageKey();
-        const keysToCheck = [primaryKey].concat(this.getLegacyAutosaveKeys());
-        for (let i = 0; i < keysToCheck.length; i++) {
-            const key = keysToCheck[i];
-            try {
-                const value = window.localStorage.getItem(key);
-                if (value) {
-                    if (opts.migrate && key !== primaryKey) {
-                        try {
-                            window.localStorage.setItem(primaryKey, value);
-                            window.localStorage.removeItem(key);
-                        } catch (err) {
-                            // Best effort migration.
-                        }
-                    }
-                    return value;
-                }
-            } catch (err) {
-                logWarn('Failed to load from localStorage', err);
-                return null;
-            }
+        try {
+            return window.localStorage ? window.localStorage.getItem(key) : null;
+        } catch (err) {
+            logWarn('Failed to load from localStorage', err);
+            return null;
         }
-        return null;
+    };
+
+    /**
+     * Find a local backup that is newer than the stored answer.
+     *
+     * @param {Object} serverData The parsed answer from the textarea.
+     * @returns {Object|null} {data, vfs, signature} for the backup, or null if it should not be used.
+     */
+    MonacoMultifileWrapper.prototype.loadNewerLocalBackup = function(serverData) {
+        if (!this.isAutosaveEnabled()) {
+            return null;
+        }
+        const raw = this.loadLocalBackupData();
+        if (!raw) {
+            return null;
+        }
+        let backup = null;
+        try {
+            backup = JSON.parse(raw);
+        } catch (e) {
+            return null;
+        }
+        if (!backup || !Array.isArray(backup.files) || typeof backup.timestamp !== 'number') {
+            return null;
+        }
+        // Without a timestamp on the stored answer we cannot tell which is newer: keep the answer.
+        const serverTimestamp = serverData && typeof serverData.timestamp === 'number' ? serverData.timestamp : null;
+        if (serverTimestamp === null) {
+            return null;
+        }
+        if (backup.timestamp <= serverTimestamp) {
+            this.clearLocalBackupData(); // Superseded by the saved answer.
+            return null;
+        }
+        const vfs = this.buildVfsFromData(backup);
+        const signature = this.contentSignature(vfs);
+        if (signature === this.initialSignature) {
+            this.clearLocalBackupData(); // Same as the saved answer.
+            return null;
+        }
+        return {data: backup, vfs: vfs, signature: signature};
     };
 
     MonacoMultifileWrapper.prototype.hasLocalBackup = function() {
-        return !!this.loadLocalBackupData({migrate: false});
+        return !!this.loadLocalBackupData();
     };
 
     MonacoMultifileWrapper.prototype.setAutosaveStatus = function(state, options = {}) {
@@ -8655,7 +8271,8 @@ MonacoMultifileWrapper.prototype.getLegacyAutosaveKeys = function() {
      * @param {function} onConfirm - Callback when user confirms (Enter key)
      * @param {function} onCancel - Callback when user cancels (Esc key or blur)
      * @param {string} iconClass - Optional codicon class for the icon (e.g., 'codicon-file', 'codicon-folder')
-     * @param {boolean} overlayExisting - If true, overlay on the parent element line (for rename). If false, render as a new inline row.
+     * @param {boolean} overlayExisting - If true, overlay on the parent element line (for rename).
+     *     If false, render as a new inline row.
      */
     MonacoMultifileWrapper.prototype.showInlineInput = function(parentElement, placeholder, defaultValue,
         onConfirm, onCancel, iconClass, overlayExisting = true) {
@@ -8664,7 +8281,8 @@ MonacoMultifileWrapper.prototype.getLegacyAutosaveKeys = function() {
 
         const paddingLeft = parentElement.css('padding-left') || '0px';
         const paddingRight = parentElement.css('padding-right') || '0px';
-        const isTreeItem = overlayExisting && (parentElement.hasClass('monaco-file-item') || parentElement.hasClass('monaco-folder-item'));
+        const isTreeItem = overlayExisting &&
+            (parentElement.hasClass('monaco-file-item') || parentElement.hasClass('monaco-folder-item'));
         const inputContainer = $('<div class="monaco-inline-input-container"></div>');
 
         if (isTreeItem) {
@@ -8813,11 +8431,13 @@ MonacoMultifileWrapper.prototype.getLegacyAutosaveKeys = function() {
      * @param {function} onCancel - Callback when user cancels
      */
     MonacoMultifileWrapper.prototype.showConfirmModal = function(title, message, onConfirm, onCancel) {
+        const escapeEvent = 'keydown' + this.eventNamespace + 'confirm';
         // Remove any existing modal
         if (this.confirmModal) {
             this.confirmModal.remove();
             this.confirmModal = null;
         }
+        $(document).off(escapeEvent);
 
         // Create modal backdrop
         const backdrop = $('<div class="monaco-modal-backdrop"></div>');
@@ -8849,10 +8469,17 @@ MonacoMultifileWrapper.prototype.getLegacyAutosaveKeys = function() {
 
         this.confirmModal = backdrop;
 
+        const closeModal = () => {
+            $(document).off(escapeEvent);
+            backdrop.remove();
+            if (this.confirmModal === backdrop) {
+                this.confirmModal = null;
+            }
+        };
+
         // Handle confirm
         confirmBtn.on('click', () => {
-            backdrop.remove();
-            this.confirmModal = null;
+            closeModal();
             if (onConfirm) {
                 onConfirm();
             }
@@ -8860,8 +8487,7 @@ MonacoMultifileWrapper.prototype.getLegacyAutosaveKeys = function() {
 
         // Handle cancel
         const handleCancel = () => {
-            backdrop.remove();
-            this.confirmModal = null;
+            closeModal();
             if (onCancel) {
                 onCancel();
             }
@@ -8875,9 +8501,8 @@ MonacoMultifileWrapper.prototype.getLegacyAutosaveKeys = function() {
         });
 
         // Handle Escape key
-        $(document).on('keydown.confirmModal', (e) => {
+        $(document).on(escapeEvent, (e) => {
             if (e.key === 'Escape') {
-                $(document).off('keydown.confirmModal');
                 handleCancel();
             }
         });
@@ -8916,17 +8541,12 @@ MonacoMultifileWrapper.prototype.getLegacyAutosaveKeys = function() {
     };
 
     MonacoMultifileWrapper.prototype.restoreFromLocalBackup = function() {
-        // Never allow restore in author mode
-        if (this.authorMode) {
+        // Never allow restore in author mode, review mode, outside an attempt or if autosave is disabled
+        if (this.destroyed || !this.initialised || !this.isAutosaveEnabled()) {
             return;
         }
 
-        // Don't allow restore if autosave is disabled
-        if (!this.params.autosave) {
-            return;
-        }
-
-        if (!window.localStorage) {
+        if (!getLocalStorage()) {
             this.showAutosaveToast('Browser storage is not available.', 'error');
             return;
         }
@@ -8951,6 +8571,9 @@ MonacoMultifileWrapper.prototype.getLegacyAutosaveKeys = function() {
             'Restore from Backup',
             'Restoring from backup will replace the current files. Do you want to continue?',
             () => {
+                if (this.destroyed) {
+                    return;
+                }
                 this.replaceWorkspaceWithBackup(backupData);
                 this.lastAutosaveTimestamp = backupData.timestamp || Date.now();
                 this.setAutosaveStatus('restored', {timestamp: backupData.timestamp});
@@ -8985,15 +8608,8 @@ MonacoMultifileWrapper.prototype.getLegacyAutosaveKeys = function() {
                 }
             });
         }
-        this.vfs = VirtualFileSystem.fromJSON(
-            backupData,
-            this.params.allowed_extensions,
-            this.params.max_files
-        );
-        if (this.vfs.getAllFiles().length === 0) {
-            const defaultFile = new VirtualFile('index.html', '<h1>Hello World</h1>', false);
-            this.vfs.addFile(defaultFile);
-        }
+        this.vfs = this.buildVfsFromData(backupData);
+        this.lastBackupSignature = this.contentSignature(this.vfs);
         this.activeFile = null;
         this.openTabs = [];
         this.pendingActivePath = null;
@@ -9020,27 +8636,23 @@ MonacoMultifileWrapper.prototype.getLegacyAutosaveKeys = function() {
     };
 
     MonacoMultifileWrapper.prototype.syncToLocalStorage = function() {
-        // Never autosave in author mode (question authoring with id_answer or id_answerpreload)
-        if (this.authorMode) {
+        // Never autosave in author mode (question authoring with id_answer or id_answerpreload),
+        // in review mode, outside a question attempt or when the autosave UI parameter is off.
+        if (this.destroyed || !this.initialised || !this.vfs || !this.isAutosaveEnabled()) {
             return;
         }
-
-        // Check if autosave is enabled via UI parameter
-        if (!this.params.autosave) {
+        this.captureModelContent();
+        // Nothing to back up unless the content differs from the last backup (or, if there is
+        // none, from the answer as loaded).
+        const signature = this.contentSignature(this.vfs);
+        if (signature === (this.lastBackupSignature || this.initialSignature)) {
             return;
-        }
-
-        if (!this.vfs) {
-            return;
-        }
-        if (this.activeFile && modelIsAlive(this.activeFile.model)) {
-            this.activeFile.content = this.activeFile.model.getValue();
         }
         const data = this.vfs.toJSON();
         data.uiState = this.getUiState();
         data.timestamp = new Date().getTime();
         const payload = JSON.stringify(data);
-        if (!window.localStorage) {
+        if (!getLocalStorage()) {
             this.setAutosaveStatus('unavailable');
             if (!this.autosaveWarningShown) {
                 this.showAutosaveToast('Browser storage is not available. Autosave is disabled.', 'error');
@@ -9051,6 +8663,7 @@ MonacoMultifileWrapper.prototype.getLegacyAutosaveKeys = function() {
         this.setAutosaveStatus('saving');
         try {
             window.localStorage.setItem(this.getLocalStorageKey(), payload);
+            this.lastBackupSignature = signature;
             this.lastAutosaveTimestamp = data.timestamp;
             this.setAutosaveStatus('saved', {timestamp: data.timestamp});
         } catch (e) {
@@ -9061,25 +8674,18 @@ MonacoMultifileWrapper.prototype.getLegacyAutosaveKeys = function() {
     };
 
     MonacoMultifileWrapper.prototype.clearLocalBackupData = function() {
-        if (!window.localStorage) {
+        const key = this.getLocalStorageKey();
+        if (!key) {
             return;
         }
         try {
-            const key = this.getLocalStorageKey();
+            if (!window.localStorage) {
+                return;
+            }
             window.localStorage.removeItem(key);
             this.lastAutosaveTimestamp = null;
+            this.lastBackupSignature = null;
             this.setAutosaveStatus('ready');
-            // Also clear any legacy keys to ensure clean state
-            const legacyKeys = this.getLegacyAutosaveKeys();
-            if (legacyKeys && legacyKeys.length > 0) {
-                legacyKeys.forEach(legacyKey => {
-                    try {
-                        window.localStorage.removeItem(legacyKey);
-                    } catch (e) {
-                        // Ignore errors for legacy key cleanup
-                    }
-                });
-            }
         } catch (e) {
             logWarn('Failed to clear localStorage', e);
         }
@@ -9096,25 +8702,52 @@ MonacoMultifileWrapper.prototype.getLegacyAutosaveKeys = function() {
     };
 
     MonacoMultifileWrapper.prototype.failMessage = function() {
-        return 'err_ui_load_failed';
+        return 'monaco_ui_notready';
     };
 
     MonacoMultifileWrapper.prototype.destroy = function() {
-        this.sync();
+        if (this.destroyed) {
+            return;
+        }
+        // Save the answer first, but only if the UI got far enough to have a valid workspace.
+        if (this.initialised) {
+            this.sync();
+        }
+        this.destroyed = true;
+        this.initialised = false;
+
+        const safeDispose = (disposable, what) => {
+            if (disposable && typeof disposable.dispose === 'function') {
+                try {
+                    disposable.dispose();
+                } catch (err) {
+                    logWarn('Failed to dispose ' + what, err);
+                }
+            }
+        };
+
+        this.detachGlobalListeners();
+        this.clearTimers();
+        if (this.activeInlineInput) {
+            this.cancelInlineInput();
+        }
+
+        // Editor-wide listeners and hooks.
         this.disposeCurrentLspBinding();
-
-        if (this.boundKeydownHandler) {
-            document.removeEventListener('keydown', this.boundKeydownHandler, true);
-        }
-
-        if (this.themeListener && typeof this.themeListener.dispose === 'function') {
-            this.themeListener.dispose();
-        }
+        safeDispose(this.themeListener, 'theme listener');
         this.themeListener = null;
-
-        if (this.contextMenu) {
-            this.contextMenu.remove();
-            this.contextMenu = null;
+        safeDispose(this.markerChangeListener, 'marker listener');
+        this.markerChangeListener = null;
+        safeDispose(this.workspaceEditHook, 'workspace edit hook');
+        this.workspaceEditHook = null;
+        safeDispose(this.modelChangeListener, 'model change listener');
+        this.modelChangeListener = null;
+        if (this.codeEditorServiceOverride) {
+            const info = this.codeEditorServiceOverride;
+            if (info.service.openCodeEditor === info.override) {
+                info.service.openCodeEditor = info.original;
+            }
+            this.codeEditorServiceOverride = null;
         }
 
         // Dispose all LSP bindings and models
@@ -9122,67 +8755,68 @@ MonacoMultifileWrapper.prototype.getLegacyAutosaveKeys = function() {
         // after disposal. These are caught and suppressed in the LSP event handlers.
         if (this.vfs) {
             this.vfs.getAllFiles().forEach(file => {
-                // Dispose LSP binding first
-                if (file && file.editorBinding && typeof file.editorBinding.dispose === 'function') {
-                    try {
-                        file.editorBinding.dispose();
-                    } catch (err) {
-                        logWarn('Failed to dispose LSP binding during destroy for ' + file.path, err);
-                    }
-                }
+                // Dispose LSP binding/registration first
+                safeDispose(file.editorBinding, 'LSP binding for ' + file.path);
                 file.editorBinding = null;
+                safeDispose(file.lspRegistration, 'LSP registration for ' + file.path);
+                file.lspRegistration = null;
 
                 // Then dispose the model
-                if (file && modelIsAlive(file.model)) {
-                    try {
-                        file.model.dispose();
-                    } catch (err) {
-                        // Ignore - model may already be disposed
-                    }
+                if (modelIsAlive(file.model)) {
+                    safeDispose(file.model, 'model for ' + file.path);
                 }
                 file.model = null;
             });
         }
 
         // Dispose editor
-        if (this.editor) {
-            try {
-                this.editor.dispose();
-            } catch (e) {
-                // Editor already disposed
-            }
-        }
+        safeDispose(this.editor, 'editor');
+        this.editor = null;
 
-        // Remove message listener for preview
-        if (this.messageListener) {
-            window.removeEventListener('message', this.messageListener);
-            this.messageListener = null;
-        }
-
-        // Remove preview modal
-        if (this.previewModal) {
-            this.previewModal.remove();
-            this.previewModal = null;
-        }
-
-        if (this.markerChangeListener && typeof this.markerChangeListener.dispose === 'function') {
-            this.markerChangeListener.dispose();
-        }
-        this.markerChangeListener = null;
-
-        if (this.autosaveToast) {
-            this.autosaveToast.remove();
-            this.autosaveToast = null;
-        }
-        if (this.autosaveToastTimer) {
-            clearTimeout(this.autosaveToastTimer);
-            this.autosaveToastTimer = null;
-        }
+        this.removeBodyElements();
 
         // Remove UI
         if (this.container && this.container.parentNode) {
             this.container.parentNode.removeChild(this.container);
         }
+    };
+
+    /**
+     * Clear every pending timer of this instance (used by destroy()).
+     */
+    MonacoMultifileWrapper.prototype.clearTimers = function() {
+        [this.debouncedSyncToLocalStorage, this.debouncedRefreshOutline].forEach(debounced => {
+            if (debounced && typeof debounced.cancel === 'function') {
+                debounced.cancel();
+            }
+        });
+        ['_refreshTimer', '_debouncedActiveSync', 'autosaveToastTimer'].forEach(name => {
+            if (this[name]) {
+                clearTimeout(this[name]);
+                this[name] = null;
+            }
+        });
+    };
+
+    /**
+     * Remove the preview (and its listeners) and everything else this instance appended
+     * to <body> (used by destroy()).
+     */
+    MonacoMultifileWrapper.prototype.removeBodyElements = function() {
+        if (this.messageListener) {
+            window.removeEventListener('message', this.messageListener);
+            this.messageListener = null;
+        }
+        if (this.stopConsoleResize) {
+            this.stopConsoleResize();
+        }
+        this.previewIframe = null;
+        ['previewModal', 'contextMenu', 'confirmModal', 'toastContainer', 'autosaveToast'].forEach(name => {
+            if (this[name]) {
+                this[name].remove();
+                this[name] = null;
+            }
+        });
     };
 
     MonacoMultifileWrapper.prototype.resize = function(width, height) {

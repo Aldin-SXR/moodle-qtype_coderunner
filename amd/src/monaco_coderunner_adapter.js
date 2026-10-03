@@ -1,4 +1,6 @@
 (function (root, factory) {
+  // UMD wrapper: `module` and `global` only exist under CommonJS/Node and are guarded by typeof checks.
+  /* eslint-disable no-undef */
   if (typeof define === 'function' && define.amd) {
     define([], function () { return factory(root); });
   } else if (typeof module === 'object' && module.exports) {
@@ -6,36 +8,75 @@
   } else {
     root.lmsMonaco = factory(root);
   }
+  /* eslint-enable no-undef */
 }(this, function (root) {
   'use strict';
 
   // Suppress Monaco's DisposableStore errors that occur during file navigation
-  // These are benign race conditions when hovers/widgets are disposed during model changes
-  if (typeof window !== 'undefined' && window.console && window.console.error) {
+  // These are benign race conditions when hovers/widgets are disposed during model changes.
+  // Only a lone message that *is* Monaco's leak notice is dropped; anything else (including
+  // errors that merely mention it alongside other arguments) is passed through untouched.
+  var MONACO_DISPOSED_STORE_NOISE = 'Trying to add a disposable to a DisposableStore that has already been disposed';
+  /**
+   * @param {Arguments|Array} args Arguments passed to console.error.
+   * @returns {boolean} True if the call is exactly Monaco's benign disposed-store notice.
+   */
+  function isMonacoDisposedStoreNoise(args) {
+    if (!args || args.length !== 1) {
+      return false;
+    }
+    var entry = args[0];
+    var text = null;
+    if (typeof entry === 'string') {
+      text = entry;
+    } else if (entry && typeof entry.message === 'string') {
+      text = entry.message;
+    }
+    if (!text) {
+      return false;
+    }
+    if (text.indexOf('Error: ') === 0) {
+      text = text.substring(7);
+    }
+    return text.indexOf(MONACO_DISPOSED_STORE_NOISE) === 0;
+  }
+  if (typeof window !== 'undefined' && window.console && typeof window.console.error === 'function' &&
+      !window.console.error.__lmsMonacoFiltered) {
     var originalConsoleError = window.console.error;
-    window.console.error = function() {
-      var args = Array.prototype.slice.call(arguments);
-      var message = args.join(' ');
-      // Suppress known Monaco disposal errors that don't affect functionality
-      if (message && typeof message === 'string' &&
-          message.indexOf('DisposableStore that has already been disposed') !== -1) {
-        return; // Silently ignore
+    var filteredConsoleError = function() {
+      if (isMonacoDisposedStoreNoise(arguments)) {
+        return; // Known benign Monaco disposal notice.
       }
-      originalConsoleError.apply(window.console, args);
+      return originalConsoleError.apply(window.console, arguments);
     };
+    filteredConsoleError.__lmsMonacoFiltered = true;
+    window.console.error = filteredConsoleError;
   }
 
   // Provide a no-op in case bundling/ordering issues prevent later assignment.
   // This avoids ReferenceError in downstream modules if syncModelContent is missing.
   var syncModelContent = function() {};
 
+  /**
+   * Throw if a required dependency is missing.
+   *
+   * @param {*} object The dependency to check.
+   * @param {string} name Name used in the error message.
+   * @returns {*} The object, if truthy.
+   */
   function ensure(object, name) {
     if (!object) { throw new Error(name + ' is required'); }
     return object;
   }
 
+  /**
+   * Count the newline characters in a piece of text.
+   *
+   * @param {string} text The text to scan.
+   * @returns {number} Number of newline-terminated lines.
+   */
   function countTerminatedLines(text) {
-    if (!text) return 0;
+    if (!text) {return 0;}
     var m = String(text).match(/\n/g);
     return m ? m.length : 0;
   }
@@ -82,6 +123,12 @@
   var workspaceEditWillAffectHooks = [];
   var CONNECTION_RELEASE_DELAY_MS = 2000;
 
+  /**
+   * Register a callback run after a workspace edit has been applied.
+   *
+   * @param {Function} fn Callback receiving the edit metadata.
+   * @returns {Object} Disposable that unregisters the callback.
+   */
   function registerWorkspaceEditHook(fn) {
     if (typeof fn !== 'function') {
       return { dispose: function() {} };
@@ -94,6 +141,12 @@
     };
   }
 
+  /**
+   * Register a callback run when a code action is about to modify other files.
+   *
+   * @param {Function} fn Callback receiving the affected-files metadata.
+   * @returns {Object} Disposable that unregisters the callback.
+   */
   function registerWorkspaceEditWillAffectHook(fn) {
     if (typeof fn !== 'function') {
       return { dispose: function() {} };
@@ -106,27 +159,53 @@
     };
   }
 
+  /**
+   * Call every registered workspace-edit hook, ignoring hook errors.
+   *
+   * @param {Object} meta Description of the applied edit.
+   */
   function notifyWorkspaceEditApplied(meta) {
-    if (!workspaceEditHooks.length) return;
+    if (!workspaceEditHooks.length) {return;}
     workspaceEditHooks.forEach(function (fn) {
       try { fn(meta); } catch (e) {}
     });
   }
 
+  /**
+   * Call every registered will-affect hook, ignoring hook errors.
+   *
+   * @param {Object} meta Target and origin files of the pending edit.
+   */
   function notifyWorkspaceEditWillAffect(meta) {
-    if (!workspaceEditWillAffectHooks.length) return;
+    if (!workspaceEditWillAffectHooks.length) {return;}
     workspaceEditWillAffectHooks.forEach(function (fn) {
       try { fn(meta); } catch (e) {}
     });
   }
 
+  /**
+   * Placeholder kept for API compatibility; didChange hooks are not supported.
+   *
+   * @returns {Object} No-op disposable.
+   */
   function registerDidChangeHook() {
     return { dispose: function() {} };
   }
 
+  /**
+   * No-op counterpart of registerDidChangeHook.
+   */
   function notifyDidChangeSent() {}
 
   // Prefix-aware wrappers around VSCode JSON-RPC reader/writer.
+  /**
+   * Wrap a message reader so incoming positions are shifted up by the hidden prefix
+   * and results that fall inside the prefix are dropped.
+   *
+   * @param {Object} baseReader The underlying JSON-RPC message reader.
+   * @param {number} prefixLineCount Number of hidden prefix lines.
+   * @returns {Object} Reader with listen() and dispose().
+   */
   function createPrefixingReader(baseReader, prefixLineCount) {
     return {
       listen: function (callback) {
@@ -185,7 +264,8 @@
             }
 
             // Hover response
-            if (message && message.id && message.result && message.result.range && typeof message.result.range.start.line !== 'undefined') {
+            if (message && message.id && message.result && message.result.range &&
+                typeof message.result.range.start.line !== 'undefined') {
               message.result.range.start.line = Math.max(0, message.result.range.start.line - prefixLineCount);
               message.result.range.end.line = Math.max(0, message.result.range.end.line - prefixLineCount);
               if (message.result.data && message.result.data[1] && typeof message.result.data[1].line !== 'undefined') {
@@ -198,8 +278,11 @@
               var items = message.result.items || message.result;
               items = items.filter(function (item) {
                 var line = prefixLineCount;
-                if (item && item.textEdit && item.textEdit.range && item.textEdit.range.start) line = item.textEdit.range.start.line;
-                else if (item && item.range && item.range.start) line = item.range.start.line;
+                if (item && item.textEdit && item.textEdit.range && item.textEdit.range.start) {
+                  line = item.textEdit.range.start.line;
+                } else if (item && item.range && item.range.start) {
+                  line = item.range.start.line;
+                }
                 return line >= prefixLineCount;
               });
               for (var ci = 0; ci < items.length; ci++) {
@@ -230,7 +313,7 @@
                   }
                 }
               }
-              if (message.result.items) message.result.items = items; else message.result = items;
+              if (message.result.items) {message.result.items = items;} else {message.result = items;}
 
               if (message.result.itemDefaults && message.result.itemDefaults.editRange) {
                 var def = message.result.itemDefaults.editRange;
@@ -282,10 +365,19 @@
           callback(message);
         });
       },
-      dispose: function () { if (typeof baseReader.dispose === 'function') baseReader.dispose(); }
+      dispose: function () { if (typeof baseReader.dispose === 'function') {baseReader.dispose();} }
     };
   }
 
+  /**
+   * Wrap a message writer so outgoing positions are shifted down past the hidden prefix
+   * and didOpen text has the prefix prepended.
+   *
+   * @param {Object} baseWriter The underlying JSON-RPC message writer.
+   * @param {number} prefixLineCount Number of hidden prefix lines.
+   * @param {string} prefixText Hidden prefix code.
+   * @returns {Object} Writer with write() and dispose().
+   */
   function createPrefixingWriter(baseWriter, prefixLineCount, prefixText) {
     return {
       write: function (message) {
@@ -300,7 +392,8 @@
           }
 
           // didOpen: prepend hidden prefix text
-          if (message && message.method === 'textDocument/didOpen' && message.params && message.params.textDocument && typeof message.params.textDocument.text === 'string') {
+          if (message && message.method === 'textDocument/didOpen' && message.params && message.params.textDocument &&
+              typeof message.params.textDocument.text === 'string') {
             message.params.textDocument.text = (prefixText || '') + message.params.textDocument.text;
           }
 
@@ -354,34 +447,86 @@
         }
         return baseWriter.write(message);
       },
-      dispose: function () { if (typeof baseWriter.dispose === 'function') baseWriter.dispose(); }
+      dispose: function () { if (typeof baseWriter.dispose === 'function') {baseWriter.dispose();} }
     };
   }
 
+  /**
+   * Locate monaco and the optional languageclient/ws-jsonrpc libraries from options or globals.
+   *
+   * @param {Object} options Editor options (may contain monaco and deps).
+   * @returns {Object} The resolved monaco, monacoLanguageClient and wsjson (or null).
+   */
   function resolveDeps(options) {
     var deps = options && options.deps ? options.deps : {};
     var monaco = options && options.monaco ? options.monaco : (root.monaco || null);
-    var mlc = deps.monacoLanguageClient || root.monacoLanguageClient || root.MonacoLanguageClient || root['monaco-languageclient'] || null;
+    var mlc = deps.monacoLanguageClient || root.monacoLanguageClient || root.MonacoLanguageClient ||
+      root['monaco-languageclient'] || null;
     var wsjson = deps.vscodeWsJsonrpc || root.vscodeWsJsonrpc || root['vscode-ws-jsonrpc'] || null;
     var jsonrpcAlt = deps.vscodeWs || root.vscode_ws_jsonrpc || null;
-    if (!wsjson && jsonrpcAlt) wsjson = jsonrpcAlt;
+    if (!wsjson && jsonrpcAlt) {wsjson = jsonrpcAlt;}
     return { monaco: monaco, monacoLanguageClient: mlc, wsjson: wsjson };
   }
 
+  /**
+   * Make a free model URI by inserting a "dupN" directory before the file name, so the base
+   * name (which some language servers care about, e.g. Java) is preserved.
+   *
+   * @param {Object} monaco
+   * @param {Object} uri The URI that is already taken.
+   * @returns {Object} An unused monaco Uri.
+   */
+  function uniqueModelUri(monaco, uri) {
+    var str = uri.toString();
+    var slash = str.lastIndexOf('/');
+    var dir = slash >= 0 ? str.substring(0, slash) : str;
+    var base = slash >= 0 ? str.substring(slash + 1) : '';
+    for (var n = 2; n < 10000; n++) {
+      var candidate = monaco.Uri.parse(dir + '/dup' + n + '/' + base);
+      if (!monaco.editor.getModel(candidate)) {
+        return candidate;
+      }
+    }
+    return monaco.Uri.parse(dir + '/dup' + Date.now() + '/' + base);
+  }
+
+  /**
+   * Create a Monaco model with a file:// URI, picking a free URI if the wanted one is taken.
+   *
+   * @param {Object} monaco The monaco namespace.
+   * @param {string} language Monaco language id.
+   * @param {string} value Initial content.
+   * @param {string} [path] File path or file:// URI for the model.
+   * @returns {Object} The new model.
+   */
   function createMonacoModel(monaco, language, value, path) {
     var uri;
     if (path && typeof path === 'string') {
       // Ensure file:// URI for servers that expect real files
-      if (path.indexOf('file://') === 0) uri = monaco.Uri.parse(path);
-      else uri = monaco.Uri.parse('file://' + path);
+      if (path.indexOf('file://') === 0) {uri = monaco.Uri.parse(path);}
+      else {uri = monaco.Uri.parse('file://' + path);}
     } else {
-      var extMap = { python: 'py', java: 'java', cpp: 'cpp', c: 'c', typescript: 'ts', javascript: 'js', json: 'json', markdown: 'md', plaintext: 'txt' };
+      var extMap = {
+        python: 'py', java: 'java', cpp: 'cpp', c: 'c', typescript: 'ts',
+        javascript: 'js', json: 'json', markdown: 'md', plaintext: 'txt'
+      };
       var ext = extMap[language] || 'txt';
       uri = monaco.Uri.parse('file:///coderunner/' + (language || 'txt') + '/Main.' + ext);
+    }
+    // Monaco throws if a model with this URI already exists (e.g. two questions on one page,
+    // or a UI reload that leaked its model). We can't safely tell whether the existing model
+    // is still wanted (it may be awaiting its editor), so never dispose it; use a free URI instead.
+    if (monaco.editor.getModel(uri)) {
+      uri = uniqueModelUri(monaco, uri);
     }
     return monaco.editor.createModel(String(value || ''), language, uri);
   }
 
+  /**
+   * Default options for editors created by this adapter.
+   *
+   * @returns {Object} Monaco editor construction options.
+   */
   function defaultEditorOptions() {
     return {
       automaticLayout: true,
@@ -395,24 +540,46 @@
     };
   }
 
+  /**
+   * Work out the LSP WebSocket URL: an explicit lspUrl, else lspBaseUrl + '/' + language.
+   *
+   * @param {Object} options Object with lspUrl, lspBaseUrl and language.
+   * @returns {string} The WebSocket URL.
+   */
   function buildLspUrl(options) {
-    if (options.lspUrl) return options.lspUrl;
+    if (options.lspUrl) {return options.lspUrl;}
     var base = (options.lspBaseUrl || '').replace(/\/$/, '');
     var lang = options.language || '';
     return base + '/' + lang;
   }
 
+  /**
+   * Replace tpp_<name>.h shim file names with the original <name>.tpp in display text.
+   *
+   * @param {string} text Text to rewrite (non-strings are returned unchanged).
+   * @returns {string} The rewritten text.
+   */
   function rewriteTppShimName(text) {
-    if (typeof text !== 'string') return text;
+    if (typeof text !== 'string') {return text;}
     return text.replace(/tpp_([^\/\s]+)\.h/gi, '$1.tpp');
   }
 
+  /**
+   * Build the connection provider used by monaco-languageclient, with prefix-aware transports.
+   *
+   * @param {Object} monacoLanguageClient The monaco-languageclient module (unused, kept for the API).
+   * @param {Object} wsjson The vscode-ws-jsonrpc module.
+   * @param {WebSocket} socket Open WebSocket to the language server.
+   * @param {number} prefixLineCount Number of hidden prefix lines.
+   * @param {string} prefixText Hidden prefix code.
+   * @returns {Function} Function returning a promise of {reader, writer}.
+   */
   function createConnectionFactory(monacoLanguageClient, wsjson, socket, prefixLineCount, prefixText) {
     // Prepare base reader/writer
     var iws = (wsjson && typeof wsjson.toSocket === 'function') ? wsjson.toSocket(socket) : socket;
     var BaseReader = wsjson && wsjson.WebSocketMessageReader ? wsjson.WebSocketMessageReader : null;
     var BaseWriter = wsjson && wsjson.WebSocketMessageWriter ? wsjson.WebSocketMessageWriter : null;
-    if (!BaseReader || !BaseWriter) throw new Error('vscode-ws-jsonrpc WebSocketMessageReader/Writer not found');
+    if (!BaseReader || !BaseWriter) {throw new Error('vscode-ws-jsonrpc WebSocketMessageReader/Writer not found');}
     var reader = new BaseReader(iws);
     var writer = new BaseWriter(iws);
 
@@ -420,11 +587,18 @@
     var wrappedWriter = createPrefixingWriter(writer, prefixLineCount, prefixText);
 
     // Return transports; monaco-languageclient will build the connection and listen.
-    return function (_errorHandler, _closeHandler) {
+    return function () {
       return Promise.resolve({ reader: wrappedReader, writer: wrappedWriter });
     };
   }
 
+  /**
+   * Increment the attachment count of a model on a connection.
+   *
+   * @param {Object} connection Pooled LSP connection.
+   * @param {string} modelUri The model URI.
+   * @returns {number} The count before incrementing.
+   */
   function incrementModelRefCount(connection, modelUri) {
     if (!connection.modelRefCounts) {
       connection.modelRefCounts = new Map();
@@ -434,6 +608,13 @@
     return prevCount;
   }
 
+  /**
+   * Decrement the attachment count of a model on a connection, removing it at zero.
+   *
+   * @param {Object} connection Pooled LSP connection.
+   * @param {string} modelUri The model URI.
+   * @returns {number} The remaining count.
+   */
   function decrementModelRefCount(connection, modelUri) {
     if (!connection.modelRefCounts || !connection.modelRefCounts.has(modelUri)) {
       return 0;
@@ -448,6 +629,12 @@
     return nextCount;
   }
 
+  /**
+   * Rewrite #include "x.tpp" directives to the tpp_x.h shim headers the server understands.
+   *
+   * @param {string} text Source text.
+   * @returns {string} The rewritten text (unchanged on error or if there are no .tpp includes).
+   */
   function rewriteTppIncludePaths(text) {
     if (!text || text.indexOf('.tpp') === -1) {
       return text;
@@ -466,6 +653,12 @@
     }
   }
 
+  /**
+   * Apply the .tpp include rewriting to all document text in an outgoing LSP message.
+   *
+   * @param {Object} msg JSON-RPC message (modified in place).
+   * @returns {Object} The same message.
+   */
   function sanitizeOutgoingMessage(msg) {
     if (!msg || !msg.params) {
       return msg;
@@ -491,19 +684,20 @@
     return msg;
   }
 
-  // URI rewrite pipeline: register functions that map one URI string to another.
+  // URI rewrite pipeline: functions that map one URI string to another.
   // Useful for “fake” files like tpp_<base>.h -> <base>.tpp so nav works naturally.
   var uriRewriters = [
     function(uri) {
-      if (!uri || typeof uri !== 'string') return uri;
+      if (!uri || typeof uri !== 'string') {return uri;}
       return uri.replace(/\/tpp_([^\/]+)\.h$/i, '/$1.tpp');
     }
   ];
-  function registerUriRewriter(rewriter) {
-    if (typeof rewriter === 'function') {
-      uriRewriters.push(rewriter);
-    }
-  }
+  /**
+   * Pass a URI through every registered URI rewriter in turn.
+   *
+   * @param {string} uri The URI to rewrite.
+   * @returns {string} The rewritten URI.
+   */
   function applyUriRewriters(uri) {
     var result = uri;
     for (var i = 0; i < uriRewriters.length; i++) {
@@ -513,10 +707,16 @@
     }
     return result;
   }
+  /**
+   * Apply the URI rewriters to an LSP location or array of locations (returns copies).
+   *
+   * @param {Object|Array} locations LSP Location(s).
+   * @returns {Object|Array} Location(s) with rewritten URIs.
+   */
   function rewriteLocationsWithUriRewriters(locations) {
-    if (!locations) return locations;
+    if (!locations) {return locations;}
     var rewriteLoc = function(loc) {
-      if (!loc || !loc.uri) return loc;
+      if (!loc || !loc.uri) {return loc;}
       var cloned = Object.assign({}, loc);
       cloned.uri = applyUriRewriters(loc.uri);
       return cloned;
@@ -527,6 +727,15 @@
     return rewriteLoc(locations);
   }
 
+  /**
+   * Build the full document text sent to the server: hidden prefix + (transformed) model text.
+   *
+   * @param {string} prefixText Hidden prefix code.
+   * @param {Object} model The Monaco model.
+   * @param {Function|null} contentTransform Optional transform applied to the model text.
+   * @param {string} modelUri The model URI (passed to the transform).
+   * @returns {string} The text to send.
+   */
   function buildPrefixedContent(prefixText, model, contentTransform, modelUri) {
     var body = model.getValue();
     if (typeof contentTransform === 'function') {
@@ -541,8 +750,96 @@
     return safePrefix + body;
   }
 
-  // Helper: Attach a model to an existing LSP connection
+  /**
+   * Version for the next didChange of a document: follows the model's own version id but
+   * never goes backwards (syncModelContent may already have sent a higher forced version).
+   *
+   * @param {Object} connection Pooled LSP connection.
+   * @param {string} modelUri
+   * @param {Object} model
+   * @param {number} [minimumVersion]
+   * @returns {number}
+   */
+  function nextDocumentVersion(connection, modelUri, model, minimumVersion) {
+    if (!connection.lastSentVersions) {
+      connection.lastSentVersions = new Map();
+    }
+    var version = typeof model.getVersionId === 'function' ? model.getVersionId() : 1;
+    if (typeof minimumVersion === 'number' && minimumVersion > version) {
+      version = minimumVersion;
+    }
+    var last = connection.lastSentVersions.get(modelUri);
+    if (typeof last === 'number' && version <= last) {
+      version = last + 1;
+    }
+    connection.lastSentVersions.set(modelUri, version);
+    return version;
+  }
+
+  /**
+   * Send a full-content didChange for the model that changed (its own value, prefix and
+   * transform) and refresh pull diagnostics.
+   *
+   * @param {Object} connection Pooled LSP connection.
+   * @param {Object} model The model that changed.
+   * @param {string} modelUri
+   * @param {string} lspUri URI the server knows the document by.
+   * @param {string} prefixText Hidden prefix code.
+   * @param {Function|null} contentTransform
+   * @returns {boolean} False if the socket isn't open (nothing sent).
+   */
+  function sendModelDidChange(connection, model, modelUri, lspUri, prefixText, contentTransform) {
+    if (!connection || !connection.ws || connection.ws.readyState !== 1) {
+      return false;
+    }
+    var version = nextDocumentVersion(connection, modelUri, model);
+    connection.send({
+      jsonrpc: '2.0',
+      method: 'textDocument/didChange',
+      params: {
+        textDocument: {
+          uri: lspUri,
+          version: version
+        },
+        contentChanges: [{
+          text: buildPrefixedContent(prefixText, model, contentTransform, modelUri)
+        }]
+      }
+    });
+    notifyDidChangeSent({ uri: modelUri, version: version });
+    if (typeof connection.scheduleDiagnostics === 'function') {
+      connection.scheduleDiagnostics(250);
+    }
+    return true;
+  }
+
+  /**
+   * Keep a pooled connection alive when it is reused inside its release delay.
+   *
+   * @param {Object} connection
+   */
+  function cancelPendingConnectionDispose(connection) {
+    if (connection && connection.pendingDisposeTimer) {
+      clearTimeout(connection.pendingDisposeTimer);
+      connection.pendingDisposeTimer = null;
+    }
+  }
+
+  /**
+   * Attach a model (and its editor) to an existing pooled LSP connection.
+   *
+   * @param {Object} monaco The monaco namespace.
+   * @param {Object} model The model to attach.
+   * @param {Object} editor The editor showing the model.
+   * @param {Object} connection Pooled LSP connection.
+   * @param {string} prefixText Hidden prefix code.
+   * @param {number} prefixLineCount Number of hidden prefix lines.
+   * @param {Object} [attachmentOptions] disposeEditor, disposeModel and contentTransform options.
+   * @returns {Object} Editor API object (editor, model, dispose, setValue, getValue, getPrefixLineCount).
+   */
   function attachModelToLspConnection(monaco, model, editor, connection, prefixText, prefixLineCount, attachmentOptions) {
+    // Reusing a pooled connection inside its release delay must keep it alive.
+    cancelPendingConnectionDispose(connection);
     var modelUri = model.uri.toString();
     var lspUri = modelUri;
     var aliasUri = null;
@@ -622,22 +919,7 @@
       // Listen to model changes
       var saveTimer = null;
       var changeListener = model.onDidChangeContent(function() {
-        if (connection.ws && connection.ws.readyState === 1) {
-          connection.send({
-            jsonrpc: '2.0',
-            method: 'textDocument/didChange',
-            params: {
-              textDocument: {
-                uri: lspUri,
-                version: model.getVersionId()
-              },
-              contentChanges: [{
-              text: buildPrefixedContent(prefixText, model, contentTransform, modelUri)
-              }]
-            }
-          });
-          notifyDidChangeSent({ uri: modelUri, version: model.getVersionId() });
-
+        if (sendModelDidChange(connection, model, modelUri, lspUri, prefixText, contentTransform)) {
           // Debounce didSave to trigger full project revalidation after changes stabilize
           // This ensures dependent files get updated diagnostics
           if (saveTimer) {
@@ -667,11 +949,15 @@
       }
       connection.changeListeners.set(modelUri, changeListener);
     }
+    var detached = false;
     return {
       editor: editor,
       model: model,
       dispose: function() {
-        detachModelFromLspConnection(monaco, model, connection);
+        if (!detached) {
+          detached = true;
+          detachModelFromLspConnection(monaco, model, connection);
+        }
         if (disposeModelOnDetach) {
           try { model.dispose(); } catch (e) {}
         }
@@ -685,6 +971,11 @@
     };
   }
 
+  /**
+   * Tear down a pooled connection: providers, timers and socket, and remove it from the pool.
+   *
+   * @param {Object} connection Pooled LSP connection.
+   */
   function disposeConnectionResources(connection) {
     if (!connection) {
       return;
@@ -713,20 +1004,31 @@
         clearInterval(connection.keepAliveTimer);
         connection.keepAliveTimer = null;
       }
+      if (typeof connection.onDispose === 'function') {
+        connection.onDispose();
+      }
       if (connection.ws && connection.ws.readyState < 2) {
         connection.ws.close();
       }
     } catch (e) {}
 
-    // Clear provider registration flag to allow re-registration on reconnect
-    if (connection.language && connection.lspUrl) {
-      var providerKey = globalLspPool.makeKey(connection.language, connection.lspUrl);
-      delete globalRegisteredProviders[providerKey];
-    }
+    // Only touch the pool (and provider flags) if this connection is still the pooled one.
+    if (globalLspPool.get(connection.language, connection.lspUrl) === connection) {
+      // Clear provider registration flag to allow re-registration on reconnect
+      if (connection.language && connection.lspUrl) {
+        var providerKey = globalLspPool.makeKey(connection.language, connection.lspUrl);
+        delete globalRegisteredProviders[providerKey];
+      }
 
-    globalLspPool.remove(connection.language, connection.lspUrl);
+      globalLspPool.remove(connection.language, connection.lspUrl);
+    }
   }
 
+  /**
+   * Dispose a connection after CONNECTION_RELEASE_DELAY_MS unless a model is attached again meanwhile.
+   *
+   * @param {Object} connection Pooled LSP connection.
+   */
   function scheduleConnectionDispose(connection) {
     if (!connection) {
       return;
@@ -735,11 +1037,21 @@
       clearTimeout(connection.pendingDisposeTimer);
     }
     connection.pendingDisposeTimer = setTimeout(function() {
+      connection.pendingDisposeTimer = null;
+      if (connection.models && connection.models.length > 0) {
+        return; // Reused during the release delay.
+      }
       disposeConnectionResources(connection);
     }, CONNECTION_RELEASE_DELAY_MS);
   }
 
-  // Helper: Detach a model from an LSP connection
+  /**
+   * Detach a model from an LSP connection, closing the document once its last reference goes.
+   *
+   * @param {Object} monaco The monaco namespace.
+   * @param {Object} model The model to detach.
+   * @param {Object} connection Pooled LSP connection.
+   */
   function detachModelFromLspConnection(monaco, model, connection) {
     var modelUri = model.uri.toString();
     var lspUri = (connection && connection.lspUriByModel && connection.lspUriByModel.get(modelUri)) || modelUri;
@@ -815,6 +1127,9 @@
       clearTimeout(timer);
       connection.saveTimers.delete(modelUri);
     }
+    if (connection.lastSentVersions) {
+      connection.lastSentVersions.delete(modelUri);
+    }
 
     // If no models left, clean up the connection (after a short delay to allow renames)
     if (connection.models.length === 0) {
@@ -822,6 +1137,13 @@
     }
   }
 
+  /**
+   * Create (or bind) a Monaco editor and connect its model to a language server.
+   *
+   * @param {HTMLElement|null} container Element to create the editor in (unused if options.editor is given).
+   * @param {Object} options Editor, model and LSP options.
+   * @returns {Object} Editor API object (editor, model, dispose, setValue, getValue, getPrefixLineCount).
+   */
   function createMonacoLspEditor(container, options) {
     options = options || {};
     var deps = resolveDeps(options);
@@ -919,13 +1241,13 @@
       editor: editor,
       model: model,
       dispose: function () {
-        try { if (client) client.stop(); } catch (e) {}
-        try { if (socket && socket.readyState < 2) socket.close(); } catch (e) {}
+        try { if (client) {client.stop();} } catch (e) {}
+        try { if (socket && socket.readyState < 2) {socket.close();} } catch (e) {}
         if (ownsModel) {
-          try { if (model) model.dispose(); } catch (e) {}
+          try { if (model) {model.dispose();} } catch (e) {}
         }
         if (ownsEditor) {
-          try { if (editor) editor.dispose(); } catch (e) {}
+          try { if (editor) {editor.dispose();} } catch (e) {}
         }
       },
       setValue: function (v) { editor.setValue(String(v || '')); },
@@ -940,6 +1262,16 @@
 
     var useSimple = options.useSimpleLsp !== false; // default true
     if (useSimple) {
+      return createSimpleLspEditor();
+    }
+
+    /**
+     * Connect the editor through the minimal built-in WebSocket + JSON-RPC client
+     * (or a pooled connection already open for this language and URL).
+     *
+     * @returns {Object} The editor API object, extended to release the LSP connection on dispose.
+     */
+    function createSimpleLspEditor() {
       // Minimal WebSocket + JSON-RPC client without monaco-languageclient
       var urlSimple = buildLspUrl({ lspUrl: options.lspUrl, lspBaseUrl: options.lspBaseUrl, language: options.language });
       var language = options.language || 'plaintext';
@@ -961,10 +1293,6 @@
       var ws = null;
       var idSeq = 1;
       var pending = {};
-      var version = 1;
-      var reconnectAttempts = 0;
-      var reconnectTimer = null;
-      var stopped = false;
       var trackedDisposables = [];
       var lastDiagnosticsByUri = new Map();
       var pullDiagnosticsEnabled = false;
@@ -972,7 +1300,6 @@
       var lastDiagnosticResultIds = new Map();
       var diagnosticTimer = null;
       var diagnosticRequestToken = 0;
-      var keepAliveTimer = null;
       var KEEPALIVE_INTERVAL = 30000;
       var EXECUTE_COMMAND_ID = 'lmsMonaco.executeCommand';
       var workspaceUri = null;
@@ -1002,10 +1329,12 @@
         modelUriByLsp: new Map([[lspUriForModel || model.uri.toString(), model.uri.toString()]]),
         pending: pending,
         idSeq: idSeq,
-        stopped: stopped,
-        reconnectTimer: reconnectTimer,
-        reconnectAttempts: reconnectAttempts,
-        keepAliveTimer: keepAliveTimer,
+        // Lifecycle state lives only here, so disposeConnectionResources() really stops
+        // reconnects and the keepalive (the socket handlers below read these fields).
+        stopped: false,
+        reconnectTimer: null,
+        reconnectAttempts: 0,
+        keepAliveTimer: null,
         trackedDisposables: trackedDisposables,
         pendingDisposeTimer: null,
         workspaceUri: workspaceUri,
@@ -1024,7 +1353,20 @@
       // Add connection to pool IMMEDIATELY to prevent race conditions
       // Other editors checking the pool will find this pending connection and reuse it
       globalLspPool.set(language, urlSimple, sharedConnection);
+      // Let models attached later (attachModelToLspConnection / registerModelWithLsp) refresh pull diagnostics.
+      sharedConnection.scheduleDiagnostics = function(delay) { scheduleDiagnostics(delay); };
+      sharedConnection.onDispose = function() {
+        clearTimeout(diagnosticTimer);
+        diagnosticTimer = null;
+        diagnosticRequestToken++;
+      };
 
+      /**
+       * Get the directory part of a file path/URI, for use as the workspace root.
+       *
+       * @param {string} path File path or URI.
+       * @returns {string|null} The directory URI, or null if there is none.
+       */
       function directoryUriFromPath(path) {
         if (!path || typeof path !== 'string') {
           return null;
@@ -1068,6 +1410,12 @@
         }
       }
 
+      /**
+       * Interpret a config value as a boolean ('true'/'1' strings count as true).
+       *
+       * @param {*} value The config value.
+       * @returns {boolean} The boolean interpretation.
+       */
       function normaliseTruth(value) {
         if (typeof value === 'boolean') {
           return value;
@@ -1079,6 +1427,11 @@
         return !!value;
       }
 
+      /**
+       * Read Neo4j connection settings for the Cypher language server from the workspace config.
+       *
+       * @returns {Object|null} connectionUpdated payload, or null if not connecting.
+       */
       function extractNeo4jConnectionSettings() {
         if (!workspaceConfig || options.language !== 'cypher') {
           return null;
@@ -1113,6 +1466,11 @@
 
       neo4jConnectionSettings = extractNeo4jConnectionSettings();
 
+      /**
+       * Read Cypher lint worker settings from the workspace config.
+       *
+       * @returns {Object|null} updateLintWorker payload, or null if linting is off or not Cypher.
+       */
       function extractNeo4jLintWorkerSettings() {
         if (options.language !== 'cypher') {
           return null;
@@ -1145,6 +1503,9 @@
         return {};
       })();
 
+      /**
+       * Send the Cypher updateLintWorker notification, if there are lint worker settings.
+       */
       function sendNeo4jLintWorkerUpdate() {
         if (!neo4jLintWorkerSettings) {
           return;
@@ -1156,6 +1517,9 @@
         });
       }
 
+      /**
+       * Send the Cypher updateParameters notification, if parameters are configured.
+       */
       function sendNeo4jParametersUpdate() {
         if (neo4jParameterValues === null) {
           return;
@@ -1171,8 +1535,27 @@
         });
       }
 
-      function toUri(u) { return (model && model.uri && model.uri.toString()) || u || 'file:///coderunner/' + (options.language || 'txt') + '/Main.txt'; }
+      /**
+       * URI of this editor's model, falling back to the given URI or a default file URI.
+       *
+       * @param {string} [u] Fallback URI.
+       * @returns {string} The document URI.
+       */
+      function toUri(u) {
+        return (model && model.uri && model.uri.toString()) || u ||
+          'file:///coderunner/' + (options.language || 'txt') + '/Main.txt';
+      }
+      /**
+       * Next JSON-RPC request id.
+       *
+       * @returns {number} The id.
+       */
       function nowId() { return idSeq++; }
+      /**
+       * Send a JSON-RPC message if the socket is open (errors are ignored).
+       *
+       * @param {Object} msg The message.
+       */
       function send(msg) {
         try {
           if (ws && ws.readyState === 1) {
@@ -1180,6 +1563,13 @@
           }
         } catch (e) {}
       }
+      /**
+       * Send a JSON-RPC request and wait for its response.
+       *
+       * @param {string} method LSP method name.
+       * @param {Object} params Request parameters.
+       * @returns {Promise} Resolves with the result; rejects on error or if not connected.
+       */
       function request(method, params) {
         if (!ws || ws.readyState !== 1) {
           return Promise.reject({ code: 'not_connected' });
@@ -1190,39 +1580,53 @@
           send({ jsonrpc: '2.0', id: id, method: method, params: params });
         });
       }
+      /**
+       * Convert a Monaco position to an LSP position, shifted past the hidden prefix.
+       *
+       * @param {Object} pos Monaco position.
+       * @param {number} [prefixOverride] Prefix line count to use instead of this editor's.
+       * @returns {Object} LSP position {line, character}.
+       */
       function lspPositionFromMonaco(pos, prefixOverride) {
         var prefixLines = typeof prefixOverride === 'number' ? prefixOverride : prefixLineCount;
         return { line: Math.max(0, (pos.lineNumber - 1) + prefixLines), character: Math.max(0, (pos.column - 1)) };
       }
+      /**
+       * Convert an LSP range to a Monaco range, removing the prefix offset and clamping to the model.
+       *
+       * @param {Object} r LSP range.
+       * @param {Object} [context] Range context {model, prefixLineCount}.
+       * @returns {Object|null} Monaco Range, or null if invalid or inside the prefix.
+       */
       function monacoRangeFromLsp(r, context) {
-        if (!r) return null;
-        if (!r.start || !r.end) return null;
-        if (typeof r.start.line !== 'number' || typeof r.start.character !== 'number') return null;
-        if (typeof r.end.line !== 'number' || typeof r.end.character !== 'number') return null;
+        if (!r) {return null;}
+        if (!r.start || !r.end) {return null;}
+        if (typeof r.start.line !== 'number' || typeof r.start.character !== 'number') {return null;}
+        if (typeof r.end.line !== 'number' || typeof r.end.character !== 'number') {return null;}
         var ctx = context || {};
         var targetModel = ctx.model || model;
         var prefixOffset = typeof ctx.prefixLineCount === 'number' ? ctx.prefixLineCount : (prefixLineCount || 0);
         if (prefixOffset && prefixOffset > 0) {
-          if (r.start.line < prefixOffset) return null;
-          if (r.end.line < prefixOffset) return null;
+          if (r.start.line < prefixOffset) {return null;}
+          if (r.end.line < prefixOffset) {return null;}
         }
         var startLineNumber = (r.start.line - prefixOffset) + 1;
         var endLineNumber = (r.end.line - prefixOffset) + 1;
-        if (startLineNumber < 1) startLineNumber = 1;
-        if (endLineNumber < 1) endLineNumber = 1;
+        if (startLineNumber < 1) {startLineNumber = 1;}
+        if (endLineNumber < 1) {endLineNumber = 1;}
         if (targetModel) {
           var lineCount = targetModel.getLineCount();
-          if (startLineNumber > lineCount) startLineNumber = lineCount;
-          if (endLineNumber > lineCount) endLineNumber = lineCount;
+          if (startLineNumber > lineCount) {startLineNumber = lineCount;}
+          if (endLineNumber > lineCount) {endLineNumber = lineCount;}
         }
         var maxStartColumn = targetModel ? targetModel.getLineMaxColumn(startLineNumber) : null;
         var maxEndColumn = targetModel ? targetModel.getLineMaxColumn(endLineNumber) : null;
         var startColumn = (r.start.character) + 1;
         var endColumn = (r.end.character) + 1;
-        if (maxStartColumn && startColumn > maxStartColumn) startColumn = maxStartColumn;
-        if (maxEndColumn && endColumn > maxEndColumn) endColumn = maxEndColumn;
-        if (startColumn < 1) startColumn = 1;
-        if (endColumn < 1) endColumn = 1;
+        if (maxStartColumn && startColumn > maxStartColumn) {startColumn = maxStartColumn;}
+        if (maxEndColumn && endColumn > maxEndColumn) {endColumn = maxEndColumn;}
+        if (startColumn < 1) {startColumn = 1;}
+        if (endColumn < 1) {endColumn = 1;}
 
         // Final validation: ensure all values are valid numbers before creating Range
         if (typeof startLineNumber !== 'number' || isNaN(startLineNumber) ||
@@ -1239,38 +1643,57 @@
           endColumn
         );
       }
-      function toMonacoLocation(lspLoc, context) {
-        if (!lspLoc) return null;
+      /**
+       * Convert an LSP Location/LocationLink to a Monaco location, using the target model's prefix.
+       *
+       * @param {Object} lspLoc LSP Location or LocationLink.
+       * @returns {Object|null} {uri, range}, or null if there is no model or range for it.
+       */
+      function toMonacoLocation(lspLoc) {
+        if (!lspLoc) {return null;}
         var uriString = lspLoc.uri || lspLoc.targetUri;
         var uri = uriString ? monaco.Uri.parse(uriString) : model.uri;
         // Filter out locations that don't have a Monaco model (e.g., builtin libraries)
         var targetModel = monaco.editor.getModel(uri);
-        if (!targetModel) return null;
+        if (!targetModel) {return null;}
         // Rebuild context with TARGET model's prefix, not source model's
         var targetContext = buildRangeContext(targetModel);
         var range = monacoRangeFromLsp(lspLoc.range || lspLoc.targetSelectionRange || lspLoc.targetRange, targetContext);
-        if (!range) return null;
+        if (!range) {return null;}
         return { uri: uri, range: range };
       }
+      /**
+       * Convert an LSP position to a Monaco position, removing the prefix offset and clamping.
+       *
+       * @param {Object} pos LSP position.
+       * @param {Object} [context] Range context {model, prefixLineCount}.
+       * @returns {Object|null} Monaco Position, or null if pos is missing.
+       */
       function monacoPositionFromLsp(pos, context) {
-        if (!pos) return null;
+        if (!pos) {return null;}
         var ctx = context || {};
         var targetModel = ctx.model || model;
         var prefixOffset = typeof ctx.prefixLineCount === 'number' ? ctx.prefixLineCount : prefixLineCount;
         var lineNumber = (pos.line - prefixOffset) + 1;
-        if (lineNumber < 1) lineNumber = 1;
+        if (lineNumber < 1) {lineNumber = 1;}
         if (targetModel) {
           var lineCount = targetModel.getLineCount();
-          if (lineNumber > lineCount) lineNumber = lineCount;
+          if (lineNumber > lineCount) {lineNumber = lineCount;}
         }
         var column = (typeof pos.character === 'number' ? pos.character : 0) + 1;
         if (targetModel) {
           var maxColumn = targetModel.getLineMaxColumn(lineNumber);
-          if (column > maxColumn) column = maxColumn;
+          if (column > maxColumn) {column = maxColumn;}
         }
-        if (column < 1) column = 1;
+        if (column < 1) {column = 1;}
         return new monaco.Position(lineNumber, column);
       }
+      /**
+       * Map an LSP inlay hint kind to Monaco's InlayHintKind.
+       *
+       * @param {number|string} kind LSP kind.
+       * @returns {number|undefined} Monaco kind, if known.
+       */
       function mapInlayHintKind(kind) {
         var HintKind = monaco.languages.InlayHintKind || {};
         if (kind === 1 || kind === 'Type') {
@@ -1281,15 +1704,22 @@
         }
         return undefined;
       }
+      /**
+       * Convert LSP inlay hints to Monaco inlay hints.
+       *
+       * @param {Array|Object} items LSP inlay hint(s).
+       * @param {Object} [context] Range context {model, prefixLineCount}.
+       * @returns {Array} Monaco inlay hints.
+       */
       function toMonacoInlayHints(items, context) {
-        if (!items) return [];
+        if (!items) {return [];}
         var arr = Array.isArray(items) ? items : [items];
         var hints = [];
         for (var i = 0; i < arr.length; i++) {
           var item = arr[i];
-          if (!item || !item.position) continue;
+          if (!item || !item.position) {continue;}
           var position = monacoPositionFromLsp(item.position, context);
-          if (!position) continue;
+          if (!position) {continue;}
           var hint = {
             position: position,
             label: '',
@@ -1326,32 +1756,53 @@
         }
         return hints;
       }
+      /**
+       * Convert an LSP SelectionRange (and its parents) to Monaco format.
+       *
+       * @param {Object} node LSP SelectionRange.
+       * @param {Object} [context] Range context {model, prefixLineCount}.
+       * @returns {Object|null} Monaco selection range, or null if invalid.
+       */
       function convertSelectionRangeNode(node, context) {
-        if (!node) return null;
+        if (!node) {return null;}
         var range = monacoRangeFromLsp(node.range, context);
-        if (!range) return null;
+        if (!range) {return null;}
         return {
           range: range,
           parent: convertSelectionRangeNode(node.parent, context)
         };
       }
+      /**
+       * Convert LSP selection ranges to Monaco format, dropping invalid ones.
+       *
+       * @param {Array|Object} items LSP SelectionRange(s).
+       * @param {Object} [context] Range context {model, prefixLineCount}.
+       * @returns {Array} Monaco selection ranges.
+       */
       function toMonacoSelectionRanges(items, context) {
-        if (!items) return [];
+        if (!items) {return [];}
         var arr = Array.isArray(items) ? items : [items];
         var converted = [];
         for (var i = 0; i < arr.length; i++) {
           var node = convertSelectionRangeNode(arr[i], context);
-          if (node) converted.push(node);
+          if (node) {converted.push(node);}
         }
         return converted;
       }
+      /**
+       * Convert LSP workspace symbols to Monaco format.
+       *
+       * @param {Array|Object} items LSP symbol(s).
+       * @param {Object} [context] Range context {model, prefixLineCount}.
+       * @returns {Array} Monaco workspace symbols.
+       */
       function toMonacoWorkspaceSymbols(items, context) {
-        if (!items) return [];
+        if (!items) {return [];}
         var arr = Array.isArray(items) ? items : [items];
         var mapped = [];
         for (var i = 0; i < arr.length; i++) {
           var sym = arr[i];
-          if (!sym) continue;
+          if (!sym) {continue;}
           var location = sym.location ? toMonacoLocation(sym.location, context) : null;
           if (!location && sym.uri && sym.range) {
             location = { uri: monaco.Uri.parse(sym.uri), range: monacoRangeFromLsp(sym.range, context) };
@@ -1369,6 +1820,10 @@
         return mapped;
       }
 
+      /**
+       * Register (once per monaco instance) the Monaco command that forwards LSP commands
+       * to workspace/executeCommand, applying any workspace edit argument first.
+       */
       function ensureExecuteCommandRegistered() {
         if (monaco.__lmsExecuteCommandRegistered) {
           return;
@@ -1400,7 +1855,7 @@
         return request('workspace/executeCommand', {
           command: commandId,
           arguments: args
-        }).catch(function(err) {});
+        }).catch(function() {});
       });
         monaco.__lmsExecuteCommandRegistered = true;
       }
@@ -1445,7 +1900,7 @@
           var locations = [];
           for (var i = 0; i < references.length; i++) {
             var ref = references[i];
-            if (!ref || !ref.uri || !ref.range) continue;
+            if (!ref || !ref.uri || !ref.range) {continue;}
             try {
               var refUri = monaco.Uri.parse(ref.uri);
               var prefixInfo = getPrefixInfoForUri(refUri.toString());
@@ -1461,7 +1916,7 @@
             }
           }
 
-          if (locations.length === 0) return;
+          if (locations.length === 0) {return;}
 
           // Trigger the references widget at the specified position
           if (position && typeof position.line === 'number' && typeof position.character === 'number') {
@@ -1499,7 +1954,7 @@
                   // action.run() returns a Promise that may reject with "Canceled"
                   var runResult = action.run();
                   if (runResult && typeof runResult.then === 'function') {
-                    runResult.catch(function(err) {
+                    runResult.catch(function() {
                     });
                   }
                   triggered = true;
@@ -1528,6 +1983,13 @@
         monaco.__javaShowReferencesRegistered = true;
       }
 
+      /**
+       * Apply an LSP WorkspaceEdit to open models and report file operations via the hooks,
+       * then run any pending code action commands.
+       *
+       * @param {Object} edit LSP WorkspaceEdit.
+       * @returns {boolean} True if anything was applied.
+       */
       function applyWorkspaceEdit(edit) {
         var converted = convertWorkspaceEdit(edit);
         if (!converted || !converted.edits || !converted.edits.length) {
@@ -1539,7 +2001,7 @@
         var textEditEntries = [];
 
         converted.edits.forEach(function(entry) {
-          if (!entry) return;
+          if (!entry) {return;}
 
           if (entry.kind === 'create' || entry.kind === 'rename' || entry.kind === 'delete') {
             fileOperations.push(entry);
@@ -1560,23 +2022,31 @@
 
         // Apply text edits to existing models
         var applied = false;
+        var appliedUris = [];
         grouped.forEach(function(textEdits, uriString) {
           var resource = monaco.Uri.parse(uriString);
           var targetModel = monaco.editor.getModel(resource);
-          if (!targetModel) {
+          if (!targetModel || (targetModel.isDisposed && targetModel.isDisposed())) {
+            return; // No (live) model for this document; nothing we can edit.
           }
 
           // Use editor if it matches; otherwise apply directly to the model.
+          var done = false;
           if (editor && editor.getModel && editor.getModel() === targetModel && typeof editor.executeEdits === 'function') {
             editor.pushUndoStop();
-            editor.executeEdits('lsp', textEdits);
+            done = editor.executeEdits('lsp', textEdits) !== false;
             editor.pushUndoStop();
           } else if (typeof targetModel.applyEdits === 'function') {
             targetModel.applyEdits(textEdits);
+            done = true;
           } else if (typeof targetModel.pushEditOperations === 'function') {
             targetModel.pushEditOperations([], textEdits, function() { return []; });
+            done = true;
           }
-          applied = true;
+          if (done) {
+            applied = true;
+            appliedUris.push(uriString);
+          }
         });
 
         // Handle file operations (create, rename, delete)
@@ -1610,11 +2080,7 @@
         }
 
         if (applied) {
-          var uris = [];
-          grouped.forEach(function(_edits, uriString) {
-            uris.push(uriString);
-          });
-          notifyWorkspaceEditApplied({ edits: converted.edits, uris: uris });
+          notifyWorkspaceEditApplied({ edits: converted.edits, uris: appliedUris });
 
           // Execute any pending commands from code actions (LSP protocol)
           // Commands should be executed after workspace edits are applied
@@ -1634,30 +2100,45 @@
               request('workspace/executeCommand', {
                 command: cmd.command,
                 arguments: cmd.arguments || []
-              });
+              }).catch(function() {});
             });
           }
         }
+        return applied;
       }
 
+      /**
+       * Convert LSP location results to Monaco locations, dropping ones without a model.
+       *
+       * @param {Array|Object} results LSP Location(s) or LocationLink(s).
+       * @param {Object} [context] Range context {model, prefixLineCount}.
+       * @returns {Array} Monaco locations.
+       */
       function toMonacoLocations(results, context) {
-        if (!results) return [];
+        if (!results) {return [];}
         var arr = Array.isArray(results) ? results : [results];
         var mapped = [];
         for (var i = 0; i < arr.length; i++) {
           var loc = toMonacoLocation(arr[i], context);
-          if (loc) mapped.push(loc);
+          if (loc) {mapped.push(loc);}
         }
         return mapped;
       }
+  /**
+   * Convert LSP document highlights to Monaco format.
+   *
+   * @param {Array} items LSP DocumentHighlights.
+   * @param {Object} [context] Range context {model, prefixLineCount}.
+   * @returns {Array} Monaco document highlights.
+   */
   function toMonacoHighlights(items, context) {
-    if (!items) return [];
+    if (!items) {return [];}
     var highlights = [];
     for (var i = 0; i < items.length; i++) {
       var item = items[i];
-          if (!item || !item.range) continue;
+          if (!item || !item.range) {continue;}
           var range = monacoRangeFromLsp(item.range, context);
-          if (!range) continue;
+          if (!range) {continue;}
           var kind = monaco.languages.DocumentHighlightKind.Text;
           if (item.kind === 2) {
             kind = monaco.languages.DocumentHighlightKind.Write;
@@ -1668,13 +2149,20 @@
         }
         return highlights;
       }
+      /**
+       * Convert LSP document symbols (recursively) to Monaco format.
+       *
+       * @param {Array|Object} items LSP DocumentSymbol(s) or SymbolInformation(s).
+       * @param {Object} [context] Range context {model, prefixLineCount}.
+       * @returns {Array} Monaco document symbols.
+       */
       function toMonacoSymbols(items, context) {
-        if (!items) return [];
-        if (!Array.isArray(items)) items = [items];
+        if (!items) {return [];}
+        if (!Array.isArray(items)) {items = [items];}
         var results = [];
         for (var i = 0; i < items.length; i++) {
           var item = items[i];
-          if (!item) continue;
+          if (!item) {continue;}
 
           var range = null;
           var selectionRange = null;
@@ -1714,20 +2202,32 @@
         }
         return results;
       }
+  /**
+   * Convert LSP TextEdits to Monaco edit operations.
+   *
+   * @param {Array} edits LSP TextEdits.
+   * @param {Object} [context] Range context {model, prefixLineCount}.
+   * @returns {Array} Monaco edits {range, text}.
+   */
   function toMonacoEdits(edits, context) {
-    if (!edits) return [];
+    if (!edits) {return [];}
     var monacoEdits = [];
     for (var i = 0; i < edits.length; i++) {
           var edit = edits[i];
-          if (!edit || !edit.range) continue;
+          if (!edit || !edit.range) {continue;}
           var range = monacoRangeFromLsp(edit.range, context);
-          if (!range) continue;
+          if (!range) {continue;}
           monacoEdits.push({ range: range, text: edit.newText || '' });
         }
         return monacoEdits;
   }
 
-  // Helper to get prefix info for a model URI from any connection
+  /**
+   * Get the hidden-prefix info for a model URI from any pooled connection.
+   *
+   * @param {string} modelUri Model (or alias) URI.
+   * @returns {Object} {text, lineCount}; empty if unknown.
+   */
   function getPrefixInfoForUri(modelUri) {
     // Search all connections in the pool for this model's prefix info
     var connections = globalLspPool.getAllConnections();
@@ -1746,12 +2246,19 @@
     return { text: '', lineCount: 0 };
   }
 
+  /**
+   * Convert an LSP WorkspaceEdit to Monaco text edits plus file operations.
+   *
+   * @param {Object} workspaceEdit LSP WorkspaceEdit.
+   * @param {Object} [context] Range context; by default each file's own prefix is used.
+   * @returns {Object|null} {edits, fileOperations}, or null if there is nothing to do.
+   */
   function convertWorkspaceEdit(workspaceEdit, context) {
-    if (!workspaceEdit) return null;
+    if (!workspaceEdit) {return null;}
     var edits = [];
       if (workspaceEdit.changes) {
         for (var uri in workspaceEdit.changes) {
-          if (!Object.prototype.hasOwnProperty.call(workspaceEdit.changes, uri)) continue;
+          if (!Object.prototype.hasOwnProperty.call(workspaceEdit.changes, uri)) {continue;}
           var resource = monaco.Uri.parse(uri);
           var targetModel = monaco.editor.getModel(resource);
           if (!targetModel) {
@@ -1773,7 +2280,7 @@
             };
           }
           var changeEdits = toMonacoEdits(workspaceEdit.changes[uri], fileContext);
-          if (!changeEdits.length) continue;
+          if (!changeEdits.length) {continue;}
           for (var ce = 0; ce < changeEdits.length; ce++) {
             edits.push({ resource: resource, textEdit: changeEdits[ce] });
           }
@@ -1865,7 +2372,7 @@
           }
       }
     }
-    if (!edits.length) return null;
+    if (!edits.length) {return null;}
 
     // Separate file operations from text edits for Monaco
     var textEdits = [];
@@ -1887,6 +2394,11 @@
   /**
    * Send a full-content didChange for a model using an existing connection.
    * Does not modify registrations; no-op if no live connection exists.
+   *
+   * @param {Object} monaco The monaco namespace.
+   * @param {Object} model The model to sync.
+   * @param {Object} options language, lspUrl/lspBaseUrl, prefixCode and forceVersionId.
+   * @returns {boolean} True if a didChange was sent.
    */
   syncModelContent = function(monaco, model, options) {
     if (!monaco || !model || !options) {
@@ -1904,6 +2416,8 @@
     var baseVersion = typeof model.getVersionId === 'function' ? model.getVersionId() : 1;
     var forcedVersion = typeof options.forceVersionId === 'number' ? options.forceVersionId : null;
     var versionToSend = forcedVersion && forcedVersion > baseVersion ? forcedVersion : (baseVersion + 1);
+    // Keep versions monotonic with the didChange notifications sent by the change listeners.
+    versionToSend = nextDocumentVersion(connection, uri, model, versionToSend);
     var transform = connection.modelContentTransforms && connection.modelContentTransforms.get(uri);
     var pref = connection.modelPrefixes && (connection.modelPrefixes.get(lspUri) || connection.modelPrefixes.get(uri));
     var prefixText = pref && pref.text ? pref.text : '';
@@ -1919,8 +2433,14 @@
     notifyDidChangeSent({ uri: uri, version: versionToSend });
     return true;
   };
+  /**
+   * Convert LSP documentation (string or MarkupContent) to a Monaco markdown string.
+   *
+   * @param {string|Object} content LSP documentation.
+   * @returns {Object|undefined} {value}, or undefined if empty.
+   */
   function toMonacoMarkupContent(content) {
-    if (!content) return undefined;
+    if (!content) {return undefined;}
     if (typeof content === 'string') {
       return { value: content };
     }
@@ -1929,8 +2449,14 @@
     }
     return undefined;
   }
+  /**
+   * Convert an LSP SignatureHelp to Monaco format.
+   *
+   * @param {Object} res LSP SignatureHelp.
+   * @returns {Object|null} Monaco SignatureHelp, or null if there are no signatures.
+   */
   function toMonacoSignatureHelp(res) {
-    if (!res || !res.signatures) return null;
+    if (!res || !res.signatures) {return null;}
     var result = {
       signatures: [],
       activeSignature: typeof res.activeSignature === 'number' ? res.activeSignature : 0,
@@ -1978,6 +2504,13 @@
     return result;
   }
 
+      /**
+       * Convert LSP folding ranges to Monaco format, dropping ones inside the prefix.
+       *
+       * @param {Array} ranges LSP FoldingRanges.
+       * @param {Object} [context] Range context {model, prefixLineCount}.
+       * @returns {Array} Monaco folding ranges.
+       */
       function toMonacoFoldingRanges(ranges, context) {
         if (!Array.isArray(ranges) || !ranges.length) {
           return [];
@@ -2016,10 +2549,22 @@
         return result;
       }
 
+      /**
+       * Whether to use the language server for folding (otherwise Monaco's own folding is used).
+       *
+       * @param {string} lang Language id.
+       * @returns {boolean} True for languages with LSP folding.
+       */
       function shouldEnableLspFolding(lang) {
         return lang === 'html';
       }
 
+      /**
+       * Map an LSP completion item kind (number or name) to Monaco's CompletionItemKind.
+       *
+       * @param {number|string} k LSP kind.
+       * @returns {number} Monaco kind (Text if unknown).
+       */
       function mapCompletionKind(k) {
         var M = monaco.languages.CompletionItemKind;
         var numericMap = {
@@ -2118,12 +2663,22 @@
         }
         return M.Text;
       }
+      /**
+       * Remember a disposable so it is disposed with the connection.
+       *
+       * @param {Object} disposable The disposable.
+       * @returns {Object} The same disposable.
+       */
       function track(disposable) {
         if (disposable && typeof disposable.dispose === 'function') {
           trackedDisposables.push(disposable);
         }
         return disposable;
       }
+      /**
+       * Send the LSP initialize request; on success send initialized, the configuration
+       * notifications and (re)open every attached document.
+       */
       function openInitialize() {
         var init = {
           jsonrpc: '2.0', id: nowId(), method: 'initialize', params: {
@@ -2292,7 +2847,8 @@
               if (m && m.uri) {
                 var uri = m.uri.toString();
                 var lspUriForModel = (sharedConnection.lspUriByModel && sharedConnection.lspUriByModel.get(uri)) || uri;
-                var prefixInfo = sharedConnection.modelPrefixes.get(lspUriForModel) || sharedConnection.modelPrefixes.get(uri) || { text: '', lineCount: 0 };
+                var prefixInfo = sharedConnection.modelPrefixes.get(lspUriForModel) ||
+                  sharedConnection.modelPrefixes.get(uri) || { text: '', lineCount: 0 };
                 var transform = sharedConnection.modelContentTransforms && sharedConnection.modelContentTransforms.get(uri);
                 var payloadText = buildPrefixedContent(prefixInfo.text || '', m, transform, uri);
                 send({
@@ -2316,7 +2872,8 @@
               var filtered = [];
               for (var i = 0; i < sharedConnection.pendingDidOpen.length; i++) {
                 var pendingMsg = sharedConnection.pendingDidOpen[i];
-                var pendingUri = pendingMsg && pendingMsg.params && pendingMsg.params.textDocument && pendingMsg.params.textDocument.uri;
+                var pendingUri = pendingMsg && pendingMsg.params && pendingMsg.params.textDocument &&
+                  pendingMsg.params.textDocument.uri;
                 if (pendingUri && didOpenSentUris.has(pendingUri)) {
                   continue; // already sent during reopen loop
                 }
@@ -2332,15 +2889,20 @@
         };
         send(init);
       }
+      /**
+       * Show diagnostics from the server as Monaco markers on the matching model.
+       *
+       * @param {Object} params publishDiagnostics params {uri, diagnostics}.
+       */
       function handleDiagnostics(params) {
-        if (!params || !params.diagnostics) return;
+        if (!params || !params.diagnostics) {return;}
 
         // Multi-model: find which model these diagnostics belong to
         var targetUri = params.uri;
         if (sharedConnection.modelUriAliases && sharedConnection.modelUriAliases.has(targetUri)) {
           targetUri = sharedConnection.modelUriAliases.get(targetUri);
         }
-        if (!targetUri) return;
+        if (!targetUri) {return;}
 
         // Find the model in the shared connection
         var targetModel = null;
@@ -2354,7 +2916,7 @@
           }
         }
 
-        if (!targetModel) return; // Model not found in connection
+        if (!targetModel) {return;} // Model not found in connection
 
         // If this is a shimmed tpp_* URI, prefer placing markers on the user-facing .tpp model
         var normalizedUri = applyUriRewriters(targetUri);
@@ -2378,8 +2940,8 @@
         var diags = [];
         for (var i=0;i<params.diagnostics.length;i++) {
           var d = params.diagnostics[i];
-          if (!d || !d.range) continue;
-          if (d.range.start.line < targetPrefixLineCount) continue;
+          if (!d || !d.range) {continue;}
+          if (d.range.start.line < targetPrefixLineCount) {continue;}
 
           // Adjust range for this model's prefix
           var adjustedRange = {
@@ -2395,29 +2957,31 @@
 
           var startLineNumber = adjustedRange.start.line + 1;
           var endLineNumber = adjustedRange.end.line + 1;
-          if (startLineNumber < 1) startLineNumber = 1;
-          if (endLineNumber < 1) endLineNumber = 1;
+          if (startLineNumber < 1) {startLineNumber = 1;}
+          if (endLineNumber < 1) {endLineNumber = 1;}
           if (markerModel) {
             // Double-check model isn't disposed before calling methods
             if (markerModel.isDisposed && markerModel.isDisposed()) {
               continue;
             }
             var lineCount = markerModel.getLineCount();
-            if (startLineNumber > lineCount) startLineNumber = lineCount;
-            if (endLineNumber > lineCount) endLineNumber = lineCount;
+            if (startLineNumber > lineCount) {startLineNumber = lineCount;}
+            if (endLineNumber > lineCount) {endLineNumber = lineCount;}
           }
 
           var maxStartColumn = markerModel ? markerModel.getLineMaxColumn(startLineNumber) : null;
           var maxEndColumn = markerModel ? markerModel.getLineMaxColumn(endLineNumber) : null;
           var startColumn = adjustedRange.start.character + 1;
           var endColumn = adjustedRange.end.character + 1;
-          if (maxStartColumn && startColumn > maxStartColumn) startColumn = maxStartColumn;
-          if (maxEndColumn && endColumn > maxEndColumn) endColumn = maxEndColumn;
-          if (startColumn < 1) startColumn = 1;
-          if (endColumn < 1) endColumn = 1;
+          if (maxStartColumn && startColumn > maxStartColumn) {startColumn = maxStartColumn;}
+          if (maxEndColumn && endColumn > maxEndColumn) {endColumn = maxEndColumn;}
+          if (startColumn < 1) {startColumn = 1;}
+          if (endColumn < 1) {endColumn = 1;}
 
           diags.push({
-            severity: monaco.MarkerSeverity[d.severity === 1 ? 'Error' : (d.severity === 2 ? 'Warning' : (d.severity === 3 ? 'Info' : 'Hint'))] || monaco.MarkerSeverity.Info,
+            severity: monaco.MarkerSeverity[
+              d.severity === 1 ? 'Error' : (d.severity === 2 ? 'Warning' : (d.severity === 3 ? 'Info' : 'Hint'))
+            ] || monaco.MarkerSeverity.Info,
             message: d.message || '',
             startLineNumber: startLineNumber,
             startColumn: startColumn,
@@ -2432,41 +2996,65 @@
         lastDiagnosticsByUri.set(targetUri, filteredDiagnostics);
       }
 
+      /**
+       * Schedule a pull-diagnostics refresh (only if the server supports pull diagnostics).
+       *
+       * @param {number} [delay] Delay in ms (default 250).
+       */
       function scheduleDiagnostics(delay) {
-        if (!pullDiagnosticsEnabled) return;
+        if (!pullDiagnosticsEnabled) {return;}
         clearTimeout(diagnosticTimer);
-        diagnosticTimer = setTimeout(refreshDiagnostics, delay != null ? delay : 250);
+        diagnosticTimer = setTimeout(refreshDiagnostics, delay !== null && delay !== undefined ? delay : 250);
       }
 
+      /**
+       * Request pull diagnostics for every model on the connection.
+       */
       function refreshDiagnostics() {
-        if (!pullDiagnosticsEnabled) return;
+        if (!pullDiagnosticsEnabled) {return;}
         var token = ++diagnosticRequestToken;
         for (var mi = 0; mi < sharedConnection.models.length; mi++) {
-          (function(m) {
-            var uri = m && m.uri && m.uri.toString();
-            if (!uri) return;
-            var lspUri = (sharedConnection.lspUriByModel && sharedConnection.lspUriByModel.get(uri)) || uri;
-            var params = { textDocument: { uri: lspUri } };
-            if (diagnosticIdentifier) {
-              params.identifier = diagnosticIdentifier;
-            }
-            if (lastDiagnosticResultIds.has(lspUri)) {
-              params.previousResultId = lastDiagnosticResultIds.get(lspUri);
-            }
-            request('textDocument/diagnostic', params).then(function(report) {
-              if (token !== diagnosticRequestToken) return;
-              if (report && report.kind === 'full') {
-                lastDiagnosticResultIds.set(lspUri, report.resultId != null ? report.resultId : null);
-                handleDiagnostics({ uri: lspUri, diagnostics: report.items || [] });
-              } else if (report && report.kind === 'unchanged') {
-                var prev = lastDiagnosticResultIds.get(lspUri);
-                lastDiagnosticResultIds.set(lspUri, report.resultId != null ? report.resultId : prev);
-              }
-            }).catch(function() {});
-          })(sharedConnection.models[mi]);
+          requestModelDiagnostics(sharedConnection.models[mi], token);
         }
       }
 
+      /**
+       * Pull diagnostics for one model. The response is ignored if a newer refresh
+       * (or a disconnect) has bumped diagnosticRequestToken in the meantime.
+       *
+       * @param {Object} m The model.
+       * @param {number} token Value of diagnosticRequestToken for this refresh.
+       */
+      function requestModelDiagnostics(m, token) {
+        var uri = m && m.uri && m.uri.toString();
+        if (!uri) {return;}
+        var lspUri = (sharedConnection.lspUriByModel && sharedConnection.lspUriByModel.get(uri)) || uri;
+        var params = { textDocument: { uri: lspUri } };
+        if (diagnosticIdentifier) {
+          params.identifier = diagnosticIdentifier;
+        }
+        if (lastDiagnosticResultIds.has(lspUri)) {
+          params.previousResultId = lastDiagnosticResultIds.get(lspUri);
+        }
+        request('textDocument/diagnostic', params).then(function(report) {
+          if (token !== diagnosticRequestToken) {return;}
+          var hasResultId = report && report.resultId !== null && report.resultId !== undefined;
+          if (report && report.kind === 'full') {
+            lastDiagnosticResultIds.set(lspUri, hasResultId ? report.resultId : null);
+            handleDiagnostics({ uri: lspUri, diagnostics: report.items || [] });
+          } else if (report && report.kind === 'unchanged') {
+            var prev = lastDiagnosticResultIds.get(lspUri);
+            lastDiagnosticResultIds.set(lspUri, hasResultId ? report.resultId : prev);
+          }
+        }).catch(function() {});
+      }
+
+      /**
+       * Get the hidden-prefix info of a model on this connection.
+       *
+       * @param {Object} targetModel The model.
+       * @returns {Object} {text, lineCount}; this editor's prefix if the model is unknown.
+       */
       function getPrefixInfoForModel(targetModel) {
         var fallback = { text: prefixText || '', lineCount: prefixLineCount || 0 };
         if (!targetModel || !targetModel.uri) {
@@ -2483,6 +3071,12 @@
         };
       }
 
+      /**
+       * Get the URI string of a model, defaulting to this editor's model.
+       *
+       * @param {Object} targetModel The model.
+       * @returns {string} The URI.
+       */
       function getUriForModel(targetModel) {
         if (targetModel && targetModel.uri) {
           return targetModel.uri.toString();
@@ -2490,6 +3084,12 @@
         return (model && model.uri && model.uri.toString()) || toUri();
       }
 
+      /**
+       * Build the range-conversion context for a model.
+       *
+       * @param {Object} targetModel The model.
+       * @returns {Object} {model, prefixLineCount}.
+       */
       function buildRangeContext(targetModel) {
         var info = getPrefixInfoForModel(targetModel);
         return {
@@ -2497,6 +3097,9 @@
           prefixLineCount: info.lineCount
         };
       }
+      /**
+       * Tell the server about the workspace folders, once it has registered for folder changes.
+       */
       function notifyWorkspaceFoldersAdded() {
         if (!workspaceFoldersRegistered || !workspaceFolders || !workspaceFolders.length) {
           return;
@@ -2529,7 +3132,7 @@
           // Enable Emmet multiplier suggestions without manual trigger.
           triggerCharacters = triggerCharacters.concat(['*', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9']);
         }
-        var completionProvider = track(monaco.languages.registerCompletionItemProvider(providerLanguage, {
+        track(monaco.languages.registerCompletionItemProvider(providerLanguage, {
           triggerCharacters: triggerCharacters,
         provideCompletionItems: function (modelLocal, position, context) {
           var prefixInfo = getPrefixInfoForModel(modelLocal);
@@ -2542,14 +3145,17 @@
           if (context && context.triggerCharacter) {
             completionContext.triggerCharacter = context.triggerCharacter;
           }
-          return request('textDocument/completion', { textDocument: { uri: docUri }, position: pos, context: completionContext }).then(function (result) {
+          return request('textDocument/completion', {
+            textDocument: { uri: docUri }, position: pos, context: completionContext
+          }).then(function (result) {
             var items = result && (result.items || result) || [];
             var suggestions = [];
             for (var i=0;i<items.length;i++) {
               var it = items[i] || {};
               // filter out prefix hits
-              var line = (it.textEdit && it.textEdit.range && it.textEdit.range.start && it.textEdit.range.start.line) || (it.range && it.range.start && it.range.start.line) || pos.line;
-              if (line < prefixInfo.lineCount) continue;
+              var line = (it.textEdit && it.textEdit.range && it.textEdit.range.start && it.textEdit.range.start.line) ||
+                (it.range && it.range.start && it.range.start.line) || pos.line;
+              if (line < prefixInfo.lineCount) {continue;}
               var insertTextSource = (it.textEdit && typeof it.textEdit.newText === 'string') ? it.textEdit.newText :
                 (typeof it.insertText === 'string' ? it.insertText : it.label || '');
               var insertText = String(insertTextSource || '');
@@ -2560,7 +3166,8 @@
                 insertText: insertText,
                 range: it.textEdit && it.textEdit.range ? monacoRangeFromLsp(it.textEdit.range, rangeContext) : undefined,
                 detail: it.detail,
-                documentation: it.documentation && (typeof it.documentation === 'string' ? { value: it.documentation } : it.documentation),
+                documentation: it.documentation &&
+                  (typeof it.documentation === 'string' ? { value: it.documentation } : it.documentation),
                 sortText: typeof it.sortText === 'string' ? it.sortText : undefined,
                 filterText: typeof it.filterText === 'string' ? it.filterText : undefined
               };
@@ -2588,24 +3195,25 @@
         }
       }));
 
-      var hoverProvider = track(monaco.languages.registerHoverProvider(options.language || 'plaintext', {
+      track(monaco.languages.registerHoverProvider(options.language || 'plaintext', {
         provideHover: function (modelLocal, position) {
           var prefixInfo = getPrefixInfoForModel(modelLocal);
           var pos = lspPositionFromMonaco(position, prefixInfo.lineCount);
           var docUri = getUriForModel(modelLocal);
           var rangeContext = buildRangeContext(modelLocal);
           return request('textDocument/hover', { textDocument: { uri: docUri }, position: pos }).then(function (res) {
-            if (!res) return null;
+            if (!res) {return null;}
             var rng = res.range ? monacoRangeFromLsp(res.range, rangeContext) : null;
             var contents = [];
             if (res.contents) {
-              if (typeof res.contents === 'string') contents.push({ value: res.contents });
+              if (typeof res.contents === 'string') {contents.push({ value: res.contents });}
               else if (Array.isArray(res.contents)) {
                 for (var i=0;i<res.contents.length;i++) {
-                  var c = res.contents[i]; if (!c) continue;
-                  contents.push(typeof c === 'string' ? { value: rewriteTppShimName(c) } : (c.value ? { value: rewriteTppShimName(c.value) } : c));
+                  var c = res.contents[i]; if (!c) {continue;}
+                  contents.push(typeof c === 'string' ? { value: rewriteTppShimName(c) } :
+                    (c.value ? { value: rewriteTppShimName(c.value) } : c));
                 }
-              } else if (res.contents.value) contents.push({ value: res.contents.value });
+              } else if (res.contents.value) {contents.push({ value: res.contents.value });}
             }
             for (var ci = 0; ci < contents.length; ci++) {
               if (contents[ci] && contents[ci].value) {
@@ -2668,7 +3276,7 @@
         }));
       }
 
-      if (options.richFeatures) {
+      if (options.richFeatures !== false) {
         track(monaco.languages.registerDefinitionProvider(options.language || 'plaintext', {
           provideDefinition: function(modelLocal, position) {
             var prefixInfo = getPrefixInfoForModel(modelLocal);
@@ -2863,7 +3471,7 @@
               textDocument: { uri: docUri },
               position: pos
             }).then(function (res) {
-              if (!res) return null;
+              if (!res) {return null;}
               var range = res.range ? monacoRangeFromLsp(res.range, rangeContext) : null;
               return range ? { range: range, text: res.placeholder } : null;
             }).catch(function () { return null; });
@@ -2880,11 +3488,11 @@
                 textDocument: { uri: docUri },
                 position: pos
               }).then(function(result) {
-                if (!result || !result.ranges) return null;
+                if (!result || !result.ranges) {return null;}
                 var ranges = [];
                 for (var i = 0; i < result.ranges.length; i++) {
                   var range = monacoRangeFromLsp(result.ranges[i], rangeContext);
-                  if (range) ranges.push(range);
+                  if (range) {ranges.push(range);}
                 }
                 return ranges.length > 0 ? { ranges: ranges, wordPattern: result.wordPattern } : null;
               }).catch(function () { return null; });
@@ -3017,7 +3625,7 @@
 
               for (var i = 0; i < arr.length; i++) {
                 var item = arr[i];
-                if (!item) continue;
+                if (!item) {continue;}
                 var title = item.title || (item.command && item.command.title) || 'Code Action';
               var monacoAction = {
                 title: title,
@@ -3052,7 +3660,7 @@
               if (!monacoAction.edit && item.arguments && Array.isArray(item.arguments)) {
               try {
                 if (item.arguments && Array.isArray(item.arguments)) {
-                  item.arguments.forEach(function(arg, argIdx) {
+                  item.arguments.forEach(function() {
                   });
                 }
               } catch (e) {}
@@ -3105,9 +3713,13 @@
                   }
 
                   // Check if this edit modifies OTHER files (not the current file)
-                  var modifiesOtherFiles = targetUris.some(function(uri) {
-                    return uri !== currentFileUri;
-                  });
+                  var modifiesOtherFiles = false;
+                  for (var oi = 0; oi < targetUris.length; oi++) {
+                    if (targetUris[oi] !== currentFileUri) {
+                      modifiesOtherFiles = true;
+                      break;
+                    }
+                  }
 
                   // Store command for execution after workspace edit
                   if (monacoAction._lspCommand) {
@@ -3131,8 +3743,6 @@
                       timestamp: Date.now(),
                       targetUris: targetUris
                     });
-                    var cmdName = typeof monacoAction._lspCommand === 'string' ? monacoAction._lspCommand :
-                      (monacoAction._lspCommand.command || 'unknown');
                   } else if (modifiesOtherFiles) {
                     // No explicit command, but this edit modifies other files
                     // For Java LSP (jdtls), we should trigger a diagnostic refresh on the current file
@@ -3148,7 +3758,7 @@
               }
             }
             try {
-              actions.forEach(function(action, idx) {
+              actions.forEach(function() {
               });
             } catch (e) {}
             return { actions: actions, dispose: function () {} };
@@ -3159,7 +3769,7 @@
             });
           },
 
-          resolveCodeAction: function(codeAction, token) {
+          resolveCodeAction: function(codeAction) {
 
             // If action has _lspData, send resolve request to LSP server
             // NOTE: Even if action has an edit, we still need to resolve it to get the command field!
@@ -3248,7 +3858,7 @@
                 }
 
                 return codeAction;
-              }).catch(function(err) {
+              }).catch(function() {
                 return codeAction;
               });
             }
@@ -3266,21 +3876,21 @@
               var rangeContext = buildRangeContext(modelLocal);
               return request('textDocument/documentLink', { textDocument: { uri: docUri } })
                 .then(function(links) {
-                  if (!links || !Array.isArray(links)) return { links: [] };
+                  if (!links || !Array.isArray(links)) {return { links: [] };}
                   var monacoLinks = [];
                   var prefixLines = rangeContext && typeof rangeContext.prefixLineCount === 'number'
                     ? rangeContext.prefixLineCount
                     : 0;
                   for (var i = 0; i < links.length; i++) {
                     var link = links[i];
-                    if (!link || !link.range || !link.target) continue;
-                    if (typeof link.target !== 'string' || !link.target.length) continue;
+                    if (!link || !link.range || !link.target) {continue;}
+                    if (typeof link.target !== 'string' || !link.target.length) {continue;}
                     var linkStartLine = link.range.start && typeof link.range.start.line === 'number'
                       ? link.range.start.line
                       : null;
-                    if (linkStartLine !== null && linkStartLine < prefixLines) continue;
+                    if (linkStartLine !== null && linkStartLine < prefixLines) {continue;}
                     var range = monacoRangeFromLsp(link.range, rangeContext);
-                    if (!range) continue;
+                    if (!range) {continue;}
                     var monacoLink = {
                       range: range,
                       url: link.target
@@ -3315,13 +3925,13 @@
               var rangeContext = buildRangeContext(modelLocal);
               return request('textDocument/codeLens', { textDocument: { uri: docUri } })
                 .then(function(lenses) {
-                  if (!lenses || !Array.isArray(lenses)) return { lenses: [], dispose: function() {} };
+                  if (!lenses || !Array.isArray(lenses)) {return { lenses: [], dispose: function() {} };}
                   var monacoLenses = [];
                   for (var i = 0; i < lenses.length; i++) {
                     var lens = lenses[i];
-                    if (!lens || !lens.range) continue;
+                    if (!lens || !lens.range) {continue;}
                     var range = monacoRangeFromLsp(lens.range, rangeContext);
-                    if (!range) continue;
+                    if (!range) {continue;}
                     var monacoLens = {
                       range: range,
                       _lspData: lens
@@ -3371,16 +3981,16 @@
                 textDocument: { uri: docUri },
                 position: pos
               }).then(function(items) {
-                if (!items) return [];
+                if (!items) {return [];}
                 var arr = Array.isArray(items) ? items : [items];
                 var result = [];
                 for (var i = 0; i < arr.length; i++) {
                   var item = arr[i];
-                  if (!item) continue;
+                  if (!item) {continue;}
                   var uri = monaco.Uri.parse(item.uri);
                   var range = monacoRangeFromLsp(item.range, rangeContext);
                   var selectionRange = monacoRangeFromLsp(item.selectionRange, rangeContext);
-                  if (!range || !selectionRange) continue;
+                  if (!range || !selectionRange) {continue;}
                   result.push({
                     kind: item.kind || monaco.languages.SymbolKind.Function,
                     name: item.name,
@@ -3395,25 +4005,25 @@
               }).catch(function() { return []; });
             },
             provideCallHierarchyIncomingCalls: function(modelLocal, item) {
-              if (!item._lspData) return [];
+              if (!item._lspData) {return [];}
               var rangeContext = buildRangeContext(modelLocal);
               return request('callHierarchy/incomingCalls', item._lspData)
                 .then(function(calls) {
-                  if (!calls || !Array.isArray(calls)) return [];
+                  if (!calls || !Array.isArray(calls)) {return [];}
                   var result = [];
                   for (var i = 0; i < calls.length; i++) {
                     var call = calls[i];
-                    if (!call || !call.from) continue;
+                    if (!call || !call.from) {continue;}
                     var fromItem = call.from;
                     var uri = monaco.Uri.parse(fromItem.uri);
                     var range = monacoRangeFromLsp(fromItem.range, rangeContext);
                     var selectionRange = monacoRangeFromLsp(fromItem.selectionRange, rangeContext);
-                    if (!range || !selectionRange) continue;
+                    if (!range || !selectionRange) {continue;}
                     var fromRanges = [];
                     if (call.fromRanges && Array.isArray(call.fromRanges)) {
                       for (var j = 0; j < call.fromRanges.length; j++) {
                         var fr = monacoRangeFromLsp(call.fromRanges[j], rangeContext);
-                        if (fr) fromRanges.push(fr);
+                        if (fr) {fromRanges.push(fr);}
                       }
                     }
                     result.push({
@@ -3433,25 +4043,25 @@
                 }).catch(function() { return []; });
             },
             provideCallHierarchyOutgoingCalls: function(modelLocal, item) {
-              if (!item._lspData) return [];
+              if (!item._lspData) {return [];}
               var rangeContext = buildRangeContext(modelLocal);
               return request('callHierarchy/outgoingCalls', item._lspData)
                 .then(function(calls) {
-                  if (!calls || !Array.isArray(calls)) return [];
+                  if (!calls || !Array.isArray(calls)) {return [];}
                   var result = [];
                   for (var i = 0; i < calls.length; i++) {
                     var call = calls[i];
-                    if (!call || !call.to) continue;
+                    if (!call || !call.to) {continue;}
                     var toItem = call.to;
                     var uri = monaco.Uri.parse(toItem.uri);
                     var range = monacoRangeFromLsp(toItem.range, rangeContext);
                     var selectionRange = monacoRangeFromLsp(toItem.selectionRange, rangeContext);
-                    if (!range || !selectionRange) continue;
+                    if (!range || !selectionRange) {continue;}
                     var fromRanges = [];
                     if (call.fromRanges && Array.isArray(call.fromRanges)) {
                       for (var j = 0; j < call.fromRanges.length; j++) {
                         var fr = monacoRangeFromLsp(call.fromRanges[j], rangeContext);
-                        if (fr) fromRanges.push(fr);
+                        if (fr) {fromRanges.push(fr);}
                       }
                     }
                     result.push({
@@ -3485,16 +4095,16 @@
                 textDocument: { uri: docUri },
                 position: pos
               }).then(function(items) {
-                if (!items) return [];
+                if (!items) {return [];}
                 var arr = Array.isArray(items) ? items : [items];
                 var result = [];
                 for (var i = 0; i < arr.length; i++) {
                   var item = arr[i];
-                  if (!item) continue;
+                  if (!item) {continue;}
                   var uri = monaco.Uri.parse(item.uri);
                   var range = monacoRangeFromLsp(item.range, rangeContext);
                   var selectionRange = monacoRangeFromLsp(item.selectionRange, rangeContext);
-                  if (!range || !selectionRange) continue;
+                  if (!range || !selectionRange) {continue;}
                   result.push({
                     kind: item.kind || monaco.languages.SymbolKind.Class,
                     name: item.name,
@@ -3509,19 +4119,19 @@
               }).catch(function() { return []; });
             },
             provideTypeHierarchySupertypes: function(modelLocal, item) {
-              if (!item._lspData) return [];
+              if (!item._lspData) {return [];}
               var rangeContext = buildRangeContext(modelLocal);
               return request('typeHierarchy/supertypes', item._lspData)
                 .then(function(items) {
-                  if (!items || !Array.isArray(items)) return [];
+                  if (!items || !Array.isArray(items)) {return [];}
                   var result = [];
                   for (var i = 0; i < items.length; i++) {
                     var superItem = items[i];
-                    if (!superItem) continue;
+                    if (!superItem) {continue;}
                     var uri = monaco.Uri.parse(superItem.uri);
                     var range = monacoRangeFromLsp(superItem.range, rangeContext);
                     var selectionRange = monacoRangeFromLsp(superItem.selectionRange, rangeContext);
-                    if (!range || !selectionRange) continue;
+                    if (!range || !selectionRange) {continue;}
                     result.push({
                       kind: superItem.kind || monaco.languages.SymbolKind.Class,
                       name: superItem.name,
@@ -3536,19 +4146,19 @@
                 }).catch(function() { return []; });
             },
             provideTypeHierarchySubtypes: function(modelLocal, item) {
-              if (!item._lspData) return [];
+              if (!item._lspData) {return [];}
               var rangeContext = buildRangeContext(modelLocal);
               return request('typeHierarchy/subtypes', item._lspData)
                 .then(function(items) {
-                  if (!items || !Array.isArray(items)) return [];
+                  if (!items || !Array.isArray(items)) {return [];}
                   var result = [];
                   for (var i = 0; i < items.length; i++) {
                     var subItem = items[i];
-                    if (!subItem) continue;
+                    if (!subItem) {continue;}
                     var uri = monaco.Uri.parse(subItem.uri);
                     var range = monacoRangeFromLsp(subItem.range, rangeContext);
                     var selectionRange = monacoRangeFromLsp(subItem.selectionRange, rangeContext);
-                    if (!range || !selectionRange) continue;
+                    if (!range || !selectionRange) {continue;}
                     result.push({
                       kind: subItem.kind || monaco.languages.SymbolKind.Class,
                       name: subItem.name,
@@ -3571,7 +4181,7 @@
 
           // Helper to build legend from server capabilities
           var getSemanticTokensLegend = function() {
-            if (semanticTokensLegend) return semanticTokensLegend;
+            if (semanticTokensLegend) {return semanticTokensLegend;}
 
             // Default legend if server doesn't provide one
             // These match common LSP semantic token types
@@ -3619,7 +4229,7 @@
                     currentLine += deltaLine;
 
                     // Skip tokens in prefix region
-                    if (currentLine < prefixInfo.lineCount) continue;
+                    if (currentLine < prefixInfo.lineCount) {continue;}
 
                     // Adjust line number for Monaco (subtract prefix)
                     var monacoLine = currentLine - prefixInfo.lineCount;
@@ -3658,32 +4268,35 @@
       } // End shouldRegisterProviders
 
       var saveTimer = null;
+      var firstModelUri = model.uri.toString();
+      var firstModelLspUri = lspUriForModel || firstModelUri;
       var changeListener = model.onDidChangeContent(function () {
-        version++;
-        var text = (prefixText || '') + editor.getValue();
-        var currentUri = toUri();
-        send({ jsonrpc: '2.0', method: 'textDocument/didChange', params: { textDocument: { uri: currentUri, version: version }, contentChanges: [ { text: text } ] } });
-        notifyDidChangeSent({ uri: currentUri, version: version });
-        scheduleDiagnostics(250);
-
-        // Debounce didSave to trigger full project revalidation after changes stabilize
-        // This ensures dependent files get updated diagnostics
-        if (saveTimer) {
-          clearTimeout(saveTimer);
-        }
-        saveTimer = setTimeout(function() {
-          send({
-            jsonrpc: '2.0',
-            method: 'textDocument/didSave',
-            params: {
-              textDocument: {
-                uri: currentUri
-              },
-              text: text
+        // Send this model's own content (not whatever model the editor now shows), using the
+        // same versioning/transform path as models attached later.
+        var currentUri = firstModelUri;
+        if (sendModelDidChange(sharedConnection, model, firstModelUri, firstModelLspUri, prefixText, options.contentTransform)) {
+          // Debounce didSave to trigger full project revalidation after changes stabilize
+          // This ensures dependent files get updated diagnostics
+          if (saveTimer) {
+            clearTimeout(saveTimer);
+          }
+          saveTimer = setTimeout(function() {
+            saveTimer = null;
+            if (model.isDisposed && model.isDisposed()) {
+              return;
             }
-          });
-          saveTimer = null;
-        }, 500); // 500ms delay after last change
+            send({
+              jsonrpc: '2.0',
+              method: 'textDocument/didSave',
+              params: {
+                textDocument: {
+                  uri: firstModelLspUri
+                },
+                text: buildPrefixedContent(prefixText, model, options.contentTransform, firstModelUri)
+              }
+            });
+          }, 500); // 500ms delay after last change
+        }
 
         // Check if there are pending commands for this URI (from code actions)
         // Execute them after the content change has been sent
@@ -3731,34 +4344,64 @@
         sharedConnection.changeListeners = new Map();
       }
       sharedConnection.changeListeners.set(model.uri.toString(), changeListener);
+      /**
+       * Reject and forget every outstanding request.
+       *
+       * @param {Object} [err] Rejection reason (default {code: 'closed'}).
+       */
       function rejectAllPending(err) {
         try {
-          for (var k in pending) { if (pending[k] && pending[k].reject) pending[k].reject(err || { code: 'closed' }); }
+          for (var k in pending) { if (pending[k] && pending[k].reject) {pending[k].reject(err || { code: 'closed' });} }
         } catch (e) {}
         pending = {};
       }
+      /**
+       * Reconnect after an exponential back-off (max 30s), unless the connection was stopped.
+       */
       function scheduleReconnect() {
-        if (stopped) return;
-        if (reconnectTimer) return;
-        var delay = Math.min(30000, 1000 * Math.pow(2, reconnectAttempts));
-        reconnectAttempts++;
-        reconnectTimer = setTimeout(function () { reconnectTimer = null; connect(); }, delay);
-        if (root && root.console && console.warn) {
-          console.warn('[lmsMonaco] LSP reconnect in ' + delay + 'ms');
+        if (sharedConnection.stopped) {return;}
+        if (sharedConnection.reconnectTimer) {return;}
+        var delay = Math.min(30000, 1000 * Math.pow(2, sharedConnection.reconnectAttempts));
+        sharedConnection.reconnectAttempts++;
+        sharedConnection.reconnectTimer = setTimeout(function () {
+          sharedConnection.reconnectTimer = null;
+          connect();
+        }, delay);
+        if (root && root.console && root.console.warn) {
+          root.console.warn('[lmsMonaco] LSP reconnect in ' + delay + 'ms');
         }
       }
+      /**
+       * Open the WebSocket and install its handlers (message routing, reconnect, keepalive).
+       */
       function connect() {
-        if (stopped) return;
-        try { if (ws && ws.readyState < 2) ws.close(); } catch (e) {}
-        ws = new (root.WebSocket || window.WebSocket)(urlSimple);
+        if (sharedConnection.stopped) {return;}
+        try { if (ws && ws.readyState < 2) {ws.close();} } catch (e) {}
+        try {
+          ws = new (root.WebSocket || window.WebSocket)(urlSimple);
+        } catch (e) {
+          // Malformed LSP URL (or no WebSocket support): keep the editor usable without LSP.
+          // Retrying can't fix a bad URL, so don't schedule a reconnect.
+          ws = null;
+          sharedConnection.ws = null;
+          return;
+        }
+        var thisSocket = ws;
         sharedConnection.ws = ws; // Store ws reference in shared connection
-        ws.onopen = function () { reconnectAttempts = 0; openInitialize(); };
+        ws.onopen = function () {
+          if (sharedConnection.stopped) {
+            try { thisSocket.close(); } catch (e) {}
+            return;
+          }
+          sharedConnection.reconnectAttempts = 0;
+          openInitialize();
+        };
         ws.onmessage = function (ev) {
-          var data = ev && ev.data; if (!data) return;
+          var data = ev && ev.data; if (!data) {return;}
           var msg; try { msg = JSON.parse(data); } catch (e) { return; }
           if (msg.id && (msg.result !== undefined || msg.error)) {
             var p = pending[msg.id]; delete pending[msg.id];
-            if (p) { if (msg.error) p.reject(msg.error); else p.resolve(msg.result); }
+            if (p) { if (msg.error) {p.reject(msg.error);} else {p.resolve(msg.result);} }
             return;
           }
           if (msg.method === 'textDocument/publishDiagnostics') {
@@ -3864,6 +4507,14 @@
         };
         ws.onerror = function () { rejectAllPending({ code: 'error' }); };
         ws.onclose = function () {
+          if (sharedConnection.ws !== thisSocket) {
+            return; // Superseded by a newer socket.
+          }
+          if (sharedConnection.stopped) {
+            // Disposed: just fail outstanding requests, never reconnect.
+            rejectAllPending({ code: 'closed' });
+            return;
+          }
           try { monaco.editor.setModelMarkers(model, 'lsp', []); } catch (e) {}
           clearTimeout(diagnosticTimer);
           diagnosticTimer = null;
@@ -3872,16 +4523,16 @@
           diagnosticIdentifier = null;
           lastDiagnosticResultIds.clear();
           rejectAllPending({ code: 'closed' });
-          scheduleReconnect();
-          if (keepAliveTimer) {
-            clearInterval(keepAliveTimer);
-            keepAliveTimer = null;
+          if (sharedConnection.keepAliveTimer) {
+            clearInterval(sharedConnection.keepAliveTimer);
+            sharedConnection.keepAliveTimer = null;
           }
+          scheduleReconnect();
         };
-        if (keepAliveTimer) {
-          clearInterval(keepAliveTimer);
+        if (sharedConnection.keepAliveTimer) {
+          clearInterval(sharedConnection.keepAliveTimer);
         }
-        keepAliveTimer = setInterval(function () {
+        sharedConnection.keepAliveTimer = setInterval(function () {
           try {
             if (ws && ws.readyState === 1) {
               ws.send(JSON.stringify({ jsonrpc: '2.0', method: '$/keepalive' }));
@@ -3894,31 +4545,40 @@
 
       // extend dispose to cleanup providers and socket
       var prevDispose = api.dispose;
+      var firstModelDetached = false;
       api.dispose = function () {
+        if (saveTimer) {
+          clearTimeout(saveTimer);
+          saveTimer = null;
+        }
         // Use detach helper to clean up this model from the shared connection
-        detachModelFromLspConnection(monaco, model, sharedConnection);
+        if (!firstModelDetached) {
+          firstModelDetached = true;
+          detachModelFromLspConnection(monaco, model, sharedConnection);
+        }
         prevDispose();
       };
 
       return api;
-    }
+    } // End createSimpleLspEditor
 
     // If advanced LSP deps are not available and simple mode is disabled, return a plain editor.
     if (!deps.monacoLanguageClient || !deps.wsjson) {
-      if (root && root.console && console.warn) {
-        console.warn('[lmsMonaco] Advanced LSP disabled: missing monaco-languageclient or ws-jsonrpc');
+      if (root && root.console && root.console.warn) {
+        root.console.warn('[lmsMonaco] Advanced LSP disabled: missing monaco-languageclient or ws-jsonrpc');
       }
       return api;
     }
 
     // Install MonacoServices if exposed by monaco-languageclient
     try {
-      if (deps.monacoLanguageClient && deps.monacoLanguageClient.MonacoServices && typeof deps.monacoLanguageClient.MonacoServices.install === 'function') {
+      if (deps.monacoLanguageClient && deps.monacoLanguageClient.MonacoServices &&
+          typeof deps.monacoLanguageClient.MonacoServices.install === 'function') {
         deps.monacoLanguageClient.MonacoServices.install(monaco);
       }
     } catch (e) {
-      if (root && root.console && console.warn) {
-        console.warn('[lmsMonaco] MonacoServices install skipped', e);
+      if (root && root.console && root.console.warn) {
+        root.console.warn('[lmsMonaco] MonacoServices install skipped', e);
       }
     }
 
@@ -3948,19 +4608,25 @@
 
         client.start();
       } catch (e) {
-        if (root && root.console && console.error) {
-          console.error('[lmsMonaco] LSP start failed', e);
+        if (root && root.console && root.console.error) {
+          root.console.error('[lmsMonaco] LSP start failed', e);
         }
       }
     };
 
     socket.onclose = function () {
-      try { if (client) client.stop(); } catch (e) {}
+      try { if (client) {client.stop();} } catch (e) {}
     };
 
     return api;
   }
 
+  /**
+   * Connect an existing editor's model to a language server.
+   *
+   * @param {Object} options Options for createMonacoLspEditor; options.editor is required.
+   * @returns {Object} Editor API object.
+   */
   function bindEditorModelToLsp(options) {
     options = options || {};
     if (!options.editor) {
@@ -3993,19 +4659,17 @@
       // No connection exists yet
       return { dispose: function() {} };
     }
-    if (connection.pendingDisposeTimer) {
-      clearTimeout(connection.pendingDisposeTimer);
-      connection.pendingDisposeTimer = null;
-    }
+    // Reusing a pooled connection inside its release delay must keep it alive.
+    cancelPendingConnectionDispose(connection);
 
     var modelUri = model.uri.toString();
     var prefixText = options.prefixCode || '';
     var prefixLineCount = countTerminatedLines(prefixText);
     var aliasUri = null;
-    if (!connection.lspUriByModel) connection.lspUriByModel = new Map();
-    if (!connection.modelUriByLsp) connection.modelUriByLsp = new Map();
+    if (!connection.lspUriByModel) {connection.lspUriByModel = new Map();}
+    if (!connection.modelUriByLsp) {connection.modelUriByLsp = new Map();}
     connection.lspUriByModel.set(modelUri, lspUri);
-    if (lspUri) connection.modelUriByLsp.set(lspUri, modelUri);
+    if (lspUri) {connection.modelUriByLsp.set(lspUri, modelUri);}
     if (modelUri.match(/\/tpp_[^\/]+\.h$/i)) {
       aliasUri = modelUri.replace(/\/tpp_([^\/]+)\.h$/i, '/$1.tpp');
       if (!connection.modelUriAliases) {
@@ -4081,22 +4745,7 @@
       }
 
       var changeListener = model.onDidChangeContent(function() {
-        if (connection && connection.ws && connection.ws.readyState === 1) {
-          var changeMsg = {
-            jsonrpc: '2.0',
-            method: 'textDocument/didChange',
-            params: {
-              textDocument: {
-                uri: lspUri,
-                version: model.getVersionId()
-              },
-              contentChanges: [{
-                text: buildPrefixedContent(prefixText, model, options.contentTransform, modelUri)
-              }]
-            }
-          };
-          connection.send(changeMsg);
-          notifyDidChangeSent({ uri: modelUri, version: model.getVersionId() });
+        if (sendModelDidChange(connection, model, modelUri, lspUri, prefixText, options.contentTransform)) {
 
           // Debounce didSave to trigger full project revalidation after changes stabilize
           // This ensures dependent files get updated diagnostics
@@ -4134,8 +4783,13 @@
     connection.modelContentTransforms.set(modelUri, options.contentTransform || null);
 
     // Return disposable
+    var registrationDisposed = false;
     return {
       dispose: function() {
+        if (registrationDisposed) {
+          return;
+        }
+        registrationDisposed = true;
         var remaining = decrementModelRefCount(connection, modelUri);
         if (remaining > 0) {
           return;
@@ -4181,10 +4835,26 @@
           clearTimeout(timer);
           connection.saveTimers.delete(modelUri);
         }
+        if (connection.lastSentVersions) {
+          connection.lastSentVersions.delete(modelUri);
+        }
+
+        // Last model released: let the connection go (after the usual rename grace period).
+        if (connection.models.length === 0) {
+          scheduleConnectionDispose(connection);
+        }
       }
     };
   }
 
+  /**
+   * Whether a model is attached to the pooled connection for its language and URL.
+   *
+   * @param {Object} monaco The monaco namespace.
+   * @param {Object} model The model.
+   * @param {Object} options language, lspUrl and lspBaseUrl.
+   * @returns {boolean} True if registered.
+   */
   function isModelRegisteredWithLsp(monaco, model, options) {
     if (!monaco || !model || !options) {
       return false;
@@ -4204,6 +4874,11 @@
 
   /**
    * Notify LSP server that a file has been deleted
+   *
+   * @param {Object} monaco The monaco namespace.
+   * @param {string} fileUri URI of the deleted file.
+   * @param {Object} options language, lspUrl and lspBaseUrl.
+   * @returns {boolean} True if the notification was sent.
    */
   function notifyFileDeleted(monaco, fileUri, options) {
     if (!monaco || !fileUri || !options) {
@@ -4232,6 +4907,11 @@
 
   /**
    * Notify LSP server that a file has been created
+   *
+   * @param {Object} monaco The monaco namespace.
+   * @param {string} fileUri URI of the new file.
+   * @param {Object} options language, lspUrl and lspBaseUrl.
+   * @returns {boolean} True if the notification was sent.
    */
   function notifyFileCreated(monaco, fileUri, options) {
     if (!monaco || !fileUri || !options) {
@@ -4260,6 +4940,12 @@
 
   /**
    * Notify LSP server that a file has been renamed
+   *
+   * @param {Object} monaco The monaco namespace.
+   * @param {string} oldUri Previous file URI.
+   * @param {string} newUri New file URI.
+   * @param {Object} options language, lspUrl and lspBaseUrl.
+   * @returns {boolean} True if the notification was sent.
    */
   function notifyFileRenamed(monaco, oldUri, newUri, options) {
     if (!monaco || !oldUri || !newUri || !options) {
@@ -4289,6 +4975,11 @@
 
   /**
    * Get the document symbol provider for a given language and LSP URL
+   *
+   * @param {string} language Language id.
+   * @param {string} lspUrl Explicit LSP URL (or empty).
+   * @param {string} lspBaseUrl Base LSP URL used when lspUrl is empty.
+   * @returns {Object|null} The provider, or null if there is no such connection.
    */
   function getDocumentSymbolProvider(language, lspUrl, lspBaseUrl) {
     language = language || 'plaintext';
@@ -4301,6 +4992,7 @@
   }
 
   return {
+    createMonacoModel: createMonacoModel,
     createMonacoLspEditor: createMonacoLspEditor,
     bindEditorModelToLsp: bindEditorModelToLsp,
     registerModelWithLsp: registerModelWithLsp,

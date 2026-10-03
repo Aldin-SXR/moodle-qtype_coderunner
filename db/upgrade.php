@@ -821,6 +821,12 @@ function xmldb_qtype_coderunner_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 2026092300, 'qtype', 'coderunner');
     }
 
+    if ($oldversion < 2026100301) {
+        // Reload prototypes: multifile_flight removed; mysql, mongodb, typescript,
+        // solidity and multifile templates fixed (done by update_question_types below).
+        upgrade_plugin_savepoint(true, 2026100301, 'qtype', 'coderunner');
+    }
+
     require_once(__DIR__ . '/upgradelib.php');
     update_question_types();
 

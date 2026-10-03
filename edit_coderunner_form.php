@@ -234,7 +234,10 @@ class qtype_coderunner_edit_form extends question_edit_form {
             'class' => 'answer edit_code',
             'data-params' => $this->get_merged_ui_params(),
             'data-lang' => $this->acelang,
-            'data-author-mode' => '1'];
+            'data-author-mode' => '1',
+            // The admin LSP base URL, which the server adds to Monaco UI params,
+            // so authorform.js can add it too when previewing unsaved params.
+            'data-lspbaseurl' => (string) get_config('qtype_coderunner', 'lsp_base_url')];
         $mform->addElement(
             'textarea',
             'answer',

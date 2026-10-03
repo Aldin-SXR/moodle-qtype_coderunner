@@ -104,6 +104,8 @@ define(['jquery', 'qtype_coderunner/userinterfacewrapper', 'core/str'], function
             // parameters, so edits can be previewed without saving first.
             savedMergedUiParams = parseJsonObject(answerTextarea ? answerTextarea.getAttribute('data-params') : '') || {},
             savedOwnUiParams = parseJsonObject(uiparameters ? uiparameters.value : '') || {},
+            // The admin-configured LSP base URL that the server adds to Monaco UI params.
+            adminLspBaseUrl = answerTextarea ? (answerTextarea.getAttribute('data-lspbaseurl') || '') : '',
             prototypeRequests = {}, // Question type name -> promise of its prototype.
             uiParamsRefreshCount = 0;
 
@@ -182,6 +184,11 @@ define(['jquery', 'qtype_coderunner/userinterfacewrapper', 'core/str'], function
                     });
                     Object.assign(merged, ownParams);
                 }
+                const ui = (uiplugin.value || '').toLowerCase();
+                if (merged !== null && adminLspBaseUrl && !merged.lsp_base_url &&
+                        (ui === 'monaco' || ui === 'monaco_multifile')) {
+                    merged.lsp_base_url = adminLspBaseUrl; // As the server adds it.
+                }
                 const json = merged === null ? null : JSON.stringify(merged);
                 if (answerTextarea && json !== null && json !== answerTextarea.getAttribute('data-params')) {
                     answerTextarea.setAttribute('data-params', json);
@@ -195,6 +202,9 @@ define(['jquery', 'qtype_coderunner/userinterfacewrapper', 'core/str'], function
                 setUis();
                 return null;
             }).catch(function() {
+                if (force) {
+                    setUis();
+                }
                 return null;
             });
         }
@@ -782,7 +792,8 @@ define(['jquery', 'qtype_coderunner/userinterfacewrapper', 'core/str'], function
         });
 
         uiplugin.addEventListener('change', function () {
-            setUis();
+            // The page's params were merged for the previous UI, so re-merge for the new one.
+            refreshUiParams(true);
             loadUiParametersDescription();
         });
 

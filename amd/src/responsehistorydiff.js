@@ -30,6 +30,11 @@ define(['core/modal', 'core/modal_events'], function(Modal, ModalEvents) {
 
     const SELECTOR = '.coderunner-diff-popup';
 
+    /**
+     * Load the Monaco editor via RequireJS, once.
+     *
+     * @returns {Promise} Resolves with the monaco namespace.
+     */
     function ensureMonacoLoaded() {
         if (monacoLoaderPromise) {
             return monacoLoaderPromise;
@@ -59,6 +64,12 @@ define(['core/modal', 'core/modal_events'], function(Modal, ModalEvents) {
         return monacoLoaderPromise;
     }
 
+    /**
+     * Decode a base64 (UTF-8) data attribute, falling back to plain base64.
+     *
+     * @param {string} value The base64-encoded value.
+     * @returns {string} The decoded text, or '' if it cannot be decoded.
+     */
     function decode(value) {
         if (!value) {
             return '';
@@ -74,6 +85,9 @@ define(['core/modal', 'core/modal_events'], function(Modal, ModalEvents) {
         }
     }
 
+    /**
+     * Dispose of the current diff editor and its models, if any.
+     */
     function disposeDiff() {
         if (diffEditor) {
             try { diffEditor.dispose(); } catch (e) {}
@@ -89,6 +103,12 @@ define(['core/modal', 'core/modal_events'], function(Modal, ModalEvents) {
         }
     }
 
+    /**
+     * Get (creating on first use) the shared diff modal, with the given title.
+     *
+     * @param {string} title The modal title.
+     * @returns {Promise} Resolves with the modal.
+     */
     function getModal(title) {
         if (!modalPromise) {
             modalPromise = Modal.create({
@@ -114,6 +134,17 @@ define(['core/modal', 'core/modal_events'], function(Modal, ModalEvents) {
         });
     }
 
+    /**
+     * Show a side-by-side Monaco diff of two responses in the modal.
+     *
+     * @param {string} previous The previous response text.
+     * @param {string} current The current response text.
+     * @param {string} title The modal title.
+     * @param {string} language The Monaco language id.
+     * @param {string} previousLabel Label for the previous response.
+     * @param {string} currentLabel Label for the current response.
+     * @param {HTMLElement} returnElement Element to refocus when the modal closes.
+     */
     function renderDiff(previous, current, title, language, previousLabel, currentLabel, returnElement) {
         ensureMonacoLoaded().then(function(monaco) {
             getModal(title).then(function(modal) {
@@ -163,6 +194,11 @@ define(['core/modal', 'core/modal_events'], function(Modal, ModalEvents) {
         });
     }
 
+    /**
+     * Delegated click handler for diff popup links.
+     *
+     * @param {Event} event The click event.
+     */
     function handleClick(event) {
         const link = event.target.closest(SELECTOR);
         if (!link) {
@@ -178,6 +214,9 @@ define(['core/modal', 'core/modal_events'], function(Modal, ModalEvents) {
         renderDiff(previous, current, title, language, previousLabel, currentLabel, link);
     }
 
+    /**
+     * Register the document-level click handler.
+     */
     function init() {
         document.addEventListener('click', handleClick);
     }

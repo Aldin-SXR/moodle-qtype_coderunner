@@ -73,6 +73,10 @@
             "type": "boolean",
             "default": false
         },
+        "lsp_template_prefix": {
+            "type": "boolean",
+            "default": false
+        },
         "lsp_workspace_config": {
             "type": "string",
             "default": ""
