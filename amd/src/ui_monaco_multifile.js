@@ -1290,7 +1290,7 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
             Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 8);
         this.workspaceRoot = 'workspace/' + this.workspaceInstanceId;
         this.fail = false;
-        this.ready = false;
+        this.isReady = false;  // Not "ready": that name is the optional ready() UI API method.
         this.currentFile = null;
         this.monaco = null;
         this.editor = null;
@@ -1479,7 +1479,7 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
             this.monaco = monaco;
             return this.initialiseEditor();
         }).then(() => {
-            this.ready = true;
+            this.isReady = true;
 
             // Restore UI state (open tabs and active file)
             let activeFilePath = null;

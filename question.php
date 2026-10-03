@@ -261,11 +261,15 @@ class qtype_coderunner_question extends question_graded_automatically {
     // Also twig expand the rest of the question fields if $this->twigall is true.
     public function apply_attempt_state(question_attempt_step $step) {
         parent::apply_attempt_state($step);
-        $this->student = unserialize($step->get_qt_var('_STUDENT'));
+        $this->student = unserialize($step->get_qt_var('_STUDENT'), [
+            'allowed_classes' => [qtype_coderunner_student::class],
+        ]);
         $quiz = $step->get_qt_var('_QUIZ');
 
         // If the saved attempt did not have a quiz variable, create a dummy (empty) one.
-        $this->quiz = $quiz ? unserialize($quiz) : new qtype_coderunner_quiz();
+        $this->quiz = $quiz ? unserialize($quiz, [
+            'allowed_classes' => [qtype_coderunner_quiz::class],
+        ]) : new qtype_coderunner_quiz();
 
         // Ensure any randomisation is always the same.
         $seed = $step->get_qt_var('_mtrandseed');
@@ -308,7 +312,7 @@ class qtype_coderunner_question extends question_graded_automatically {
             $this->mergeduiparameters = $this->evaluate_merged_ui_parameters();
         } catch (Exception $e) {
             $error = $e->getMessage();
-            $this->parameters = ["initerror" => "' . $error . '"];
+            $this->parameters = (object) ["initerror" => $error];
             $this->templateparamsjson = json_encode($this->parameters);
             $erroroninit = get_string('erroroninit', 'qtype_coderunner', ['error' => $error]);
             $this->initialisationerrormessage = $erroroninit;
@@ -808,6 +812,19 @@ class qtype_coderunner_question extends question_graded_automatically {
      * @return string the message.
      */
     public function get_validation_error(array $response) {
+        // The $invalid question state is also used (by our custom behaviour)
+        // when a response was complete and gradable but grading itself
+        // failed, e.g. because the sandbox was unreachable. That's a
+        // different problem from an incomplete/empty response, so check for
+        // it first rather than letting validate_response() below wrongly
+        // conclude (from a step that only has _testoutcome, not answer) that
+        // no answer was given.
+        if (!empty($response['_testoutcome'])) {
+            $testoutcome = $this->unserialize_outcome($response['_testoutcome']);
+            if ($testoutcome instanceof qtype_coderunner_testing_outcome && $testoutcome->run_failed()) {
+                return get_string('unknownerror', 'qtype_coderunner');
+            }
+        }
         $error = $this->validate_response($response);
         if ($error) {
             return $error;
@@ -988,6 +1005,34 @@ class qtype_coderunner_question extends question_graded_automatically {
 
 
     /**
+     * Safely unserialize a serialised testing outcome, such as is cached in the
+     * '_testoutcome' question-attempt variable. This restricts the classes that
+     * unserialize() is allowed to instantiate to just those that legitimately
+     * occur within a serialised testing outcome, preventing PHP object-injection
+     * attacks via crafted serialised data (e.g. planted in a restored backup).
+     * @param string $serialised The serialised testing outcome.
+     * @return qtype_coderunner_testing_outcome|false The unserialised outcome, or
+     * false if unserialisation fails.
+     */
+    public function unserialize_outcome($serialised) {
+        return @unserialize($serialised, ['allowed_classes' => [
+            qtype_coderunner_testing_outcome::class,
+            qtype_coderunner_combinator_grader_outcome::class,
+            qtype_coderunner_test_result::class,
+            qtype_coderunner_html_wrapper::class,
+            // The failures table within an outcome is an html_table. That class moved
+            // into the core_table\output namespace in Moodle 4.5, so an outcome
+            // serialised by Moodle 4.4 or earlier names it 'html_table' whereas one
+            // serialised by Moodle 4.5 or later names it 'core_table\output\html_table'.
+            // Both spellings must be allowed, because allowed_classes is matched against
+            // the class name recorded in the serialised data.
+            'html_table',
+            'core_table\\output\\html_table',
+        ]]);
+    }
+
+
+    /**
      * Grade the given student's response.
      * This implementation assumes a modified behaviour that will accept a
      * third array element in its response, containing data to be cached and
@@ -1023,7 +1068,7 @@ class qtype_coderunner_question extends question_graded_automatically {
         // This should be even quicker than the file cache.
         if (!empty($response['_testoutcome'])) {
             $testoutcomeserial = $response['_testoutcome'];
-            $testoutcome = unserialize($testoutcomeserial);
+            $testoutcome = $this->unserialize_outcome($testoutcomeserial);
             if (
                 $testoutcome instanceof qtype_coderunner_testing_outcome  // Ignore legacy-format outcomes.
                     && $testoutcome->isprecheck == $isprecheck

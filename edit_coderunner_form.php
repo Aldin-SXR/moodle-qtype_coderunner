@@ -498,7 +498,7 @@ class qtype_coderunner_edit_form extends question_edit_form {
             $question->useasexample = [];
             $question->display = [];
             $question->extra = [];
-            $question->hiderestifail = [];
+            $question->hiderestiffail = [];
 
             foreach ($question->options->testcases as $tc) {
                 $question->testcode[] = $this->newline_hack($tc->testcode);
@@ -1673,7 +1673,7 @@ class qtype_coderunner_edit_form extends question_edit_form {
         if ($mark == 1.0) {
             return '';
         } else {
-            $outcome = unserialize($cachedata['_testoutcome']);
+            $outcome = $this->formquestion->unserialize_outcome($cachedata['_testoutcome']);
             $error = $outcome->validation_error_message();
             if ($this->iscombinatorgrader) {
                 $error = $this->fix_template_grader_error($error);
@@ -1699,7 +1699,7 @@ class qtype_coderunner_edit_form extends question_edit_form {
      * @param array $data data from the form
      */
     private function num_examples($data) {
-        return isset($data['useasexample']) ? count($data['useasexample']) : 0;
+        return isset($data['useasexample']) ? count(array_filter($data['useasexample'])) : 0;
     }
 
     /**

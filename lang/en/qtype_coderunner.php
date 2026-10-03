@@ -24,6 +24,7 @@
 
 $string['aborted'] = 'Testing was aborted due to error.';
 $string['ace_aria_label'] = 'Code editor - Enter your code here.';
+$string['ace_gapfillerui_line_height_descr'] = 'The line spacing, in pixels, used by the editor; it also determines the height of the answer box, in conjunction with the box\'s "rows" setting. The default value is that used by the Ace editor normally, but a larger value, e.g. 22, can be used to give a less cramped appearance.';
 $string['ace_gapfillerui_ui_source_descr'] = '"globalextra" to take the code to display from the globalextra field or "test0" to take it from the testcode field of the first test';
 $string['ace_ui_notready'] = 'Ace editor not ready. Perhaps reload page?';
 $string['aceui_auto_switch_light_dark_descr'] = 'Allow a browser or OS preference for dark themes to override a preset Ace light theme.';
@@ -1951,6 +1952,8 @@ $string['bulktestusecachelabel'] = 'Use grading cache: ';
 $string['bulktestusecacheexplanation'] = 'Whether or not to use the Coderunner grading cache. Turning it off means that questions will always be run on the
 jobe server. When doing multiple runs, this setting will help show issues with individual jobe servers when you are using a list of servers or a jobe proxy that is load sharing to multiple jobes. Deafult: true';
 $string['bulktestallcachenotclearedmessage'] = '<b>Note:</b> Grading cache not cleared -- do it from admin-plugins-cache if you really want to clear the cache for all courses!';
+$string['errorprocessingqbanksforcourse'] = 'Error processing qbanks for {$a}.';
+$string['exceptionwas'] = 'Exception was: {$a}.';
 
 $string['ui_monaco'] = 'Monaco (with LSP)';
 $string['lsp_base_url'] = 'LSP base URL';

@@ -1037,16 +1037,67 @@ li.bulktest.coderunner.context.quiz {
 }
 
 /* Ace gapfiller ui */
-.ace-gap-background {
+
+/* Grey panel so the gaps stand out. Scoped to the default (textmate) light theme,
+   since a dark theme's light text would be unreadable on it. */
+.ace-gapfiller.ace-tm {
+    background-color: rgb(230, 230, 230);
+}
+
+
+.ace-gap-background,
+.ace-gap-background-single {
     position: absolute;
-    background-color: SeaShell;
+    background-color: white;
     border-radius: 0;
 }
 
 .ace-gap-outline {
     position: absolute;
     outline: 1px solid;
-    outline-color: rgba(0, 0, 0, 0.5);
+    outline-color: rgba(0, 0, 0, 0.25);
+}
+
+/* Where a custom line_height gives a line more height than its text needs, shrink
+   a single-row gap's box back to the text height and centre it, so the spare space
+   separates gaps on adjacent lines instead of padding out their boxes until they
+   collide. Ace writes each marker's height inline, from its own line height, hence
+   the !important. Both properties come from the UI (see ui_ace_gapfiller.js), which
+   only adds the enclosing class when there is in fact space to give. Multi-row gaps
+   are deliberately excluded: their rows must stay flush to read as one box. */
+.ace-gapfiller-spaced .ace-gap-outline,
+.ace-gapfiller-spaced .ace-gap-background-single {
+    height: var(--gap-height) !important;
+    margin-top: var(--gap-inset);
+}
+
+/* A multi-row gap is drawn as one row per line of the box, each with its own
+   marker (so its shared width can grow/shrink independently of neighbouring
+   gaps). These three classes make the stack read as a single combined box:
+   only the outer perimeter is bordered/rounded, with no border on the seams
+   between rows. outline (above) is unused here since it can't be removed on
+   just one side; box-sizing keeps the bordered box the same size outline gave it. */
+.ace-gap-outline-top {
+    position: absolute;
+    box-sizing: border-box;
+    border: 1px solid rgba(0, 0, 0, 0.25);
+    border-bottom: none;
+    border-radius: 4px 4px 0 0;
+}
+
+.ace-gap-outline-middle {
+    position: absolute;
+    box-sizing: border-box;
+    border-left: 1px solid rgba(0, 0, 0, 0.25);
+    border-right: 1px solid rgba(0, 0, 0, 0.25);
+}
+
+.ace-gap-outline-bottom {
+    position: absolute;
+    box-sizing: border-box;
+    border: 1px solid rgba(0, 0, 0, 0.25);
+    border-top: none;
+    border-radius: 0 0 4px 4px;
 }
 
 /* stylelint-disable declaration-no-important  */

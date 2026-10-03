@@ -22,13 +22,13 @@
 
 defined('MOODLE_INTERNAL') || die();
 
-$plugin->version  = 2026092300;
+$plugin->version  = 2026100300;
 $plugin->requires = 2023100900; // Moodle 4.3.0 or later.
 $plugin->cron = 0;
 $plugin->component = 'qtype_coderunner';
 $plugin->maturity = MATURITY_STABLE;
-$plugin->release = '5.10.2+ (upstream 5.10.2 with local Monaco, Kotlin, Solidity and data-structure graph additions)';
+$plugin->release = '5.10.6+ (upstream 5.10.6 with local Monaco, Kotlin, Solidity and data-structure graph additions)';
 
 $plugin->dependencies = [
-    'qbehaviour_adaptive_adapted_for_coderunner' => 2026070100,
+    'qbehaviour_adaptive_adapted_for_coderunner' => 2026081000,
 ];
