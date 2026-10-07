@@ -127,6 +127,33 @@ import tempfile
 
 SEPARATOR = "#<ab@17943918#@>#"
 RAW_ANSWER = """{{ STUDENT_ANSWER | e('py') }}"""
+PRELOAD_RAW = """{{ QUESTION.answerpreload | e('py') }}"""
+
+
+def enforce_locked_files(files):
+    """Replace every file the author locked in the answer preload with the author's version.
+
+    Locked files can't be edited in the multi-file UI, but the answer is plain JSON that a
+    student could still alter, so the locks are enforced here too. A locked file the student
+    deleted is restored.
+    """
+    def key(path):
+        path = (path or '').replace('\\', '/').strip().lstrip('/')
+        return os.path.normpath(path) if path else ''
+
+    try:
+        preload = json.loads(PRELOAD_RAW) if PRELOAD_RAW.strip() else {}
+    except json.JSONDecodeError:
+        return files
+    preload_files = preload.get('files', []) if isinstance(preload, dict) else []
+    locked = {}
+    for entry in preload_files if isinstance(preload_files, list) else []:
+        if isinstance(entry, dict) and entry.get('locked') and key(entry.get('path')):
+            locked[key(entry.get('path'))] = dict(entry)
+    if not locked:
+        return files
+    kept = [entry for entry in files if not (isinstance(entry, dict) and key(entry.get('path')) in locked)]
+    return kept + list(locked.values())
 
 
 def fail(message):
@@ -155,6 +182,7 @@ def write_submission_files():
     files = parsed.get('files', []) if isinstance(parsed, dict) else parsed
     if not isinstance(files, list):
         fail("Submission must contain a 'files' list.")
+    files = enforce_locked_files(files)
 
     sources = []
     headers = []
@@ -822,13 +850,20 @@ def stores_tree_direction(graph):
 
 
 def normalise_tree_endpoints(from_node, to_node, settings, trust_direction=False):
+    """Return (parent, child, reversed_by_layout, direction_known).
+
+    direction_known is False only for an older tree edge whose two ends are
+    level on the canvas, so neither the data nor the layout says which is
+    the parent.
+    """
     if settings["mode"] != "tree" or trust_direction:
-        return from_node, to_node, False
+        return from_node, to_node, False, True
     from_y = from_node.get("y")
     to_y = to_node.get("y")
     if from_y is not None and to_y is not None and from_y > to_y + 8:
-        return to_node, from_node, True
-    return from_node, to_node, False
+        return to_node, from_node, True, True
+    known = from_y is not None and to_y is not None and to_y > from_y + 8
+    return from_node, to_node, False, known
 
 
 def normalise_graph(raw, label, expected_settings=None):
@@ -836,7 +871,9 @@ def normalise_graph(raw, label, expected_settings=None):
     if errors:
         return None, errors
 
-    settings = settings_for(graph, expected_settings)
+    # A student answer is always read with the correct answer's settings, so
+    # nothing the student's own serialisation claims can change how it is graded.
+    settings = dict(expected_settings) if expected_settings is not None else settings_for(graph)
     trust_direction = stores_tree_direction(graph)
     node_by_id = {}
     node_by_identity = {}
@@ -877,7 +914,7 @@ def normalise_graph(raw, label, expected_settings=None):
         if from_node is None or to_node is None:
             errors.append(f"{label}: edge {index + 1} references a missing node")
             continue
-        from_node, to_node, reversed_by_layout = normalise_tree_endpoints(
+        from_node, to_node, reversed_by_layout, direction_known = normalise_tree_endpoints(
             from_node, to_node, settings, trust_direction
         )
         cost = as_string(edge.get("cost")).strip()
@@ -899,10 +936,15 @@ def normalise_graph(raw, label, expected_settings=None):
 
         from_key = from_node["identity"]
         to_key = to_node["identity"]
-        if not settings["isdirected"]:
+        if not settings["isdirected"] and settings["mode"] != "tree":
+            # Undirected graph edges have no direction.
             from_key, to_key = sorted([from_key, to_key])
-            if settings["mode"] != "tree":
-                slot = ""
+            slot = ""
+        elif not settings["isdirected"] and not direction_known:
+            # Tree edges run parent to child whatever isdirected says (it only
+            # affects display), so endpoint order is ignored only for an older
+            # edge whose direction can't be recovered at all.
+            from_key, to_key = sorted([from_key, to_key])
         edge_counter[(from_key, to_key, cost, color, slot)] += 1
         tree_edges.append({"from": from_node["identity"], "to": to_node["identity"], "slot": slot})
 
@@ -919,19 +961,19 @@ def normalise_graph(raw, label, expected_settings=None):
 
 
 def normalise_answer(raw, label, expected_settings=None):
-    if expected_settings is None or expected_settings["mode"] not in LINEAR_MODES:
-        graph, errors = graph_from_json(raw, label)
-        if errors:
-            return None, errors
-        if settings_for(graph, expected_settings)["mode"] not in LINEAR_MODES:
-            return normalise_graph(raw, label, expected_settings)
-        return normalise_sequence(graph, label, settings_for(graph, expected_settings))
-    # A student answer to a linear question is always read with the question's
-    # own structure settings, whatever its serialisation claims.
     graph, errors = graph_from_json(raw, label)
     if errors:
         return None, errors
-    return normalise_sequence(graph, label, dict(expected_settings))
+    if expected_settings is None:
+        settings = settings_for(graph)
+        if settings["mode"] in LINEAR_MODES:
+            return normalise_sequence(graph, label, settings)
+        return normalise_graph(raw, label)
+    # A student answer is always read with the correct answer's structure
+    # settings, whatever its own serialisation claims.
+    if expected_settings["mode"] in LINEAR_MODES:
+        return normalise_sequence(graph, label, dict(expected_settings))
+    return normalise_graph(raw, label, expected_settings)
 
 
 def position_text(settings, index, length):
@@ -2473,11 +2515,12 @@ fun main() {
 
 {% for testCase in TESTCASES %}
     run {
+        {# JSON, adjusted to a valid Kotlin literal: no \/ or \f escapes, and $ escaped. #}
         {% if QUESTION.parameters.showtestcode | default(false) %}
-        val __crName = {{ testCase.testcode | json_encode | raw }}
+        val __crName = {{ testCase.testcode | json_encode | replace({'\\\\': '\\\\', '\\/': '/', '\\f': '\\u000C', '$': '\\$'}) | raw }}
         {% else %}
         {% if testCase.expected is defined and testCase.expected|trim %}
-        val __crName = {{ testCase.expected | json_encode | raw }}
+        val __crName = {{ testCase.expected | json_encode | replace({'\\\\': '\\\\', '\\/': '/', '\\f': '\\u000C', '$': '\\$'}) | raw }}
         {% else %}
         val __crName = "Test {{ loop.index }}"
         {% endif %}
@@ -2845,7 +2888,8 @@ console.log(SEPARATOR);
     <globalextra></globalextra>
     <useace>1</useace>
     <resultcolumns></resultcolumns>
-    <template><![CDATA[import subprocess
+    <template><![CDATA[import shutil
+import subprocess
 import sys
 import json
 
@@ -2919,6 +2963,12 @@ function checkExplicitReturnType(methodName: string, expectedReturnType?: string
 
 with open('__student__.ts', 'w', encoding='utf-8') as f:
     f.write(typescript_program)
+
+for tool, package in (('tsc', 'the TypeScript compiler (npm package typescript)'), ('node', 'Node.js')):
+    if shutil.which(tool) is None:
+        print(f"***Error: this question type needs {package} on the Jobe server, "
+              f"and '{tool}' is not installed there. Ask your administrator.")
+        sys.exit(0)
 
 compile_proc = subprocess.run(
     ['tsc', '__student__.ts', '--target', 'ES2020', '--lib', 'ES2020,DOM', '--strict', '--noEmitOnError', '--skipLibCheck'],
@@ -3609,9 +3659,15 @@ print(SEPARATOR)
     <globalextra></globalextra>
     <useace>1</useace>
     <resultcolumns></resultcolumns>
-    <template><![CDATA[import mysql.connector
-import secrets
+    <template><![CDATA[import secrets
 import sys
+
+try:
+    import mysql.connector
+except ImportError:
+    print("***Error: this question type needs the Python package mysql-connector-python "
+          "on the Jobe server, and it is not installed there. Ask your administrator.")
+    sys.exit(0)
 
 # Get MySQL connection parameters from template parameters
 # (there are no admin settings for these; set them per question or in a custom prototype).
@@ -3923,14 +3979,20 @@ except Exception as e:
     <useace>1</useace>
     <resultcolumns></resultcolumns>
     <template><![CDATA[import ast
-import pymongo
-import pymongo.cursor
-import pymongo.errors
-import pymongo.results
-from pymongo import MongoClient
-from pymongo.command_cursor import CommandCursor
-from bson import ObjectId
 import sys
+
+try:
+    import pymongo
+    import pymongo.cursor
+    import pymongo.errors
+    import pymongo.results
+    from pymongo import MongoClient
+    from pymongo.command_cursor import CommandCursor
+    from bson import ObjectId
+except ImportError:
+    print("***Error: this question type needs the Python package pymongo "
+          "on the Jobe server, and it is not installed there. Ask your administrator.")
+    sys.exit(0)
 import json
 from datetime import datetime
 import re
@@ -5251,6 +5313,33 @@ import tempfile
 from html.parser import HTMLParser
 
 RAW_ANSWER = """{{ STUDENT_ANSWER | e('py') }}"""
+PRELOAD_RAW = """{{ QUESTION.answerpreload | e('py') }}"""
+
+
+def enforce_locked_files(files):
+    """Replace every file the author locked in the answer preload with the author's version.
+
+    Locked files can't be edited in the multi-file UI, but the answer is plain JSON that a
+    student could still alter, so the locks are enforced here too. A locked file the student
+    deleted is restored.
+    """
+    def key(path):
+        path = (path or '').replace('\\', '/').strip().lstrip('/')
+        return os.path.normpath(path) if path else ''
+
+    try:
+        preload = json.loads(PRELOAD_RAW) if PRELOAD_RAW.strip() else {}
+    except json.JSONDecodeError:
+        return files
+    preload_files = preload.get('files', []) if isinstance(preload, dict) else []
+    locked = {}
+    for entry in preload_files if isinstance(preload_files, list) else []:
+        if isinstance(entry, dict) and entry.get('locked') and key(entry.get('path')):
+            locked[key(entry.get('path'))] = dict(entry)
+    if not locked:
+        return files
+    kept = [entry for entry in files if not (isinstance(entry, dict) and key(entry.get('path')) in locked)]
+    return kept + list(locked.values())
 
 
 def _exit_with_error(message):
@@ -5270,6 +5359,7 @@ else:
 
 if not isinstance(student_files, list):
     _exit_with_error("Submission must contain a 'files' list.")
+student_files = enforce_locked_files(student_files)
 
 
 class StudentProject:
@@ -5334,7 +5424,7 @@ class StudentProject:
         special_chars = set('*+?|[](){}^$\\')
         if any(ch in special_chars for ch in text):
             return True
-        if '.*' in text or '\d' in text or '\w' in text:
+        if '.*' in text or r'\d' in text or r'\w' in text:
             return True
         return False
 
@@ -7210,6 +7300,33 @@ import tempfile
 
 SEPARATOR = "#<ab@17943918#@>#"
 RAW_ANSWER = """{{ STUDENT_ANSWER | e('py') }}"""
+PRELOAD_RAW = """{{ QUESTION.answerpreload | e('py') }}"""
+
+
+def enforce_locked_files(files):
+    """Replace every file the author locked in the answer preload with the author's version.
+
+    Locked files can't be edited in the multi-file UI, but the answer is plain JSON that a
+    student could still alter, so the locks are enforced here too. A locked file the student
+    deleted is restored.
+    """
+    def key(path):
+        path = (path or '').replace('\\', '/').strip().lstrip('/')
+        return os.path.normpath(path) if path else ''
+
+    try:
+        preload = json.loads(PRELOAD_RAW) if PRELOAD_RAW.strip() else {}
+    except json.JSONDecodeError:
+        return files
+    preload_files = preload.get('files', []) if isinstance(preload, dict) else []
+    locked = {}
+    for entry in preload_files if isinstance(preload_files, list) else []:
+        if isinstance(entry, dict) and entry.get('locked') and key(entry.get('path')):
+            locked[key(entry.get('path'))] = dict(entry)
+    if not locked:
+        return files
+    kept = [entry for entry in files if not (isinstance(entry, dict) and key(entry.get('path')) in locked)]
+    return kept + list(locked.values())
 
 
 def fail(message):
@@ -7250,6 +7367,7 @@ def write_submission_files():
     files = parsed.get('files', []) if isinstance(parsed, dict) else parsed
     if not isinstance(files, list):
         fail("Submission must contain a 'files' list.")
+    files = enforce_locked_files(files)
 
     sources = []
     main_candidates = []

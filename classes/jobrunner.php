@@ -212,13 +212,14 @@ class qtype_coderunner_jobrunner {
                 qtype_coderunner_testing_outcome::STATUS_SANDBOX_ERROR,
                 qtype_coderunner_sandbox::error_string($run)
             );
-        } else if ($run->result === qtype_coderunner_sandbox::RESULT_COMPILATION_ERROR) {
-            $outcome->set_status(
-                qtype_coderunner_testing_outcome::STATUS_SYNTAX_ERROR,
-                $this->merge("\n", [$run->cmpinfo, $run->output, $run->stderr])
-            );
         } else if ($this->grader->name() === 'TemplateGrader') {
             $outcome = $this->do_combinator_grading($run, $isprecheck);
+        } else if ($run->result === qtype_coderunner_sandbox::RESULT_COMPILATION_ERROR) {
+            // Some Jobe languages (e.g. a custom kotlin one) report compiler errors on
+            // stderr rather than in cmpinfo, so fall back to those if cmpinfo is empty.
+            $message = trim($run->cmpinfo ?? '') !== '' ? $run->cmpinfo :
+                $this->merge("\n", [$run->output ?? '', $run->stderr ?? '']);
+            $outcome->set_status(qtype_coderunner_testing_outcome::STATUS_SYNTAX_ERROR, $message);
         } else if ($run->result === qtype_coderunner_sandbox::RESULT_SUCCESS) {
             $outputs = preg_split($this->question->get_test_splitter_re(), $run->output);
             if (count($outputs) === $numtests) {

@@ -22,7 +22,7 @@
  */
 
 function xmldb_qtype_coderunner_upgrade($oldversion) {
-    global $DB;
+    global $DB, $OUTPUT;
     $dbman = $DB->get_manager();
 
     if ($oldversion < 2016111105) {
@@ -652,8 +652,9 @@ function xmldb_qtype_coderunner_upgrade($oldversion) {
 
     if ($oldversion < 2026051808) {
         // Switch Kotlin prototypes from Python-wrapper approach to native Kotlin execution via
-        // Jobe's built-in Kotlin language support. Templates are now plain Twig (like java_program/
-        // java_method). Also fix jobesandbox.php to use .kt file extension for language=kotlin.
+        // a Jobe language named kotlin (standard Jobe has none; it needs a customised Jobe server).
+        // Templates are now plain Twig (like java_program/java_method). Also fix jobesandbox.php
+        // to use .kt file extension for language=kotlin.
         upgrade_plugin_savepoint(true, 2026051808, 'qtype', 'coderunner');
     }
 
@@ -830,6 +831,35 @@ function xmldb_qtype_coderunner_upgrade($oldversion) {
     if ($oldversion < 2026100400) {
         // Reload prototypes: data_structure_graph grader now trusts stored edge direction and slot.
         upgrade_plugin_savepoint(true, 2026100400, 'qtype', 'coderunner');
+    }
+
+    if ($oldversion < 2026100700) {
+        // Reload prototypes: data_structure_graph grades tree edges parent to child even when
+        // isdirected is false and reads student answers with the question's settings; multifile
+        // templates enforce locked files; kotlin_compose test names are valid Kotlin literals;
+        // typescript, mysql and mongodb report missing Jobe tools clearly.
+        // The multifile_flight prototype was removed in 2026100301. Tell the admin which questions
+        // still use it, as they can no longer be run until changed to another question type.
+        $flightquestions = $DB->get_records_sql(
+            "SELECT q.id, q.name
+               FROM {question} q
+               JOIN {question_coderunner_options} o ON o.questionid = q.id
+              WHERE o.coderunnertype = :crtype AND o.prototypetype = 0
+           ORDER BY q.id",
+            ['crtype' => 'multifile_flight']
+        );
+        if ($flightquestions) {
+            $list = [];
+            foreach (array_slice($flightquestions, 0, 50) as $question) {
+                $list[] = $question->id . ' (' . format_string($question->name) . ')';
+            }
+            $a = (object) [
+                'count' => count($flightquestions),
+                'list' => implode(', ', $list) . (count($flightquestions) > 50 ? ', ...' : ''),
+            ];
+            echo $OUTPUT->notification(get_string('multifileflightremoved', 'qtype_coderunner', $a), 'warning');
+        }
+        upgrade_plugin_savepoint(true, 2026100700, 'qtype', 'coderunner');
     }
 
     require_once(__DIR__ . '/upgradelib.php');
