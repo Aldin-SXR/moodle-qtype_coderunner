@@ -614,6 +614,14 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'core/str'], function(adap
         }
         if (this.model) {
             try {
+                // Markers outlive their model, so clear the language server's diagnostics too.
+                const model = this.model;
+                const owners = new Set(this.monaco.editor.getModelMarkers({resource: model.uri}).map(m => m.owner));
+                owners.forEach(owner => this.monaco.editor.setModelMarkers(model, owner, []));
+            } catch (err) {
+                // Ignore marker errors.
+            }
+            try {
                 this.model.dispose();
             } catch (err) {
                 // Ignore disposal errors.
