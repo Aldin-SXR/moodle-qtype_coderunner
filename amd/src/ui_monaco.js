@@ -27,7 +27,6 @@
 define(['qtype_coderunner/monaco_coderunner_adapter', 'core/str'], function(adapter, Str) {
     'use strict';
 
-    const STORAGE_THEME_KEY = 'qtype_coderunner.monaco.theme';
     const DEFAULTS = {
         import_from_scratchpad: true,
         font_size: 14,
@@ -45,59 +44,7 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'core/str'], function(adap
         rich_features: true,
         semantic_highlighting: false,
         disable_lsp_prefixes: false,
-        lsp_workspace_config: '',
-        autosave: false
-    };
-
-    const LANGUAGE_MAP = {
-        python: 'python',
-        python2: 'python',
-        python3: 'python',
-        py: 'python',
-        py2: 'python',
-        py3: 'python',
-        pypy3: 'python',
-        java: 'java',
-        javascript: 'javascript',
-        nodejs: 'javascript',
-        node: 'javascript',
-        typescript: 'typescript',
-        ts: 'typescript',
-        c: 'c',
-        c11: 'c',
-        c99: 'c',
-        c90: 'c',
-        cpp: 'cpp',
-        cplusplus: 'cpp',
-        'c++': 'cpp',
-        cxx: 'cpp',
-        csharp: 'csharp',
-        'c#': 'csharp',
-        php: 'php',
-        ruby: 'ruby',
-        go: 'go',
-        kotlin: 'kotlin',
-        swift: 'swift',
-        scala: 'scala',
-        rust: 'rust',
-        haskell: 'haskell',
-        sql: 'sql',
-        mysql: 'sql',
-        postgres: 'pgsql',
-        pgsql: 'pgsql',
-        mongo: 'mongodb',
-        mongosh: 'mongodb',
-        mongodb: 'mongodb',
-        cypher: 'cypher',
-        neo4j: 'cypher',
-        hbase: 'hbase',
-        solidity: 'sol',
-        sol: 'sol',
-        html: 'html',
-        css: 'css',
-        json: 'json',
-        xml: 'xml',
-        plaintext: 'plaintext'
+        lsp_workspace_config: ''
     };
 
     const MODEL_EXTENSION_MAP = {
@@ -116,6 +63,13 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'core/str'], function(adap
         scala: 'scala',
         rust: 'rs',
         haskell: 'hs',
+        perl: 'pl',
+        pascal: 'pas',
+        r: 'r',
+        lua: 'lua',
+        dart: 'dart',
+        shell: 'sh',
+        'objective-c': 'm',
         sql: 'sql',
         mongodb: 'mongodb',
         cypher: 'cypher',
@@ -126,6 +80,8 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'core/str'], function(adap
         css: 'css',
         json: 'json',
         xml: 'xml',
+        yaml: 'yaml',
+        markdown: 'md',
         plaintext: 'txt'
     };
 
@@ -134,122 +90,8 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'core/str'], function(adap
         {name: 'one-light', path: '/question/type/coderunner/monaco/vs/themes/OneLight.json', base: 'vs'}
     ];
 
-    let monacoLoadPromise = null;
     let monacoThemePromise = null;
     let monacoThemesAvailable = false;
-
-    /**
-     * Get the URL of the bundled Monaco 'vs' directory.
-     *
-     * @returns {string}
-     */
-    function getMonacoBasePath() {
-        const root = (window.M && M.cfg && M.cfg.wwwroot) ? M.cfg.wwwroot : '';
-        return root + '/question/type/coderunner/monaco/vs';
-    }
-
-    /**
-     * Turn off Monaco's built-in HTML completion items, if configurable.
-     *
-     * @param {object} monaco The monaco namespace.
-     */
-    function disableHtmlCompletions(monaco) {
-        try {
-            const defaults = monaco && monaco.languages && monaco.languages.html && monaco.languages.html.htmlDefaults;
-            if (!defaults || typeof defaults.setModeConfiguration !== 'function') {
-                return;
-            }
-            const current = defaults.modeConfiguration || {};
-            if (current.completionItems === false) {
-                return;
-            }
-            const updated = Object.assign({}, current, { completionItems: false });
-            defaults.setModeConfiguration(updated);
-        } catch (err) {
-            // Ignore config failures.
-        }
-    }
-
-    /**
-     * Configure RequireJS paths and MonacoEnvironment so Monaco and its workers can load.
-     *
-     * @throws {Error} If RequireJS is not available.
-     */
-    function ensureRequireConfigured() {
-        if (typeof require === 'undefined' || !require || !require.config) {
-            throw new Error('RequireJS not available');
-        }
-        const context = require.s && require.s.contexts && require.s.contexts._;
-        const paths = context && context.config && context.config.paths ? context.config.paths : {};
-        if (!paths.vs) {
-            require.config({
-                paths: { vs: getMonacoBasePath() }
-            });
-        }
-
-        if (!window.MonacoEnvironment) {
-            window.MonacoEnvironment = {};
-        }
-        if (!window.MonacoEnvironment.baseUrl) {
-            window.MonacoEnvironment.baseUrl = getMonacoBasePath();
-        }
-        // Worker URL: point directly to Monaco's workerMain (it loads language workers itself).
-        window.MonacoEnvironment.getWorkerUrl = function() {
-            const base = window.MonacoEnvironment.baseUrl || getMonacoBasePath();
-            return base + '/base/worker/workerMain.js';
-        };
-    }
-
-    /**
-     * Load Monaco (once), registering the MongoDB language on the way.
-     *
-     * @returns {Promise} Resolves with the monaco namespace.
-     */
-    function ensureMonacoLoaded() {
-        if (window.monaco && window.monaco.editor) {
-            return Promise.resolve(window.monaco);
-        }
-
-        if (!monacoLoadPromise) {
-            monacoLoadPromise = new Promise(function(resolve, reject) {
-                try {
-                    ensureRequireConfigured();
-                    require(['vs/editor/editor.main'], function(monaco) {
-                        disableHtmlCompletions(monaco);
-                        // Register MongoDB language
-                        require(['vs/basic-languages/mongodb/mongodb'], function(mongodb) {
-                            try {
-                                const alreadyRegistered = monaco.languages.getLanguages()
-                                    .some(function(lang) { return lang.id === 'mongodb'; });
-                                if (!alreadyRegistered) {
-                                    monaco.languages.register({
-                                        id: 'mongodb',
-                                        extensions: ['.mongodb', '.mongosh', '.mongo'],
-                                        aliases: ['MongoDB', 'mongodb', 'mongosh', 'mongo'],
-                                        mimetypes: ['text/mongodb']
-                                    });
-                                }
-                                monaco.languages.setLanguageConfiguration('mongodb', mongodb.conf);
-                                monaco.languages.setMonarchTokensProvider('mongodb', mongodb.language);
-                            } catch (langerr) {
-                                // Ignore failures to register; the editor will fall back to plain text.
-                            }
-
-                            // Note: Solidity is already auto-registered by Monaco as 'sol'
-                            // MongoDB needs manual registration as it's not in Monaco's default set
-                            resolve(monaco);
-                        }, function() {
-                            // Continue even if the highlighting module fails to load.
-                            resolve(monaco);
-                        });
-                    }, reject);
-                } catch (err) {
-                    reject(err);
-                }
-            });
-        }
-        return monacoLoadPromise;
-    }
 
     /**
      * Interpret a boolean-ish UI parameter value.
@@ -281,20 +123,6 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'core/str'], function(adap
     function parseNumber(value, fallback) {
         const parsed = parseInt(value, 10);
         return isNaN(parsed) ? fallback : parsed;
-    }
-
-    /**
-     * Map a CodeRunner/Ace language name to a Monaco language id.
-     *
-     * @param {string} lang The language name (trailing version digits are tolerated).
-     * @returns {string} The Monaco language id, or 'plaintext'.
-     */
-    function mapLanguage(lang) {
-        if (!lang) {
-            return 'plaintext';
-        }
-        const key = String(lang).toLowerCase();
-        return LANGUAGE_MAP[key] || LANGUAGE_MAP[key.replace(/\d+$/, '')] || 'plaintext';
     }
 
     /**
@@ -473,50 +301,6 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'core/str'], function(adap
     }
 
     /**
-     * Choose the editor theme: stored preference, then OS light/dark, then the theme parameter.
-     *
-     * @param {object} params The UI parameters.
-     * @returns {string} Monaco theme name.
-     */
-    function resolveTheme(params) {
-        let stored = null;
-        try {
-            stored = window.localStorage ? window.localStorage.getItem(STORAGE_THEME_KEY) : null;
-        } catch (err) {
-            // Storage blocked (e.g. privacy settings): fall back to the defaults below.
-        }
-        if (stored) {
-            return stored;
-        }
-
-        const defaultDark = 'vs-dark';
-        const defaultLight = 'vs';
-        const autoSwitch = normaliseBoolean(params.auto_switch_light_dark, DEFAULTS.auto_switch_light_dark);
-        if (autoSwitch && window.matchMedia) {
-            if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
-                return defaultDark;
-            }
-            if (window.matchMedia('(prefers-color-scheme: light)').matches) {
-                return defaultLight;
-            }
-        }
-
-        if (params.theme) {
-            if (!monacoThemesAvailable) {
-                if (params.theme === 'one-dark') {
-                    return defaultDark;
-                }
-                if (params.theme === 'one-light') {
-                    return defaultLight;
-                }
-            }
-            return params.theme;
-        }
-
-        return defaultLight;
-    }
-
-    /**
      * Build the language server configuration from the UI parameters.
      *
      * @param {object} params The UI parameters.
@@ -588,7 +372,7 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'core/str'], function(adap
 
         const languageHint = appliedParams.lsp_language ||
             appliedParams.lang;
-        const monacoLang = mapLanguage(languageHint);
+        const monacoLang = adapter.mapMonacoLanguage(languageHint);
 
         this.container = document.createElement('div');
         this.container.classList.add('coderunner-monaco-container');
@@ -668,7 +452,7 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'core/str'], function(adap
                 throw new Error('Monaco UI destroyed during initialisation');
             }
         };
-        this.readyPromise = ensureMonacoLoaded().then(function(monaco) {
+        this.readyPromise = adapter.loadMonaco().then(function(monaco) {
             bailIfDestroyed();
             return loadMonacoThemes(monaco).catch(function() {
                 // Theme loading is best-effort.
@@ -713,7 +497,9 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'core/str'], function(adap
             }
             const editor = this.editorApi.editor;
             editor.updateOptions(this.editorOptions);
-            this.monaco.editor.setTheme(resolveTheme(this.appliedParams));
+            // Monaco themes are page-wide: the first Monaco UI on the page picks the theme.
+            adapter.applyInitialMonacoTheme(this.monaco, this.appliedParams,
+                {customThemesAvailable: monacoThemesAvailable});
             this.editor = editor;
         } catch (error) {
             // The adapter may have built an editor before throwing; don't leak it.

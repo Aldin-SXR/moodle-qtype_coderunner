@@ -31,25 +31,12 @@
 define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapter, $) {
     'use strict';
 
-    // Handle Monaco's internal unhandled promise rejections for "Canceled" operations
-    // These occur during widget disposal, view state restoration, and model changes
-    if (typeof window !== 'undefined') {
-        window.addEventListener('unhandledrejection', function(event) {
-            if (event && event.reason) {
-                const message = typeof event.reason === 'string' ? event.reason :
-                    (event.reason.message || String(event.reason));
-                // Suppress Monaco's "Canceled" and "DisposableStore" errors - they're benign
-                if (message === 'Canceled' || message.indexOf('Canceled') !== -1 ||
-                    message.indexOf('DisposableStore that has already been disposed') !== -1) {
-                    event.preventDefault();
-                    return;
-                }
-            }
-        });
-    }
+    // Monaco rejects internal promises with its 'Canceled' error during widget disposal, view state
+    // restoration and model changes. The adapter installs (once per page) a filter that hides only
+    // those rejections.
+    adapter.installMonacoCancellationFilter();
 
     const DEFAULTS = {
-        import_from_scratchpad: true,
         font_size: 14,
         theme: '',
         auto_switch_light_dark: true,
@@ -71,7 +58,8 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
         disable_new_files: false,
         disable_new_folders: false,
         use_vscode_icons: true,
-        autosave: false  // Disable autosave by default (enabled for students/preview, disabled for question authoring)
+        autosave: false, // Disable autosave by default (enabled for students/preview, disabled for question authoring)
+        sync_interval_secs: 5
     };
 
     const LANGUAGE_MAP = {
@@ -127,7 +115,6 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
         text: 'plaintext'
     };
 
-    const STORAGE_THEME_KEY = 'qtype_coderunner.monaco.theme';
     const MONACO_THEME_DEFS = [
         {name: 'one-dark', path: '/question/type/coderunner/monaco/vs/themes/OneDark.json', base: 'vs-dark'},
         {name: 'one-light', path: '/question/type/coderunner/monaco/vs/themes/OneLight.json', base: 'vs'}
@@ -154,51 +141,11 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
         }
     }
 
-    /**
-     * Read the user's stored Monaco theme preference.
-     *
-     * @returns {string|null} The theme name, or null if none is stored.
-     */
-    function readStoredThemePreference() {
-        const storage = getLocalStorage();
-        if (!storage) {
-            return null;
-        }
-        try {
-            const value = storage.getItem(STORAGE_THEME_KEY);
-            return value && value.length ? value : null;
-        } catch (err) {
-            return null;
-        }
-    }
-
-    /**
-     * Store (or clear, if falsy) the user's Monaco theme preference.
-     *
-     * @param {string} theme The theme name.
-     */
-    function writeStoredThemePreference(theme) {
-        const storage = getLocalStorage();
-        if (!storage) {
-            return;
-        }
-        try {
-            if (theme) {
-                storage.setItem(STORAGE_THEME_KEY, theme);
-            } else {
-                storage.removeItem(STORAGE_THEME_KEY);
-            }
-        } catch (err) {
-            // Ignore write failures.
-        }
-    }
-
     const MAX_SEARCH_RESULTS = 500;
     const SNIPPET_CONTEXT = 80;
     const SEARCH_DEFAULT_MESSAGE = 'Enter a search term to search all files.';
     const AUTOSAVE_STATUS_DEFAULT_COLOR = 'var(--mm-autosave-color, #475569)';
 
-    let monacoLoadPromise = null;
     let monacoThemePromise = null;
     let monacoThemesAvailable = false;
     const pendingLanguageModules = new Set();
@@ -230,66 +177,7 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
         r: 'vs/basic-languages/r/r'
     };
 
-    /**
-     * Get the URL of the bundled Monaco 'vs' directory.
-     *
-     * @returns {string}
-     */
-    function getMonacoBasePath() {
-        const root = (window.M && M.cfg && M.cfg.wwwroot) ? M.cfg.wwwroot : '';
-        return root + '/question/type/coderunner/monaco/vs';
-    }
-
-    /**
-     * Turn off Monaco's built-in HTML completion items, if configurable.
-     *
-     * @param {object} monaco The monaco namespace.
-     */
-    function disableHtmlCompletions(monaco) {
-        try {
-            const defaults = monaco && monaco.languages && monaco.languages.html && monaco.languages.html.htmlDefaults;
-            if (!defaults || typeof defaults.setModeConfiguration !== 'function') {
-                return;
-            }
-            const current = defaults.modeConfiguration || {};
-            if (current.completionItems === false) {
-                return;
-            }
-            const updated = Object.assign({}, current, { completionItems: false });
-            defaults.setModeConfiguration(updated);
-        } catch (err) {
-            // Best-effort; ignore failures.
-        }
-    }
-
     let initialisedLspAll = false;
-
-    /**
-     * Configure RequireJS paths and MonacoEnvironment so Monaco can load.
-     *
-     * @throws {Error} If RequireJS is not available.
-     */
-    function ensureRequireConfigured() {
-        if (typeof require === 'undefined' || !require || typeof require.config !== 'function') {
-            throw new Error('RequireJS not available');
-        }
-        const basePath = getMonacoBasePath();
-        const context = require.s && require.s.contexts && require.s.contexts._;
-        const paths = context && context.config && context.config.paths ? context.config.paths : {};
-        if (!paths.vs) {
-            require.config({
-                paths: {vs: basePath}
-            });
-        }
-
-        if (!window.MonacoEnvironment) {
-            window.MonacoEnvironment = {};
-        }
-        if (!window.MonacoEnvironment.baseUrl) {
-            window.MonacoEnvironment.baseUrl = basePath;
-        }
-
-    }
 
     /**
      * Log an error to the console, if available.
@@ -385,7 +273,10 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
             lspUrl: lspOptions.lspUrl,
             lspBaseUrl: lspOptions.lspBaseUrl,
             prefixCode: lspOptions.prefixCode,
-            contentTransform: lspOptions.contentTransform
+            contentTransform: lspOptions.contentTransform,
+            richFeatures: lspOptions.richFeatures,
+            semanticHighlighting: lspOptions.semanticHighlighting,
+            workspaceConfig: lspOptions.workspaceConfig
         });
 
         // If oldUri is provided, notify LSP about the rename
@@ -646,7 +537,11 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
      * @return {string} The Monaco language ID
      */
     function getLanguageFromExtension(ext) {
-        return LANGUAGE_MAP[ext] || 'plaintext';
+        const key = String(ext || '').toLowerCase();
+        if (Object.prototype.hasOwnProperty.call(LANGUAGE_MAP, key)) {
+            return LANGUAGE_MAP[key];
+        }
+        return adapter.mapMonacoLanguage(key);
     }
 
     /**
@@ -889,8 +784,8 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
             return;
         }
         extensions.forEach(ext => {
-            const lang = LANGUAGE_MAP[ext];
-            if (!lang) {
+            const lang = getLanguageFromExtension(ext);
+            if (!lang || lang === 'plaintext') {
                 return;
             }
             pendingLanguageIds.add(lang);
@@ -1049,30 +944,12 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
      * @returns {Promise} Resolves with the monaco namespace.
      */
     function ensureMonacoLoaded() {
-        if (window.monaco && window.monaco.editor) {
-            return scheduleLanguagePreparation(window.monaco).then(() => window.monaco);
-        }
-
-        if (!monacoLoadPromise) {
-            monacoLoadPromise = new Promise((resolve, reject) => {
-                try {
-                    ensureRequireConfigured();
-                } catch (err) {
-                    reject(err);
-                    return;
-                }
-                require(['vs/editor/editor.main'], function(monaco) {
-                    disableHtmlCompletions(monaco);
-                    scheduleLanguagePreparation(monaco).then(() => {
-                        resolve(monaco);
-                    }).catch(() => {
-                        resolve(monaco);
-                    });
-                }, reject);
-            });
-        }
-
-        return monacoLoadPromise;
+        // The adapter loads Monaco (and configures RequireJS/MonacoEnvironment) once per page.
+        return adapter.loadMonaco().then(monaco => {
+            return scheduleLanguagePreparation(monaco).catch(() => {
+                // Language preparation is best effort.
+            }).then(() => monaco);
+        });
     }
 
     let codiconStylesLoaded = false;
@@ -1129,45 +1006,6 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
             return !model.isDisposed();
         }
         return true;
-    }
-
-    /**
-     * Choose the editor theme: stored preference, then OS light/dark, then the theme parameter.
-     *
-     * @param {object} params The UI parameters.
-     * @returns {string} Monaco theme name.
-     */
-    function resolveTheme(params) {
-        const stored = readStoredThemePreference();
-        if (stored) {
-            return stored;
-        }
-
-        const defaultDark = 'vs-dark';
-        const defaultLight = 'vs';
-        const autoSwitch = normaliseBoolean(params.auto_switch_light_dark, DEFAULTS.auto_switch_light_dark);
-        if (autoSwitch && window.matchMedia) {
-            if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
-                return defaultDark;
-            }
-            if (window.matchMedia('(prefers-color-scheme: light)').matches) {
-                return defaultLight;
-            }
-        }
-
-        if (params.theme) {
-            if (!monacoThemesAvailable) {
-                if (params.theme === 'one-dark') {
-                    return defaultDark;
-                }
-                if (params.theme === 'one-light') {
-                    return defaultLight;
-                }
-            }
-            return params.theme;
-        }
-
-        return defaultLight;
     }
 
     /**
@@ -1349,15 +1187,41 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
             this.ensureFolder(path, expanded);
         }
 
+        /**
+         * Remove a folder and all its subfolders (which must contain no files by now). Subfolders
+         * have to go too, or the folder would reappear as the parent of a surviving one.
+         *
+         * @param {string} path Folder path.
+         */
         removeFolder(path) {
-            // Check if any files are in this folder
-            const hasFiles = Array.from(this.files.keys()).some(filePath =>
-                filePath.startsWith(path + '/')
-            );
+            if (!path) {
+                return;
+            }
+            const prefix = path + '/';
+            const hasFiles = Array.from(this.files.keys()).some(filePath => filePath.startsWith(prefix));
             if (hasFiles) {
                 throw new Error('Cannot delete non-empty folder');
             }
-            this.folders.delete(path);
+            Array.from(this.folders.keys()).forEach(folder => {
+                if (folder === path || folder.startsWith(prefix)) {
+                    this.folders.delete(folder);
+                }
+            });
+        }
+
+        /**
+         * Everything inside a folder, at any depth.
+         *
+         * @param {string} path Folder path.
+         * @returns {{files: VirtualFile[], folders: string[]}} Files and subfolder paths.
+         */
+        getFolderContents(path) {
+            const prefix = path ? path + '/' : '';
+            return {
+                files: this.getAllFiles().filter(f => f.path.startsWith(prefix)),
+                folders: this.getAllFolders().filter(folder => folder !== '' && folder !== path &&
+                    folder.startsWith(prefix))
+            };
         }
 
         setFolderExpanded(path, expanded) {
@@ -1605,8 +1469,9 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
         this.markerChangeListener = null;
         this.activeView = 'explorer'; // 'explorer', 'search', 'outline' or 'problems'
         this.sidebarCollapsed = false;
-        this.userSelectedTheme = readStoredThemePreference();
-        this.currentTheme = resolveTheme(this.params);
+        this.userSelectedTheme = adapter.getStoredMonacoTheme();
+        // Provisional until the editor exists: the page theme if another Monaco UI set it already.
+        this.currentTheme = adapter.getCurrentMonacoTheme() || adapter.resolveMonacoTheme(this.params);
         this.themeControl = null;
         this.themeMenu = null;
         this.themeButton = null;
@@ -1940,7 +1805,7 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
         this.container.style.height = height + 'px';
         this.container.style.overflow = 'hidden';
         if (!this.currentTheme) {
-            this.currentTheme = resolveTheme(this.params);
+            this.currentTheme = adapter.getCurrentMonacoTheme() || adapter.resolveMonacoTheme(this.params);
         }
         this.applyThemeClass(this.currentTheme);
 
@@ -4262,17 +4127,21 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
         // Enable in-editor navigation for hrefs that reference files in the virtual FS.
         this.setupInlineHrefNavigation();
 
-        const theme = resolveTheme(this.params);
-        this.applyResolvedTheme(theme);
-
-        if (typeof this.monaco.editor.onDidChangeTheme === 'function') {
-            this.themeListener = this.monaco.editor.onDidChangeTheme(newTheme => {
-                this.currentTheme = newTheme;
-                this.applyThemeClass(newTheme);
-                this.refreshThemeMenu();
-                this.updateThemeButtonState();
+        // Monaco themes are page-wide. The adapter's theme manager picks the page theme (the first
+        // Monaco UI on the page decides; later ones keep it unless the user picks another) and
+        // notifies every Monaco UI on the page when it changes, so the chrome follows it.
+        if (!this.themeListener) {
+            this.themeListener = adapter.onMonacoThemeChange(detail => {
+                if (this.destroyed || !detail || !detail.theme) {
+                    return;
+                }
+                this.userSelectedTheme = adapter.getStoredMonacoTheme();
+                this.applyResolvedTheme(detail.theme);
             });
         }
+        const theme = adapter.applyInitialMonacoTheme(this.monaco, this.params,
+            {customThemesAvailable: monacoThemesAvailable});
+        this.applyResolvedTheme(theme);
 
         // Register custom opener to handle "Go to Definition" across virtual files
         if (this.editor._codeEditorService) {
@@ -4456,10 +4325,10 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
                     return;
                 }
 
-                // Workspace edits have been applied and commands will be executed automatically
-                // by the adapter when the edited files' content changes are synced.
-                // The LSP server (e.g., jdtls) will send updated diagnostics when it receives
-                // the refresh command (e.g., java.project.refreshDiagnostics).
+                // Workspace edits have been applied. A code action's command (e.g. jdtls's
+                // java.project.refreshDiagnostics) runs only when the user picks that action; when
+                // its edit changed other files, the adapter reports the invoking file in
+                // affectedOriginFiles so that it can be re-synced here.
 
                 const activeUri = this.activeFile && this.activeFile.model && this.activeFile.model.uri
                     ? this.activeFile.model.uri.toString()
@@ -4488,27 +4357,6 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
                         }
                     }
                 }
-            });
-        }
-
-        // Track content changes on any model so we can refresh the active tab when another file is modified.
-        if (!this.modelChangeListener && typeof this.monaco.editor.onDidChangeModelContent === 'function') {
-            this.modelChangeListener = this.monaco.editor.onDidChangeModelContent(event => {
-                const model = event && event.model;
-                if (this.destroyed || !model || !model.uri) {
-                    return;
-                }
-                if (!this.activeFile || !this.activeFile.model || !this.activeFile.model.uri) {
-                    return;
-                }
-                if (model.uri.toString() === this.activeFile.model.uri.toString()) {
-                    return; // Ignore changes to the active model itself.
-                }
-                const changedFile = this.resolveFileForModel(model);
-                if (!changedFile || changedFile.path === this.activeFile.path) {
-                    return;
-                }
-                this.fullSyncModel(this.activeFile.model, this.activeFile, null, {force: true});
             });
         }
 
@@ -4673,23 +4521,17 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
         }
     };
 
-    MonacoMultifileWrapper.prototype.setStoredThemePreference = function(theme) {
-        this.userSelectedTheme = theme || null;
-        writeStoredThemePreference(this.userSelectedTheme);
-    };
-
+    /**
+     * Update this UI's chrome (container theme classes, theme menu and button) for the page theme.
+     * The Monaco theme itself is set by the adapter's page theme manager.
+     *
+     * @param {string} theme The active Monaco theme.
+     */
     MonacoMultifileWrapper.prototype.applyResolvedTheme = function(theme) {
         if (!theme) {
             return;
         }
         this.currentTheme = theme;
-        if (this.monaco && this.monaco.editor && typeof this.monaco.editor.setTheme === 'function') {
-            try {
-                this.monaco.editor.setTheme(theme);
-            } catch (err) {
-                logWarn('Failed to set Monaco theme to ' + theme, err);
-            }
-        }
         this.applyThemeClass(theme);
         this.refreshThemeMenu();
         this.updateThemeButtonState();
@@ -4699,14 +4541,13 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
         if (!value) {
             return;
         }
-        if (value === 'system') {
-            this.setStoredThemePreference(null);
-            const theme = resolveTheme(this.params);
-            this.applyResolvedTheme(theme);
-            return;
-        }
-        this.setStoredThemePreference(value);
-        this.applyResolvedTheme(value);
+        // An explicit user choice ('system' = back to the automatic choice) is remembered and applied
+        // to the whole page; the theme change event then updates every Monaco UI's chrome.
+        const chosen = value === 'system' ? null : value;
+        const theme = adapter.setUserMonacoTheme(this.monaco, chosen, this.params,
+            {customThemesAvailable: monacoThemesAvailable});
+        this.userSelectedTheme = adapter.getStoredMonacoTheme() || chosen;
+        this.applyResolvedTheme(theme);
     };
 
     MonacoMultifileWrapper.prototype.syncContextMenuTheme = function() {
@@ -5718,7 +5559,10 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
                 lspUrl: lspOptions.lspUrl,
                 lspBaseUrl: lspOptions.lspBaseUrl,
                 prefixCode: this.getPrefixCodeForFile(f, lspOptions.prefixCode),
-                contentTransform: lspOptions.contentTransform
+                contentTransform: lspOptions.contentTransform,
+                richFeatures: lspOptions.richFeatures,
+                semanticHighlighting: lspOptions.semanticHighlighting,
+                workspaceConfig: lspOptions.workspaceConfig
             };
             f.lspRegistration = adapter.registerModelWithLsp(this.monaco, model, registrationOptions);
             if (typeof adapter.isModelRegisteredWithLsp === 'function') {
@@ -5944,7 +5788,7 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
             if (this.allowNewFolders) {
                 addMenuItem('<span class="codicon codicon-new-folder"></span>', 'New Folder', () => this.promptNewFolder(target));
             }
-            if (target !== '' && (this.authorMode || this.allowNewFolders)) {
+            if (target !== '' && !this.isReadOnlyMode && (this.authorMode || this.allowNewFolders)) {
                 addMenuItem('<span class="codicon codicon-trash"></span>', 'Delete Folder', () => this.deleteFolder(target));
             }
         }
@@ -6396,26 +6240,174 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
         }
     };
 
+    /**
+     * Why the current user may not delete a folder, or null if they may.
+     *
+     * @param {string} folderPath Folder path.
+     * @param {{files: VirtualFile[], folders: string[]}} contents The folder's contents.
+     * @returns {string|null} The reason, as a message for the user.
+     */
+    MonacoMultifileWrapper.prototype.getFolderDeleteRefusal = function(folderPath, contents) {
+        if (this.isReadOnlyMode) {
+            return 'Cannot delete folders in read-only mode.';
+        }
+        if (this.authorMode) {
+            return null;
+        }
+        if (!this.allowNewFolders) {
+            return 'Deleting folders is disabled for this question.';
+        }
+        const locked = contents.files.filter(file => this.isFileLocked(file));
+        if (locked.length) {
+            const shown = locked.slice(0, 5).map(file => file.path);
+            const more = locked.length > shown.length ? ` and ${locked.length - shown.length} more` : '';
+            return `The folder "${folderPath}" can't be deleted because it contains locked files, ` +
+                `which can't be deleted: ${shown.join(', ')}${more}.`;
+        }
+        return null;
+    };
+
     MonacoMultifileWrapper.prototype.deleteFolder = function(folderPath) {
         this.hideContextMenu();
-        if (this.isReadOnlyMode) {
+        if (this.isReadOnlyMode || !this.vfs || !folderPath) {
             return;
+        }
+        const contents = this.vfs.getFolderContents(folderPath);
+        const refusal = this.getFolderDeleteRefusal(folderPath, contents);
+        if (refusal) {
+            this.showToast(refusal, 'warning');
+            return;
+        }
+
+        const plural = (count, word) => count + ' ' + word + (count === 1 ? '' : 's');
+        const fileCount = contents.files.length;
+        const folderCount = contents.folders.length;
+        let message;
+        if (fileCount === 0 && folderCount === 0) {
+            message = `Are you sure you want to delete the empty folder "${folderPath}"?`;
+        } else {
+            const parts = [];
+            if (fileCount) {
+                parts.push(plural(fileCount, 'file'));
+            }
+            if (folderCount) {
+                parts.push(plural(folderCount, 'subfolder'));
+            }
+            message = `Are you sure you want to delete the folder "${folderPath}" and all its contents? ` +
+                `This will delete ${parts.join(' and ')}.`;
         }
 
         this.showConfirmModal(
             'Delete Folder',
-            `Are you sure you want to delete the folder "${folderPath}" and all its contents?`,
+            message,
             () => {
-                try {
-                    this.vfs.removeFolder(folderPath);
-                    this.renderFileTree();
-                    this.sync();
-                } catch (err) {
-                    this.showToast(err.message, 'error');
-                }
+                this.performFolderDelete(folderPath);
             },
             null // onCancel - do nothing
         );
+    };
+
+    /**
+     * Delete a folder, its subfolders and all their files. Each file goes through the single-file
+     * delete path (models, LSP bindings and registrations disposed, tab closed, LSP notified); the
+     * tree, tabs and answer are updated once at the end.
+     *
+     * @param {string} folderPath Folder path.
+     */
+    MonacoMultifileWrapper.prototype.performFolderDelete = function(folderPath) {
+        if (this.destroyed || !this.vfs || !folderPath) {
+            return;
+        }
+        // Check again: things may have changed while the confirmation was showing.
+        const contents = this.vfs.getFolderContents(folderPath);
+        const refusal = this.getFolderDeleteRefusal(folderPath, contents);
+        if (refusal) {
+            this.showToast(refusal, 'warning');
+            return;
+        }
+
+        const deletedPaths = new Set(contents.files.map(file => file.path));
+        const activePath = this.activeFile ? this.activeFile.path : null;
+        let nextPath = null;
+        if (activePath !== null && deletedPaths.has(activePath)) {
+            nextPath = this.findNeighbourTab(activePath, deletedPaths);
+            if (!nextPath) {
+                const remaining = this.vfs.getAllFiles().filter(file => !deletedPaths.has(file.path));
+                nextPath = remaining.length ? remaining[0].path : null;
+            }
+        }
+
+        const languages = new Set();
+        let error = null;
+        try {
+            contents.files.forEach(file => {
+                const language = this.performFileDelete(file.path, {batch: true});
+                if (language) {
+                    languages.add(language);
+                }
+            });
+            this.vfs.removeFolder(folderPath);
+        } catch (err) {
+            error = err;
+        }
+
+        if (nextPath && this.vfs.getFile(nextPath) && !this.activeFile) {
+            this.openFile(nextPath);
+        } else {
+            this.renderFileTree();
+            this.renderTabs();
+        }
+        languages.forEach(language => this.resyncLanguageFiles(language));
+        this.sync();
+        if (error) {
+            this.showToast(error.message, 'error');
+        }
+    };
+
+    /**
+     * The open tab to activate when the tab for path goes away: the nearest surviving tab to its
+     * right, else to its left.
+     *
+     * @param {string} path Path of the tab being closed.
+     * @param {Set<string>} removedPaths Paths whose tabs are all going away.
+     * @returns {string|null}
+     */
+    MonacoMultifileWrapper.prototype.findNeighbourTab = function(path, removedPaths) {
+        const ordered = this.getOrderedOpenFiles().map(file => file.path);
+        const index = ordered.indexOf(path);
+        const survives = candidate => candidate !== path && !removedPaths.has(candidate);
+        if (index === -1) {
+            return ordered.find(survives) || null;
+        }
+        for (let i = index + 1; i < ordered.length; i++) {
+            if (survives(ordered[i])) {
+                return ordered[i];
+            }
+        }
+        for (let i = index - 1; i >= 0; i--) {
+            if (survives(ordered[i])) {
+                return ordered[i];
+            }
+        }
+        return null;
+    };
+
+    /**
+     * Send the full content of every file of a language to its LSP server, so that diagnostics are
+     * recomputed (e.g. after a delete).
+     *
+     * @param {string} language Monaco language id.
+     */
+    MonacoMultifileWrapper.prototype.resyncLanguageFiles = function(language) {
+        if (!language || !this.vfs) {
+            return;
+        }
+        this.vfs.getAllFiles().filter(f => f.getLanguage() === language).forEach(f => {
+            const model = this.ensureModelForFile(f);
+            if (model) {
+                this.fullSyncModel(model, f, null, {force: true, adapterOnly: true});
+            }
+        });
     };
 
     MonacoMultifileWrapper.prototype.deleteFile = function(path) {
@@ -6443,11 +6435,15 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
     /**
      * Perform the actual file deletion
      * @param {string} path - The file path to delete
+     * @param {object} [options] - {batch: true} when deleting several files (a folder): the caller
+     *     then picks the next active file, re-renders, re-syncs the LSP and syncs the answer once.
+     * @return {string|null} The deleted file's language, or null if there was no such file.
      */
-    MonacoMultifileWrapper.prototype.performFileDelete = function(path) {
+    MonacoMultifileWrapper.prototype.performFileDelete = function(path, options) {
+        const batch = !!(options && options.batch);
         const file = this.vfs.getFile(path);
         if (!file) {
-            return;
+            return null;
         }
 
         this.removeOpenTab(path);
@@ -6457,8 +6453,10 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
         const wasActive = this.activeFile && this.activeFile.path === path;
         let nextPath = null;
         if (wasActive) {
-            const remainingFiles = this.vfs.getAllFiles().filter(f => f.path !== path);
-            nextPath = remainingFiles.length > 0 ? remainingFiles[0].path : null;
+            if (!batch) {
+                const remainingFiles = this.vfs.getAllFiles().filter(f => f.path !== path);
+                nextPath = remainingFiles.length > 0 ? remainingFiles[0].path : null;
+            }
             if (this.editor) {
                 try {
                     const setModelResult = this.editor.setModel(null);
@@ -6506,6 +6504,22 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
 
         this.vfs.removeFile(path, {allowLocked: this.authorMode});
 
+        // Notify the LSP server about the delete so it can refresh references.
+        if (deletedLanguage && typeof adapter.notifyFileDeleted === 'function') {
+            const deletedLspOptions = this.getLspOptionsForLanguage(deletedLanguage);
+            if (deletedLspOptions && deletedLspOptions.enabled) {
+                adapter.notifyFileDeleted(this.monaco, deletedUriString, {
+                    language: deletedLanguage,
+                    lspUrl: deletedLspOptions.lspUrl,
+                    lspBaseUrl: deletedLspOptions.lspBaseUrl
+                });
+            }
+        }
+
+        if (batch) {
+            return deletedLanguage || null;
+        }
+
         if (wasActive) {
             if (nextPath) {
                 this.openFile(nextPath);
@@ -6519,31 +6533,12 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
             this.renderTabs();
         }
 
-        // Notify the LSP server about the delete so it can refresh references.
-        if (deletedLanguage && typeof adapter.notifyFileDeleted === 'function') {
-            const deletedLspOptions = this.getLspOptionsForLanguage(deletedLanguage);
-            if (deletedLspOptions && deletedLspOptions.enabled) {
-                adapter.notifyFileDeleted(this.monaco, deletedUriString, {
-                    language: deletedLanguage,
-                    lspUrl: deletedLspOptions.lspUrl,
-                    lspBaseUrl: deletedLspOptions.lspBaseUrl
-                });
-            }
-        }
-
         // Trigger a full-content sync for remaining files in the same language
         // so diagnostics are recomputed after the deletion.
-        if (deletedLanguage) {
-            const remainingFiles = this.vfs.getAllFiles().filter(f => f.getLanguage() === deletedLanguage);
-            remainingFiles.forEach(f => {
-                const model = this.ensureModelForFile(f);
-                if (model) {
-                    this.fullSyncModel(model, f, null, {force: true, adapterOnly: true});
-                }
-            });
-        }
+        this.resyncLanguageFiles(deletedLanguage);
 
         this.sync();
+        return deletedLanguage || null;
     };
 
     MonacoMultifileWrapper.prototype.closeFile = function(path) {
@@ -8740,8 +8735,6 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
         this.markerChangeListener = null;
         safeDispose(this.workspaceEditHook, 'workspace edit hook');
         this.workspaceEditHook = null;
-        safeDispose(this.modelChangeListener, 'model change listener');
-        this.modelChangeListener = null;
         if (this.codeEditorServiceOverride) {
             const info = this.codeEditorServiceOverride;
             if (info.service.openCodeEditor === info.override) {
@@ -8857,7 +8850,7 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
     };
 
     MonacoMultifileWrapper.prototype.syncIntervalSecs = function() {
-        return this.params.sync_interval_secs !== undefined ? this.params.sync_interval_secs : 5;
+        return parseNumber(this.params.sync_interval_secs, DEFAULTS.sync_interval_secs);
     };
 
     MonacoMultifileWrapper.prototype.allowFullScreen = function() {

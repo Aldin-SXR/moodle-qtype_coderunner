@@ -827,6 +827,11 @@ function xmldb_qtype_coderunner_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 2026100301, 'qtype', 'coderunner');
     }
 
+    if ($oldversion < 2026100400) {
+        // Reload prototypes: data_structure_graph grader now trusts stored edge direction and slot.
+        upgrade_plugin_savepoint(true, 2026100400, 'qtype', 'coderunner');
+    }
+
     require_once(__DIR__ . '/upgradelib.php');
     update_question_types();
 

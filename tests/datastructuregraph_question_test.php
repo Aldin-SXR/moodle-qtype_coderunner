@@ -38,6 +38,46 @@ require_once($CFG->dirroot . '/question/type/coderunner/tests/test.php');
 class datastructuregraph_question_test extends \qtype_coderunner_testcase {
 
     /**
+     * Set up without the Jobe sandbox configuration the base class insists on.
+     *
+     * These tests run the grader template with a local python3, so they need
+     * no sandbox and shouldn't be skipped when none is configured.
+     */
+    protected function setUp(): void {
+        \advanced_testcase::setUp();
+        $this->resetAfterTest(true);
+        $this->setAdminUser();
+        ob_start();
+        if (\qtype_coderunner_util::using_mod_qbank()) {
+            update_question_types_with_qbank();
+        } else {
+            update_question_types_legacy();
+        }
+        ob_end_clean();
+        $generator = $this->getDataGenerator()->get_plugin_generator('core_question');
+        $this->category = $generator->create_question_category([]);
+    }
+
+    /**
+     * Whether a python3 executable is on the PATH.
+     *
+     * @return bool
+     */
+    private static function python3_available(): bool {
+        static $available = null;
+        if ($available === null) {
+            $available = false;
+            if (function_exists('exec') && function_exists('proc_open')) {
+                $output = [];
+                $status = 1;
+                exec('command -v python3 2>/dev/null', $output, $status);
+                $available = $status === 0 && !empty($output);
+            }
+        }
+        return $available;
+    }
+
+    /**
      * Return the shipped data_structure_graph prototype template.
      *
      * @return string
@@ -124,9 +164,14 @@ class datastructuregraph_question_test extends \qtype_coderunner_testcase {
             1 => ['pipe', 'w'],
             2 => ['pipe', 'w'],
         ];
+        // A missing python3 doesn't make proc_open fail (the shell it starts
+        // runs fine and merely reports the command missing), so look first.
+        if (!self::python3_available()) {
+            $this->markTestSkipped('python3 is not available to run the data_structure_graph grader template');
+        }
         $process = proc_open('python3', $descriptors, $pipes);
         if (!is_resource($process)) {
-            $this->markTestSkipped('python3 is not available to run the data_structure_graph grader template');
+            $this->markTestSkipped('python3 could not be started to run the data_structure_graph grader template');
         }
         fwrite($pipes[0], $program);
         fclose($pipes[0]);
@@ -552,6 +597,58 @@ class datastructuregraph_question_test extends \qtype_coderunner_testcase {
             true,
             $this->graph_json_canonical_edge_order()
         );
+        $this->assertEquals(1.0, $result['fraction']);
+    }
+
+    /**
+     * Return the sample tree as the current UI saves it (version 2) after B,
+     * the left child of A, has been dragged above and to the right of A.
+     *
+     * @param string $bslot child slot stored on the A->B edge.
+     * @return string
+     */
+    private function graph_json_child_dragged_above_parent(string $bslot = 'left'): string {
+        return json_encode([
+            'type' => 'coderunner-datastructure-graph',
+            'version' => 2,
+            'settings' => ['mode' => 'tree', 'isdirected' => true, 'childslots' => ['left', 'right']],
+            'nodes' => [
+                ['id' => 'n1', 'key' => 'A', 'value' => 'root', 'layout' => ['x' => 100, 'y' => 200]],
+                ['id' => 'n2', 'key' => 'B', 'value' => 'left', 'layout' => ['x' => 300, 'y' => 40]],
+                ['id' => 'n3', 'key' => 'C', 'value' => 'right', 'layout' => ['x' => 140, 'y' => 260]],
+            ],
+            'edges' => [
+                ['id' => 'e1', 'from' => 'n1', 'to' => 'n2', 'cost' => '', 'slot' => $bslot],
+                ['id' => 'e2', 'from' => 'n1', 'to' => 'n3', 'cost' => '', 'slot' => 'right'],
+            ],
+        ]);
+    }
+
+    public function test_child_dragged_above_parent_is_graded_by_stored_direction_and_slot(): void {
+        $result = $this->run_data_structure_grader(
+            $this->graph_json_child_dragged_above_parent(),
+            true,
+            $this->graph_json(true)
+        );
+        $this->assertEquals(1.0, $result['fraction'], $result['testresults'][1][2]);
+    }
+
+    public function test_stored_slot_is_not_replaced_by_one_guessed_from_layout(): void {
+        // B lies to the right of A, but the stored (wrong) slot is what's graded.
+        $result = $this->run_data_structure_grader(
+            $this->graph_json_child_dragged_above_parent('right'),
+            true,
+            $this->graph_json(true)
+        );
+        $this->assertSame(0.0, $result['fraction']);
+        $this->assertStringContainsString('more than one right child', $result['testresults'][1][2]);
+    }
+
+    public function test_versioned_edge_without_slot_falls_back_to_layout(): void {
+        $graph = json_decode($this->graph_json_without_slots(), true);
+        $graph['version'] = 2;
+        $graph['settings']['isdirected'] = true;
+        $result = $this->run_data_structure_grader(json_encode($graph), true, $this->graph_json(true));
         $this->assertEquals(1.0, $result['fraction']);
     }
 

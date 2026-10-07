@@ -810,8 +810,19 @@ def infer_tree_slot(from_node, to_node, tree_edges, childslots):
     return preferred or childslots[0]
 
 
-def normalise_tree_endpoints(from_node, to_node, settings):
-    if settings["mode"] != "tree":
+def stores_tree_direction(graph):
+    """True if the serialisation records tree edges parent first.
+
+    From version 2 the UI saves every tree edge with from = parent and its
+    child slot, so those are used as stored, whatever the node positions.
+    Older answers fall back to inferring both from the layout.
+    """
+    version = as_number(graph.get("version"))
+    return version is not None and version >= 2
+
+
+def normalise_tree_endpoints(from_node, to_node, settings, trust_direction=False):
+    if settings["mode"] != "tree" or trust_direction:
         return from_node, to_node, False
     from_y = from_node.get("y")
     to_y = to_node.get("y")
@@ -826,6 +837,7 @@ def normalise_graph(raw, label, expected_settings=None):
         return None, errors
 
     settings = settings_for(graph, expected_settings)
+    trust_direction = stores_tree_direction(graph)
     node_by_id = {}
     node_by_identity = {}
     for index, node in enumerate(graph["nodes"]):
@@ -865,7 +877,9 @@ def normalise_graph(raw, label, expected_settings=None):
         if from_node is None or to_node is None:
             errors.append(f"{label}: edge {index + 1} references a missing node")
             continue
-        from_node, to_node, reversed_by_layout = normalise_tree_endpoints(from_node, to_node, settings)
+        from_node, to_node, reversed_by_layout = normalise_tree_endpoints(
+            from_node, to_node, settings, trust_direction
+        )
         cost = as_string(edge.get("cost")).strip()
         color = as_string(edge.get("color", "black")).strip() or "black"
         if color not in ("black", "red"):
@@ -876,6 +890,7 @@ def normalise_graph(raw, label, expected_settings=None):
             slot = ""
         if settings["childslots"]:
             if not slot:
+                # Only an edge saved without a slot has one guessed from layout.
                 slot = infer_tree_slot(from_node, to_node, tree_edges, settings["childslots"])
             elif slot not in settings["childslots"]:
                 errors.append(f"{label}: edge {node_label(from_node)}->{node_label(to_node)} has invalid child slot {slot!r}")

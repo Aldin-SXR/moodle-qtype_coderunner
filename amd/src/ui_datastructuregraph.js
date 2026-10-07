@@ -24,7 +24,9 @@
 define(['jquery', 'core/str'], function($, Str) {
 
     const SERIALISATION_TYPE = 'coderunner-datastructure-graph';
-    const SERIALISATION_VERSION = 1;
+    // Version 2 marks tree edges as stored parent first (from = parent) with an
+    // authoritative child slot, so graders needn't re-derive them from layout.
+    const SERIALISATION_VERSION = 2;
     const NODE_RADIUS = 30;
     const RECORD_CELL_WIDTH = 58;
     const RECORD_HEIGHT = 48;
@@ -146,8 +148,8 @@ define(['jquery', 'core/str'], function($, Str) {
         helpmouseconnectmid: 'a node, then',
         helpmouseconnectg2: 'Shift-click',
         helpmouseconnectend: 'another to connect them.',
-        helpmousezoomg: 'Mouse wheel',
-        helpmousezoom: 'to zoom in and out.',
+        helpmousezoomg: 'Ctrl + mouse wheel',
+        helpmousezoom: 'or a two-finger pinch to zoom in and out.',
         helpkeyadd: 'Add a node',
         helpkeymove: 'Move the selection between nodes and edges',
         helpkeynudge: 'Move the selected node (hold Shift for larger steps), or pan when nothing is selected',
@@ -191,7 +193,8 @@ define(['jquery', 'core/str'], function($, Str) {
         helpkeypush: 'Push or enqueue a new element',
         helpkeyelements: 'Move the selection between elements',
         helpkeyreorder: 'Move the selected element one position, or pan when nothing is selected',
-        helpkeydeleteelement: 'Delete the selected element'
+        helpkeydeleteelement: 'Delete the selected element',
+        lockededges: 'This node cannot be deleted because its edges are locked.'
     };
 
     // Inline SVG glyphs (Feather-style, 24x24 stroke) for the toolbar buttons,
@@ -284,6 +287,21 @@ define(['jquery', 'core/str'], function($, Str) {
             return parsed;
         }
         return fallback;
+    }
+
+    /**
+     * Convert a value to a finite number, or null if it isn't one. Unlike a
+     * truthiness test this keeps 0, which is a valid coordinate.
+     *
+     * @param {*} value Value to convert.
+     * @returns {number|null}
+     */
+    function finiteNumber(value) {
+        if (value === null || value === undefined || value === '') {
+            return null;
+        }
+        const number = Number(value);
+        return isFinite(number) ? number : null;
     }
 
     /**
@@ -414,7 +432,8 @@ define(['jquery', 'core/str'], function($, Str) {
         this.nodeFields = this.normaliseNodeFields(this.uiParams.nodefields);
         this.multiKeyNodes = this.nodeFields === 'keys' || this.nodeFields === 'keys_values';
         this.showNodeValues = this.nodeFields === 'key_value' || this.nodeFields === 'keys_values';
-        this.maxNodeKeys = intParam(this.uiParams.maxnodekeys, this.multiKeyNodes ? 3 : 0);
+        // 0 (the default) means no fixed limit on the keys per node.
+        this.maxNodeKeys = intParam(this.uiParams.maxnodekeys, 0);
         this.allowEdgeCosts = boolParam(this.uiParams.allowedgecosts, true);
         this.allowNodeColors = boolParam(this.uiParams.allownodecolors, false);
         this.allowEdgeColors = boolParam(this.uiParams.allowedgecolors, false);
@@ -448,6 +467,9 @@ define(['jquery', 'core/str'], function($, Str) {
         this.armedChildSlot = '';
         this.connectMode = false;
         this.isShiftDown = false;
+        this.isHovered = false;
+        this.pointerDown = false;
+        this.pinch = null;
         this.hoverWorld = null;
         this.viewOffset = {x: 0, y: 0};
         this.zoom = 1;
@@ -466,6 +488,8 @@ define(['jquery', 'core/str'], function($, Str) {
         this.fail = false;
         this.failString = null;
         this.announceTimer = null;
+        this.statusMessage = '';
+        this.statusTimer = null;
         this.helpOverlay = null;
         this.helpReturnFocus = null;
         this.isInitialising = true;
@@ -553,9 +577,46 @@ define(['jquery', 'core/str'], function($, Str) {
         if (this.canvas) {
             this.canvas.attr('aria-label', this.s('a11yeditor'));
         }
+        this.relabelProperties();
         this.updateConnectionUi();
-        this.updateProperties();
         this.updateAccessibility();
+    };
+
+    /**
+     * Re-apply localised strings to the properties panel in place. The panel
+     * isn't rebuilt, so an input the user is typing in keeps its focus, caret
+     * and any in-progress composition.
+     */
+    DataStructureGraph.prototype.relabelProperties = function() {
+        const t = this;
+        if (!this.properties) {
+            return;
+        }
+        this.properties.find('[data-dsg-str]').each(function() {
+            const el = $(this);
+            el.text(t.s(el.attr('data-dsg-str'), el.attr('data-dsg-arg')));
+        });
+        this.properties.find('[data-dsg-aria]').each(function() {
+            const el = $(this);
+            el.attr('aria-label', t.s(el.attr('data-dsg-aria'), el.attr('data-dsg-arg')));
+        });
+    };
+
+    /**
+     * Create an element whose text is a localised string, tagged so that
+     * relabelProperties() can update it in place once the strings load.
+     *
+     * @param {string} html Element markup, e.g. '<span></span>'.
+     * @param {string} name Short string name.
+     * @param {string|number} [a] Optional placeholder replacement.
+     * @returns {jQuery}
+     */
+    DataStructureGraph.prototype.labelElement = function(html, name, a) {
+        const el = $(html).attr('data-dsg-str', name).text(this.s(name, a));
+        if (a !== undefined) {
+            el.attr('data-dsg-arg', a);
+        }
+        return el;
     };
 
     DataStructureGraph.prototype.getChildSlots = function() {
@@ -599,6 +660,35 @@ define(['jquery', 'core/str'], function($, Str) {
      */
     DataStructureGraph.prototype.canConnect = function() {
         return !this.readOnly && !this.lockEdgeSet && !this.isSequence;
+    };
+
+    /**
+     * Whether any edge starts or ends at the given node.
+     *
+     * @param {string} id Node id.
+     * @returns {boolean}
+     */
+    DataStructureGraph.prototype.hasIncidentEdges = function(id) {
+        return this.edges.some(function(edge) {
+            return edge.from === id || edge.to === id;
+        });
+    };
+
+    /**
+     * Whether the current selection may be deleted under the active locks.
+     * Deleting a node also removes its edges, so with the edge set locked only
+     * nodes without edges can go.
+     *
+     * @returns {boolean}
+     */
+    DataStructureGraph.prototype.canDeleteSelection = function() {
+        if (this.readOnly || !this.selectedObject()) {
+            return false;
+        }
+        if (this.selected.type === 'node') {
+            return !this.lockNodeSet && !(this.lockEdgeSet && this.hasIncidentEdges(this.selected.id));
+        }
+        return !this.lockEdgeSet;
     };
 
     /**
@@ -753,7 +843,14 @@ define(['jquery', 'core/str'], function($, Str) {
         this.canvas.on('mousemove', function(e) {
             t.mouseMove(e);
         });
+        this.canvas.on('mouseenter', function(e) {
+            t.isHovered = true;
+            t.trackShift(e);
+        });
         this.canvas.on('mouseup mouseleave', function(e) {
+            if (e.type === 'mouseleave') {
+                t.isHovered = false;
+            }
             t.mouseUp(e);
         });
         this.canvas.on('dblclick', function(e) {
@@ -774,25 +871,28 @@ define(['jquery', 'core/str'], function($, Str) {
         this.canvas.on('wheel', function(e) {
             t.wheelZoom(e);
         });
+        // Shift previews a connection from the selected node. The key events
+        // are global, so only the instance the user is working with (canvas
+        // focused, hovered or mid-interaction) reacts, and a preview is only a
+        // repaint: it never re-serialises the answer.
         $(document)
             .on('keydown' + this.eventNamespace, function(e) {
-                if (e.key === 'Shift' && !t.isShiftDown) {
-                    t.isShiftDown = true;
-                    t.updateConnectionUi();
-                    t.draw();
+                if (e.key === 'Shift' && !t.isShiftDown && t.isActive()) {
+                    t.setShiftDown(true);
                 }
             })
             .on('keyup' + this.eventNamespace, function(e) {
                 if (e.key === 'Shift') {
-                    t.isShiftDown = false;
-                    t.updateConnectionUi();
-                    t.draw();
+                    t.setShiftDown(false);
                 }
             });
         $(window).on('blur' + this.eventNamespace, function() {
-            if (t.isShiftDown) {
-                t.isShiftDown = false;
-                t.updateConnectionUi();
+            t.setShiftDown(false);
+            // The pointer may be released outside the window unseen, so end
+            // any interaction now rather than leave saving suspended.
+            if (t.pointerDown || t.isInteracting()) {
+                t.pinch = null;
+                t.endPointerInteraction();
                 t.draw();
             }
         });
@@ -813,6 +913,11 @@ define(['jquery', 'core/str'], function($, Str) {
         }
 
         this.resize(width, height);
+        // Disable the tools that every applicable lock makes a no-op.
+        this.addNodeButton.prop('disabled', this.lockNodeSet);
+        this.connectButton.prop('disabled', this.lockEdgeSet);
+        this.layoutButton.prop('disabled', this.lockNodePositions);
+        this.clearButton.prop('disabled', this.lockNodeSet || this.lockEdgeSet);
         if (this.readOnly) {
             this.root.addClass('readonly');
             this.root.find('button').prop('disabled', true);
@@ -1005,8 +1110,9 @@ define(['jquery', 'core/str'], function($, Str) {
         const active = this.connectMode || !!this.linkSource || shiftActive;
         this.connectButton.toggleClass('active', active);
         if (!active) {
-            this.connectionStatus.text('');
-            this.connectionStatus.removeClass('active');
+            // Show any transient notice (e.g. why an action was blocked).
+            this.connectionStatus.text(this.statusMessage || '');
+            this.connectionStatus.toggleClass('active', !!this.statusMessage);
             return;
         }
         const source = this.linkSource ? this.getNode(this.linkSource) : this.shiftConnectSource();
@@ -1015,6 +1121,68 @@ define(['jquery', 'core/str'], function($, Str) {
         const sourceText = source ? this.s('clicktarget', this.nodeTitle(source)) : this.s('clicksource');
         this.connectionStatus.text(prefix + slotText + sourceText);
         this.connectionStatus.addClass('active');
+    };
+
+    /**
+     * Whether this instance is the one the user is working with: its canvas
+     * has focus or the pointer, or a pointer interaction or connection is in
+     * progress.
+     *
+     * @returns {boolean}
+     */
+    DataStructureGraph.prototype.isActive = function() {
+        return !!(this.canvas && this.canvas[0] === document.activeElement) ||
+            this.isHovered || this.pointerDown || this.isInteracting() ||
+            this.connectMode || !!this.linkSource;
+    };
+
+    /**
+     * Record whether Shift is held, refreshing the connection status and the
+     * preview (a repaint only) when the state changes.
+     *
+     * @param {boolean} down Whether Shift is down.
+     */
+    DataStructureGraph.prototype.setShiftDown = function(down) {
+        if (this.isShiftDown === down) {
+            return;
+        }
+        this.isShiftDown = down;
+        this.updateConnectionUi();
+        this.render();
+    };
+
+    /**
+     * Pick up the Shift state from a mouse event over the canvas, so pressing
+     * Shift elsewhere and then moving over the canvas still previews, and a
+     * missed keyup can't leave the preview stuck on.
+     *
+     * @param {object} e Mouse event.
+     */
+    DataStructureGraph.prototype.trackShift = function(e) {
+        if (e && typeof e.shiftKey === 'boolean' && !e.synthetic) {
+            this.setShiftDown(e.shiftKey && !this.readOnly);
+        }
+    };
+
+    /**
+     * Show a short notice in the toolbar status area and announce it to
+     * screen-reader users, e.g. to explain why an action was blocked.
+     *
+     * @param {string} message The notice.
+     */
+    DataStructureGraph.prototype.notify = function(message) {
+        const t = this;
+        this.announce(message);
+        this.statusMessage = message;
+        if (this.statusTimer) {
+            window.clearTimeout(this.statusTimer);
+        }
+        this.statusTimer = window.setTimeout(function() {
+            t.statusTimer = null;
+            t.statusMessage = '';
+            t.updateConnectionUi();
+        }, 4000);
+        this.updateConnectionUi();
     };
 
     DataStructureGraph.prototype.shiftConnectSource = function() {
@@ -1067,7 +1235,7 @@ define(['jquery', 'core/str'], function($, Str) {
         this.zoom = 1;
         this.updateZoomLabel();
         if (redraw !== false) {
-            this.draw();
+            this.render();
         }
     };
 
@@ -1105,7 +1273,7 @@ define(['jquery', 'core/str'], function($, Str) {
         this.viewOffset.x = screenPoint.x - worldX * newZoom;
         this.viewOffset.y = screenPoint.y - worldY * newZoom;
         this.updateZoomLabel();
-        this.draw();
+        this.render();
     };
 
     /**
@@ -1118,16 +1286,30 @@ define(['jquery', 'core/str'], function($, Str) {
     };
 
     /**
-     * Handle a mouse-wheel event as a zoom about the cursor.
+     * Handle a wheel event. Ctrl/Cmd + wheel zooms about the cursor; browsers
+     * also deliver a trackpad pinch as a wheel event with ctrlKey set. A plain
+     * wheel is left alone so the page still scrolls over the canvas.
      *
      * @param {object} e jQuery wheel event.
      */
     DataStructureGraph.prototype.wheelZoom = function(e) {
         const oe = e.originalEvent || e;
+        if (!oe.ctrlKey && !oe.metaKey) {
+            return;
+        }
         if (oe.cancelable) {
             e.preventDefault();
         }
-        const factor = oe.deltaY < 0 ? ZOOM_STEP : 1 / ZOOM_STEP;
+        if (!oe.deltaY) {
+            return;
+        }
+        // Trackpad pinches send many small pixel deltas, so scale those
+        // smoothly; a mouse wheel notch (a large or line-based delta) zooms
+        // one step.
+        let factor = oe.deltaY < 0 ? ZOOM_STEP : 1 / ZOOM_STEP;
+        if (!oe.deltaMode && Math.abs(oe.deltaY) < 20) {
+            factor = Math.exp(-oe.deltaY * 0.01);
+        }
         this.zoomAt(this.screenPosition(oe), factor);
     };
 
@@ -1247,7 +1429,9 @@ define(['jquery', 'core/str'], function($, Str) {
         if (this.isSequence && this.nodes) {
             this.layoutSequence();
         }
-        this.draw();
+        // Only the view changes: stack/queue positions are serialised for a
+        // fixed nominal height, so the answer doesn't depend on the size.
+        this.render();
     };
 
     DataStructureGraph.prototype.destroy = function() {
@@ -1259,6 +1443,10 @@ define(['jquery', 'core/str'], function($, Str) {
         if (this.announceTimer) {
             window.clearTimeout(this.announceTimer);
             this.announceTimer = null;
+        }
+        if (this.statusTimer) {
+            window.clearTimeout(this.statusTimer);
+            this.statusTimer = null;
         }
         if (this.helpOverlay) {
             this.helpOverlay.remove();
@@ -1399,8 +1587,7 @@ define(['jquery', 'core/str'], function($, Str) {
      */
     DataStructureGraph.prototype.handleTouch = function(e, phase) {
         const oe = e.originalEvent || e;
-        if (oe.touches && oe.touches.length > 1) {
-            // Leave multi-touch gestures (such as pinch) to the browser.
+        if (this.handlePinchTouch(e, phase)) {
             return;
         }
         const touch = (oe.touches && oe.touches[0]) ||
@@ -1420,6 +1607,7 @@ define(['jquery', 'core/str'], function($, Str) {
             clientY: point.clientY,
             button: 0,
             shiftKey: false,
+            synthetic: true,
             preventDefault: function() {
                 return undefined;
             }
@@ -1445,6 +1633,95 @@ define(['jquery', 'core/str'], function($, Str) {
         this.lastTapPos = {clientX: point.clientX, clientY: point.clientY};
         synthetic.type = 'mousedown';
         this.mouseDown(synthetic);
+    };
+
+    /**
+     * Two fingers pinch-zoom and pan the canvas (the stylesheet's
+     * touch-action: none hands every touch gesture to us). The gesture lasts
+     * until every finger has lifted, so lifting one finger doesn't turn the
+     * other into a drag.
+     *
+     * @param {object} e jQuery touch event.
+     * @param {string} phase One of 'down', 'move' or 'up'.
+     * @returns {boolean} True if the event belonged to a pinch.
+     */
+    DataStructureGraph.prototype.handlePinchTouch = function(e, phase) {
+        const oe = e.originalEvent || e;
+        const touchCount = oe.touches ? oe.touches.length : 0;
+        if (touchCount < 2 && !this.pinch) {
+            return false;
+        }
+        if (oe.cancelable) {
+            e.preventDefault();
+        }
+        if (touchCount > 1) {
+            if (this.pinch && phase === 'move') {
+                this.updatePinch(oe.touches);
+            } else {
+                // A new gesture, or fingers added or lifted mid-gesture:
+                // measure from the current fingers so the view doesn't jump.
+                this.startPinch(oe.touches);
+            }
+        } else if (touchCount === 0) {
+            this.pinch = null;
+            this.draw();
+        }
+        return true;
+    };
+
+    /**
+     * Midpoint (canvas pixels) and separation of the first two touches.
+     *
+     * @param {TouchList} touches Active touches.
+     * @returns {object} {mid: {x, y}, distance}
+     */
+    DataStructureGraph.prototype.pinchGeometry = function(touches) {
+        const a = this.screenPosition(touches[0]);
+        const b = this.screenPosition(touches[1]);
+        return {
+            mid: {x: (a.x + b.x) / 2, y: (a.y + b.y) / 2},
+            distance: Math.max(1, distance(a, b))
+        };
+    };
+
+    /**
+     * Begin a two-finger pinch, ending any one-finger drag, pan or link drag
+     * the first finger had started.
+     *
+     * @param {TouchList} touches Active touches.
+     */
+    DataStructureGraph.prototype.startPinch = function(touches) {
+        this.endPointerInteraction();
+        this.lastTapTime = 0;
+        this.lastTapPos = null;
+        const geometry = this.pinchGeometry(touches);
+        this.pinch = {
+            mid: geometry.mid,
+            distance: geometry.distance,
+            zoom: this.zoom,
+            offset: {x: this.viewOffset.x, y: this.viewOffset.y}
+        };
+    };
+
+    /**
+     * Zoom by the change in finger separation and pan by the movement of the
+     * fingers' midpoint, keeping the world point first under it beneath it.
+     *
+     * @param {TouchList} touches Active touches.
+     */
+    DataStructureGraph.prototype.updatePinch = function(touches) {
+        const start = this.pinch;
+        const geometry = this.pinchGeometry(touches);
+        const zoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, start.zoom * geometry.distance / start.distance));
+        const worldX = (start.mid.x - start.offset.x) / start.zoom;
+        const worldY = (start.mid.y - start.offset.y) / start.zoom;
+        this.zoom = zoom;
+        this.viewOffset = {
+            x: geometry.mid.x - worldX * zoom,
+            y: geometry.mid.y - worldY * zoom
+        };
+        this.updateZoomLabel();
+        this.render();
     };
 
     /**
@@ -1475,15 +1752,22 @@ define(['jquery', 'core/str'], function($, Str) {
                 throw new Error('Invalid serialisation');
             }
             this.nodes = parsed.nodes.map(this.normaliseNode.bind(this));
+            this.nextNodeNumber = this.assignUniqueIds(this.nodes, 'n');
             const nodeIds = {};
             this.nodes.forEach(function(node) {
                 nodeIds[node.id] = true;
             });
             // Drop edges that reference a node that isn't present: they can't be
             // drawn, selected or deleted, so they'd only linger in the data.
+            // An edge naming a duplicated node id stays with the first node of
+            // that id, which is the one that keeps it.
             this.edges = parsed.edges.map(this.normaliseEdge.bind(this)).filter(function(edge) {
                 return edge.from && edge.to && nodeIds[edge.from] && nodeIds[edge.to];
             });
+            this.nextEdgeNumber = this.assignUniqueIds(this.edges, 'e');
+            if (!(Number(parsed.version) >= 2)) {
+                this.orientLegacyTreeEdges();
+            }
             this.assignMissingTreeSlots();
             if (this.isSequence) {
                 // Stack/queue order is the node order (top or head first); the
@@ -1491,8 +1775,6 @@ define(['jquery', 'core/str'], function($, Str) {
                 this.edges = [];
                 this.layoutSequence();
             }
-            this.nextNodeNumber = this.computeNextNumber(this.nodes, 'n');
-            this.nextEdgeNumber = this.computeNextNumber(this.edges, 'e');
         } catch (error) {
             // Discard anything loaded before the error was found.
             this.nodes = [];
@@ -1502,20 +1784,60 @@ define(['jquery', 'core/str'], function($, Str) {
         }
     };
 
+    /**
+     * Normalise a stored node. Its id is left as stored (possibly blank or a
+     * duplicate) for assignUniqueIds() to settle once every id is known.
+     *
+     * @param {object} node Stored node.
+     * @returns {object}
+     */
     DataStructureGraph.prototype.normaliseNode = function(node) {
-        const layout = node.layout || {};
-        const id = cleanString(node.id) || this.newNodeId();
+        node = node && typeof node === 'object' ? node : {};
+        const layout = node.layout && typeof node.layout === 'object' ? node.layout : {};
         const keys = this.normaliseNodeKeys(node);
         const first = keys[0] || {key: '', value: ''};
+        const coordinate = function(axis) {
+            const stored = finiteNumber(layout[axis]);
+            if (stored !== null) {
+                return stored;
+            }
+            const legacy = finiteNumber(node[axis]);
+            return legacy !== null ? legacy : 120;
+        };
         return {
-            id: id,
+            id: cleanString(node.id),
             key: first.key,
             value: first.value,
             keys: keys,
             color: node.color === 'red' ? 'red' : DEFAULT_NODE_COLOR,
-            x: Number(layout.x || node.x || 120),
-            y: Number(layout.y || node.y || 120)
+            x: coordinate('x'),
+            y: coordinate('y')
         };
+    };
+
+    /**
+     * Give every item a unique id: blank ids get a fresh one, as does every
+     * repeat of an id already taken by an earlier item. Fresh ids are numbered
+     * past every explicit id, so they can't collide with one that comes later.
+     *
+     * @param {Array<object>} items Nodes or edges, updated in place.
+     * @param {string} prefix 'n' for nodes, 'e' for edges.
+     * @returns {number} The next free number for new ids with this prefix.
+     */
+    DataStructureGraph.prototype.assignUniqueIds = function(items, prefix) {
+        let next = this.computeNextNumber(items, prefix);
+        const used = {};
+        items.forEach(function(item) {
+            if (item.id === '' || Object.prototype.hasOwnProperty.call(used, item.id)) {
+                let id;
+                do {
+                    id = prefix + next++;
+                } while (Object.prototype.hasOwnProperty.call(used, id));
+                item.id = id;
+            }
+            used[item.id] = true;
+        });
+        return next;
     };
 
     DataStructureGraph.prototype.normaliseNodeKeys = function(node) {
@@ -1531,29 +1853,51 @@ define(['jquery', 'core/str'], function($, Str) {
         if (keys.length === 0) {
             keys = [{key: cleanString(node.key), value: this.cleanNodeValue(node.value)}];
         }
-        keys = keys.filter(function(item, index) {
-            return index === 0 || item.key !== '' || item.value !== '';
-        });
-        if (keys.length === 0) {
-            keys = [{key: '', value: ''}];
-        }
-        if (this.maxNodeKeys > 0) {
-            keys = keys.slice(0, this.maxNodeKeys);
-        }
+        // Keep every slot exactly as stored, blank ones and any beyond
+        // maxnodekeys included: loading must never change the answer. The
+        // limit only stops more keys being added in the editor.
         return keys;
     };
 
     DataStructureGraph.prototype.normaliseEdge = function(edge) {
-        const id = cleanString(edge.id) || this.newEdgeId();
+        edge = edge && typeof edge === 'object' ? edge : {};
         const slot = cleanString(edge.slot);
         return {
-            id: id,
+            // Settled by assignUniqueIds() once every id is known.
+            id: cleanString(edge.id),
             from: cleanString(edge.from),
             to: cleanString(edge.to),
             cost: cleanString(edge.cost),
             color: edge.color === 'red' ? 'red' : DEFAULT_EDGE_COLOR,
             slot: this.childSlots.indexOf(slot) !== -1 ? slot : ''
         };
+    };
+
+    /**
+     * Before version 2 the stored direction of a tree edge wasn't trusted:
+     * graders took the higher node as the parent, re-inferring the slot of
+     * any edge they reversed. Apply that same rule once on loading an older
+     * answer, so re-saving it (as version 2, where from is the parent) can't
+     * change how it is graded.
+     */
+    DataStructureGraph.prototype.orientLegacyTreeEdges = function() {
+        if (this.mode !== 'tree') {
+            return;
+        }
+        for (let i = 0; i < this.edges.length; i++) {
+            const edge = this.edges[i];
+            const endpoints = this.normaliseTreeEndpoints(edge.from, edge.to);
+            if (endpoints.reversed) {
+                edge.from = endpoints.from;
+                edge.to = endpoints.to;
+                edge.slot = '';
+            }
+            if (!edge.slot) {
+                // As the graders did, only the edges before this one count
+                // towards the slots already in use.
+                edge.slot = this.slotForNewEdge(edge.from, edge.to, '', this.edges.slice(0, i));
+            }
+        }
     };
 
     DataStructureGraph.prototype.assignMissingTreeSlots = function() {
@@ -1876,16 +2220,30 @@ define(['jquery', 'core/str'], function($, Str) {
         if (fromId === toId && this.mode === 'tree') {
             return;
         }
-        this.recordHistory();
-        const endpoints = this.normaliseTreeEndpoints(fromId, toId);
-        const edgeFrom = endpoints.from;
-        const edgeTo = endpoints.to;
-        const requestedSlot = endpoints.reversed ? '' : slot;
+        // The node the user connects from is the parent, whatever the layout:
+        // the answer stores exactly the direction and slot the user chose.
+        const edgeFrom = fromId;
+        const edgeTo = toId;
+        const requestedSlot = slot;
         const existing = this.findExistingTreeEdge(edgeFrom, edgeTo);
+        if (existing && this.lockEdgeFields) {
+            // Reconnecting a linked pair would re-orient and re-slot the edge,
+            // which are locked fields; just select it.
+            this.selected = {type: 'edge', id: existing.id};
+            this.updateProperties();
+            this.draw();
+            return;
+        }
+        this.recordHistory();
         if (existing) {
+            // A slot only carries over if the parent stays the same.
+            const keptSlot = existing.from === edgeFrom ? existing.slot : '';
+            const others = this.edges.filter(function(candidate) {
+                return candidate !== existing;
+            });
             existing.from = edgeFrom;
             existing.to = edgeTo;
-            existing.slot = this.slotForNewEdge(edgeFrom, edgeTo, requestedSlot || existing.slot);
+            existing.slot = this.slotForNewEdge(edgeFrom, edgeTo, requestedSlot || keptSlot, others);
             this.selected = {type: 'edge', id: existing.id};
             this.updateProperties();
             this.draw();
@@ -2018,6 +2376,15 @@ define(['jquery', 'core/str'], function($, Str) {
         });
     };
 
+    /**
+     * The pre-version-2 rule for tree edges: the higher node is the parent.
+     * Used only to load older answers (see orientLegacyTreeEdges); edges the
+     * user draws keep the direction of the user's action.
+     *
+     * @param {string} fromId Stored source node id.
+     * @param {string} toId Stored target node id.
+     * @returns {object} {from, to, reversed}
+     */
     DataStructureGraph.prototype.normaliseTreeEndpoints = function(fromId, toId) {
         const result = {
             from: fromId,
@@ -2053,7 +2420,18 @@ define(['jquery', 'core/str'], function($, Str) {
         return null;
     };
 
-    DataStructureGraph.prototype.slotForNewEdge = function(fromId, toId, requestedSlot) {
+    /**
+     * Choose the child slot for an edge: the requested one if valid, else the
+     * side the child lies on (for left/right trees) or the first free slot.
+     *
+     * @param {string} fromId Parent node id.
+     * @param {string} toId Child node id.
+     * @param {string} requestedSlot Requested slot, or ''.
+     * @param {Array<object>} [edges] Edges whose slots count as used
+     *     (defaults to every edge).
+     * @returns {string}
+     */
+    DataStructureGraph.prototype.slotForNewEdge = function(fromId, toId, requestedSlot, edges) {
         if (this.childSlots.length === 0) {
             return '';
         }
@@ -2064,7 +2442,7 @@ define(['jquery', 'core/str'], function($, Str) {
             return 'next';
         }
         const used = {};
-        this.edges.forEach(function(edge) {
+        (edges || this.edges).forEach(function(edge) {
             if (edge.from === fromId && edge.slot) {
                 used[edge.slot] = true;
             }
@@ -2086,11 +2464,25 @@ define(['jquery', 'core/str'], function($, Str) {
         return preferred || this.childSlots[0];
     };
 
+    /**
+     * Delete the selected node (with its edges) or edge, if the locks allow.
+     *
+     * @returns {boolean} True if something was deleted.
+     */
     DataStructureGraph.prototype.deleteSelected = function() {
         if (this.readOnly || !this.selected) {
-            return;
+            return false;
         }
-        if (this.selected.type === 'node' && !this.lockNodeSet) {
+        if (this.selected.type === 'node' && !this.lockNodeSet &&
+                this.lockEdgeSet && this.hasIncidentEdges(this.selected.id)) {
+            // Deleting the node would delete its edges too.
+            this.notify(this.s('lockededges'));
+            return false;
+        }
+        if (!this.canDeleteSelection()) {
+            return false;
+        }
+        if (this.selected.type === 'node') {
             this.recordHistory();
             const id = this.selected.id;
             this.nodes = this.nodes.filter(function(node) {
@@ -2101,13 +2493,14 @@ define(['jquery', 'core/str'], function($, Str) {
             });
             this.selected = null;
             this.layoutSequence();
-        } else if (this.selected.type === 'edge' && !this.lockEdgeSet) {
+        } else {
             this.recordHistory();
             this.removeEdges([this.selected.id]);
             this.selected = null;
         }
         this.updateProperties();
         this.draw();
+        return true;
     };
 
     DataStructureGraph.prototype.getNode = function(id) {
@@ -2179,6 +2572,8 @@ define(['jquery', 'core/str'], function($, Str) {
             return;
         }
         this.canvas[0].focus();
+        this.pointerDown = true;
+        this.trackShift(e);
         this.lastHistoryToken = null;
         const screenPos = this.screenPosition(e);
         const pos = this.mousePosition(e);
@@ -2240,64 +2635,91 @@ define(['jquery', 'core/str'], function($, Str) {
         this.draw();
     };
 
+    /**
+     * Handle pointer movement. Everything here is either a view change or a
+     * preview, or a drag that is saved when it ends, so it only repaints:
+     * the answer is re-serialised when the pointer is released.
+     *
+     * @param {object} e Mouse event (or synthetic equivalent).
+     */
     DataStructureGraph.prototype.mouseMove = function(e) {
         const screenPos = this.screenPosition(e);
         const pos = this.mousePosition(e);
         this.hoverWorld = pos;
+        this.trackShift(e);
         this.updateCanvasCursor(pos);
         if (this.panningCanvas && this.panStart && this.panOrigin) {
             this.viewOffset = {
                 x: this.panOrigin.x + screenPos.x - this.panStart.x,
                 y: this.panOrigin.y + screenPos.y - this.panStart.y
             };
-            this.draw();
+            this.render();
         } else if (this.draggingNode) {
             this.draggingNode.x = pos.x + this.dragOffset.x;
             this.draggingNode.y = pos.y + this.dragOffset.y;
             this.clampNode(this.draggingNode);
-            this.draw();
-        } else if (this.linkSource && this.linkStart) {
+            this.render();
+        } else if (this.linkSource && this.linkStart && this.pointerDown) {
             if (distance(pos, this.linkStart) > 4) {
                 this.linkDragging = true;
             }
             this.linkPreview = pos;
-            this.draw();
+            this.render();
         } else if (this.linkSource) {
             this.linkPreview = pos;
-            this.draw();
+            this.render();
         } else if (this.isShiftDown && this.shiftConnectSource()) {
-            this.draw();
+            this.render();
         }
     };
 
+    /**
+     * Handle the pointer being released or leaving the canvas: complete a
+     * link drag dropped on a node, then end whatever interaction was running.
+     * This always finishes with a full draw(), which saves the answer.
+     *
+     * @param {object} e Mouse event (or synthetic equivalent).
+     */
     DataStructureGraph.prototype.mouseUp = function(e) {
         if (e.type === 'mouseleave') {
             this.canvas.removeClass('over-graph-item');
         }
-        if (this.panningCanvas) {
-            this.stopPanning();
-            this.updateCanvasCursor(this.mousePosition(e));
-            this.draw();
-            return;
-        }
-        if (this.readOnly) {
-            return;
-        }
-        const pos = this.mousePosition(e);
-        if (this.linkSource && this.linkStart) {
-            const target = this.findNodeAt(pos);
-            if (this.linkDragging && target && target.id !== this.linkSource) {
+        if (!this.readOnly && !this.panningCanvas && this.linkSource && this.linkStart && this.linkDragging) {
+            const target = this.findNodeAt(this.mousePosition(e));
+            if (target && target.id !== this.linkSource) {
                 // A drag onto a different node creates the link. Self-loops are
                 // made deliberately (connect mode or C twice on the same node),
                 // not by a drag that happens to end back on the source.
                 this.addEdge(this.linkSource, target.id, this.armedChildSlot);
                 this.clearConnection();
-            } else if (this.linkDragging && !this.connectMode) {
-                this.linkPreview = null;
-                this.linkStart = null;
-                this.linkDragging = false;
-                this.updateConnectionUi();
             }
+        }
+        const wasPanning = this.panningCanvas;
+        this.endPointerInteraction();
+        if (wasPanning) {
+            this.updateCanvasCursor(this.mousePosition(e));
+        }
+        this.draw();
+    };
+
+    /**
+     * End any pointer-driven interaction - pan, node drag or link drag -
+     * without completing a link, so isInteracting() is false afterwards and
+     * draw() saves the answer again. A link drag that wasn't dropped on a node
+     * leaves its source armed, so the link can still be finished by a click.
+     */
+    DataStructureGraph.prototype.endPointerInteraction = function() {
+        this.pointerDown = false;
+        if (this.panningCanvas) {
+            this.stopPanning();
+        }
+        if (this.linkStart || this.linkDragging) {
+            if (this.linkDragging) {
+                this.linkPreview = null;
+            }
+            this.linkStart = null;
+            this.linkDragging = false;
+            this.updateConnectionUi();
         }
         if (this.draggingNode && this.isSequence) {
             this.dropElement(this.draggingNode);
@@ -2306,10 +2728,9 @@ define(['jquery', 'core/str'], function($, Str) {
             if (this.draggingNode.x !== this.dragHistory.x || this.draggingNode.y !== this.dragHistory.y) {
                 this.commitHistory(this.dragHistory.snapshot, null);
             }
-            this.dragHistory = null;
         }
+        this.dragHistory = null;
         this.draggingNode = null;
-        this.draw();
     };
 
     DataStructureGraph.prototype.keyDown = function(e) {
@@ -2491,7 +2912,7 @@ define(['jquery', 'core/str'], function($, Str) {
                 x: this.viewOffset.x - dir.x * PAN_STEP,
                 y: this.viewOffset.y - dir.y * PAN_STEP
             };
-            this.draw();
+            this.render();
         }
         e.preventDefault();
     };
@@ -2565,8 +2986,7 @@ define(['jquery', 'core/str'], function($, Str) {
         const label = object
             ? (this.selected.type === 'node' ? this.nodeTitle(object) : this.edgeTitle(object))
             : '';
-        this.deleteSelected();
-        if (label && !this.selected) {
+        if (this.deleteSelected() && label) {
             this.announce(this.s('a11ydeleted', label));
         }
     };
@@ -2936,13 +3356,16 @@ define(['jquery', 'core/str'], function($, Str) {
     DataStructureGraph.prototype.updateProperties = function() {
         const selected = this.selectedObject();
         this.properties.empty();
-        this.properties.append($('<h4></h4>').text(this.s('properties')));
-        this.deleteButton.prop('disabled', this.readOnly || !this.selected);
+        this.properties.append(this.labelElement('<h4></h4>', 'properties'));
+        // A node that only the edge-set lock keeps from being deleted leaves
+        // the button enabled, so clicking it explains why nothing happens.
+        const explainable = selected && this.selected.type === 'node' && !this.readOnly && !this.lockNodeSet;
+        this.deleteButton.prop('disabled', !this.canDeleteSelection() && !explainable);
         if (this.popButton) {
             this.popButton.prop('disabled', this.readOnly || this.lockNodeSet || this.nodes.length === 0);
         }
         if (!selected) {
-            this.properties.append($('<div class="coderunner-datastructuregraph-empty"></div>').text(this.s('none')));
+            this.properties.append(this.labelElement('<div class="coderunner-datastructuregraph-empty"></div>', 'none'));
             return;
         }
         if (this.selected.type === 'node') {
@@ -2957,14 +3380,14 @@ define(['jquery', 'core/str'], function($, Str) {
         if (this.multiKeyNodes) {
             this.properties.append(this.multiKeyEditor(node));
         } else {
-            this.properties.append(this.propertyInput(this.s('key'), node.key, this.lockNodeFields, function(value) {
+            this.properties.append(this.propertyInput('key', node.key, this.lockNodeFields, function(value) {
                 t.recordHistory('node-key:' + node.id);
                 node.key = value;
                 node.keys = [{key: value, value: t.cleanNodeValue(node.value)}];
                 t.draw();
             }));
             if (this.showNodeValues) {
-                this.properties.append(this.propertyInput(this.s('value'), node.value, this.lockNodeFields, function(value) {
+                this.properties.append(this.propertyInput('value', node.value, this.lockNodeFields, function(value) {
                     t.recordHistory('node-value:' + node.id);
                     node.value = t.cleanNodeValue(value);
                     node.keys = [{key: node.key, value: node.value}];
@@ -2973,7 +3396,7 @@ define(['jquery', 'core/str'], function($, Str) {
             }
         }
         if (this.childSlots.length > 0 && !this.lockEdgeSet) {
-            const title = this.mode === 'list' ? this.s('connectlink') : this.s('connectchild');
+            const title = this.mode === 'list' ? 'connectlink' : 'connectchild';
             this.properties.append(this.slotButtonRow(title, '', function(slot) {
                 t.connectMode = true;
                 t.startConnection(node, null, slot);
@@ -2981,7 +3404,7 @@ define(['jquery', 'core/str'], function($, Str) {
             }));
         }
         if (this.allowNodeColors) {
-            this.properties.append(this.propertySelect(this.s('color'), node.color, ['black', 'red'], this.lockNodeFields,
+            this.properties.append(this.propertySelect('color', node.color, ['black', 'red'], this.lockNodeFields,
                 function(value) {
                     t.recordHistory('node-color:' + node.id);
                     node.color = value;
@@ -2993,12 +3416,18 @@ define(['jquery', 'core/str'], function($, Str) {
             const last = this.nodes.length - 1;
             let role = '';
             if (index === 0) {
-                role = this.s(this.mode === 'stack' ? 'top' : 'head');
+                role = this.mode === 'stack' ? 'top' : 'head';
             } else if (index === last && this.mode === 'queue') {
-                role = this.s('tail');
+                role = 'tail';
             }
-            this.properties.append($('<div class="coderunner-datastructuregraph-endpoints"></div>')
-                .text(this.s('position', index + 1) + ' / ' + (last + 1) + (role ? ' (' + role + ')' : '')));
+            const endpoints = $('<div class="coderunner-datastructuregraph-endpoints"></div>')
+                .append(this.labelElement('<span></span>', 'position', index + 1))
+                .append(document.createTextNode(' / ' + (last + 1)));
+            if (role) {
+                endpoints.append(document.createTextNode(' ('), this.labelElement('<span></span>', role),
+                    document.createTextNode(')'));
+            }
+            this.properties.append(endpoints);
         }
         this.properties.append($('<div class="coderunner-datastructuregraph-id"></div>').text(node.id));
     };
@@ -3010,14 +3439,17 @@ define(['jquery', 'core/str'], function($, Str) {
         const endpointText = (from ? this.nodeTitle(from) : edge.from) + ' -> ' + (to ? this.nodeTitle(to) : edge.to);
         this.properties.append($('<div class="coderunner-datastructuregraph-endpoints"></div>').text(endpointText));
         if (this.allowEdgeCosts) {
-            this.properties.append(this.propertyInput(this.s('cost'), edge.cost, this.lockEdgeFields, function(value) {
+            this.properties.append(this.propertyInput('cost', edge.cost, this.lockEdgeFields, function(value) {
                 t.recordHistory('edge-cost:' + edge.id);
                 edge.cost = value;
                 t.draw();
             }));
         }
         if (this.childSlots.length > 0) {
-            const title = this.mode === 'list' ? this.s('linkslot') : this.s('childslot');
+            const title = this.mode === 'list' ? 'linkslot' : 'childslot';
+            // Re-pointing a list link can replace another link, which changes
+            // the edge set, so the edge-set lock also applies to lists.
+            const slotsLocked = this.lockEdgeFields || (this.mode === 'list' && this.lockEdgeSet);
             this.properties.append(this.slotButtonRow(title, edge.slot, function(value) {
                 if (t.mode === 'list') {
                     if (value !== edge.slot) {
@@ -3036,10 +3468,10 @@ define(['jquery', 'core/str'], function($, Str) {
                     edge.slot = value;
                 }
                 t.draw();
-            }, this.lockEdgeFields));
+            }, slotsLocked));
         }
         if (this.allowEdgeColors) {
-            this.properties.append(this.propertySelect(this.s('color'), edge.color, ['black', 'red'], this.lockEdgeFields,
+            this.properties.append(this.propertySelect('color', edge.color, ['black', 'red'], this.lockEdgeFields,
                 function(value) {
                     t.recordHistory('edge-color:' + edge.id);
                     edge.color = value;
@@ -3053,16 +3485,13 @@ define(['jquery', 'core/str'], function($, Str) {
         const t = this;
         const panel = $('<div class="coderunner-datastructuregraph-multikey"></div>');
         const keys = this.nodeKeys(node);
-        panel.append(
-            $('<div class="coderunner-datastructuregraph-fieldtitle"></div>').text(
-                this.showNodeValues ? this.s('keysvalues') : this.s('keys')
-            )
-        );
+        panel.append(this.labelElement('<div class="coderunner-datastructuregraph-fieldtitle"></div>',
+            this.showNodeValues ? 'keysvalues' : 'keys'));
         keys.forEach(function(item, index) {
             const row = $('<div class="coderunner-datastructuregraph-keyrow"></div>');
             row.toggleClass('no-value', !t.showNodeValues);
             const keyInput = $('<input type="text" class="form-control form-control-sm">')
-                .attr('aria-label', t.s('keylabel', index + 1))
+                .attr({'aria-label': t.s('keylabel', index + 1), 'data-dsg-aria': 'keylabel', 'data-dsg-arg': index + 1})
                 .val(item.key)
                 .prop('disabled', t.readOnly || t.lockNodeFields)
                 .on('input', function() {
@@ -3071,8 +3500,7 @@ define(['jquery', 'core/str'], function($, Str) {
                     t.applyNodeKeys(node, keys);
                     t.draw();
                 });
-            const remove = $('<button type="button" class="btn btn-secondary btn-sm"></button>')
-                .text(t.s('remove'))
+            const remove = t.labelElement('<button type="button" class="btn btn-secondary btn-sm"></button>', 'remove')
                 .prop('disabled', t.readOnly || t.lockNodeFields || keys.length <= 1)
                 .on('click', function() {
                     t.recordHistory();
@@ -3084,7 +3512,7 @@ define(['jquery', 'core/str'], function($, Str) {
             row.append(keyInput);
             if (t.showNodeValues) {
                 const valueInput = $('<input type="text" class="form-control form-control-sm">')
-                    .attr('aria-label', t.s('valuelabel', index + 1))
+                    .attr({'aria-label': t.s('valuelabel', index + 1), 'data-dsg-aria': 'valuelabel', 'data-dsg-arg': index + 1})
                     .val(item.value)
                     .prop('disabled', t.readOnly || t.lockNodeFields)
                     .on('input', function() {
@@ -3099,8 +3527,7 @@ define(['jquery', 'core/str'], function($, Str) {
             panel.append(row);
         });
         const canAdd = this.maxNodeKeys === 0 || keys.length < this.maxNodeKeys;
-        const add = $('<button type="button" class="btn btn-secondary btn-sm"></button>')
-            .text(this.s('addkey'))
+        const add = this.labelElement('<button type="button" class="btn btn-secondary btn-sm"></button>', 'addkey')
             .prop('disabled', this.readOnly || this.lockNodeFields || !canAdd)
             .on('click', function() {
                 t.recordHistory();
@@ -3113,9 +3540,9 @@ define(['jquery', 'core/str'], function($, Str) {
         return panel;
     };
 
-    DataStructureGraph.prototype.slotButtonRow = function(label, value, onChange, disabled) {
+    DataStructureGraph.prototype.slotButtonRow = function(labelName, value, onChange, disabled) {
         const row = $('<div class="coderunner-datastructuregraph-slotrow"></div>');
-        row.append($('<div class="coderunner-datastructuregraph-fieldtitle"></div>').text(label));
+        row.append(this.labelElement('<div class="coderunner-datastructuregraph-fieldtitle"></div>', labelName));
         const buttons = $('<div class="coderunner-datastructuregraph-slotbuttons"></div>');
         this.childSlots.forEach(function(slot) {
             const button = $('<button type="button" class="btn btn-secondary btn-sm"></button>')
@@ -3131,7 +3558,7 @@ define(['jquery', 'core/str'], function($, Str) {
         return row;
     };
 
-    DataStructureGraph.prototype.propertyInput = function(label, value, disabled, onChange) {
+    DataStructureGraph.prototype.propertyInput = function(labelName, value, disabled, onChange) {
         const fieldId = 'dsgraph_' + Math.random().toString(36).substring(2);
         const row = $('<label class="coderunner-datastructuregraph-field"></label>').attr('for', fieldId);
         const input = $('<input type="text" class="form-control form-control-sm">')
@@ -3141,11 +3568,11 @@ define(['jquery', 'core/str'], function($, Str) {
             .on('input', function() {
                 onChange($(this).val());
             });
-        row.append($('<span></span>').text(label), input);
+        row.append(this.labelElement('<span></span>', labelName), input);
         return row;
     };
 
-    DataStructureGraph.prototype.propertySelect = function(label, value, options, disabled, onChange) {
+    DataStructureGraph.prototype.propertySelect = function(labelName, value, options, disabled, onChange) {
         const fieldId = 'dsgraph_' + Math.random().toString(36).substring(2);
         const row = $('<label class="coderunner-datastructuregraph-field"></label>').attr('for', fieldId);
         const select = $('<select class="form-select form-control form-control-sm"></select>')
@@ -3158,7 +3585,7 @@ define(['jquery', 'core/str'], function($, Str) {
             select.append($('<option></option>').attr('value', option).text(option || '-'));
         });
         select.val(value);
-        row.append($('<span></span>').text(label), select);
+        row.append(this.labelElement('<span></span>', labelName), select);
         return row;
     };
 
@@ -3185,18 +3612,42 @@ define(['jquery', 'core/str'], function($, Str) {
     };
 
     DataStructureGraph.prototype.applyNodeKeys = function(node, keys) {
-        let cleaned = keys.map(function(item) {
+        // No truncation to maxnodekeys here: a node loaded with more keys
+        // than the limit keeps them all while one of them is being edited.
+        const cleaned = keys.map(function(item) {
             return {key: cleanString(item.key), value: this.cleanNodeValue(item.value)};
         }, this);
-        if (this.maxNodeKeys > 0) {
-            cleaned = cleaned.slice(0, this.maxNodeKeys);
-        }
         node.keys = cleaned.length ? cleaned : [{key: '', value: ''}];
         node.key = node.keys[0].key;
         node.value = node.keys[0].value;
     };
 
+    /**
+     * Repaint and, unless a pointer interaction is still in flight, save the
+     * answer to the textarea and refresh the text alternative. Use after the
+     * model (or selection) may have changed; a pure view change or preview
+     * only needs render().
+     */
     DataStructureGraph.prototype.draw = function() {
+        if (!this.canvas) {
+            return;
+        }
+        this.render();
+        // Skip the JSON.stringify + textarea write (and the text-alternative
+        // rebuild) while a drag or pan is in flight. Every way an interaction
+        // ends (pointer up, leave or cancel, a pinch, window blur) resets it
+        // and calls draw() again, which saves the settled state.
+        if (!this.isInitialising && !this.isInteracting()) {
+            this.sync();
+            this.updateAccessibility();
+        }
+    };
+
+    /**
+     * Repaint the canvas only, without saving the answer: for zoom, pan,
+     * hover and connection previews, which don't change the model.
+     */
+    DataStructureGraph.prototype.render = function() {
         if (!this.canvas) {
             return;
         }
@@ -3231,14 +3682,6 @@ define(['jquery', 'core/str'], function($, Str) {
         this.drawStructureChrome(c, false);
         this.drawLinkPreview(c);
         c.restore();
-        // Skip the JSON.stringify + textarea write (and the text-alternative
-        // rebuild) while a drag or pan is in flight: those fire draw() on every
-        // mouse-move frame. The final draw() once the interaction ends - and
-        // destroy() - persist the settled state.
-        if (!this.isInitialising && !this.isInteracting()) {
-            this.sync();
-            this.updateAccessibility();
-        }
     };
 
     /**
@@ -3259,7 +3702,7 @@ define(['jquery', 'core/str'], function($, Str) {
      * @returns {boolean}
      */
     DataStructureGraph.prototype.isInteracting = function() {
-        return !!(this.draggingNode || this.panningCanvas || this.linkDragging);
+        return !!(this.draggingNode || this.panningCanvas || this.linkDragging || this.pinch);
     };
 
     DataStructureGraph.prototype.drawLinkPreview = function(c) {
