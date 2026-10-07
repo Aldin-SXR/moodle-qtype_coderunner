@@ -34,3 +34,4 @@ NonRepoFiles/*
 /amd/src/.eslintrc.js
 .grunt
 .vscode/
+.claude/

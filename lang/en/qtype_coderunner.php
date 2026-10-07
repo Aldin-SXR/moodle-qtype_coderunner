@@ -658,6 +658,7 @@ Proceed to edit only if you know what you are doing!';
 $string['missingprototypes'] = 'Missing prototypes';
 $string['missingprototypewhenrunning'] = 'Broken question (missing or duplicate prototype \'{$a->crtype}\'). Cannot be run.';
 $string['missinguiparams'] = 'The following UI parameters are required but not defined: ';
+$string['multifileflightremoved'] = 'The multifile_flight question type has been removed, but {$a->count} question(s) still use it: {$a->list}. They can no longer be run. Edit each one and choose another question type (e.g. a multi-file type), or delete it.';
 $string['multipledefaults'] = 'At most one language can be selected as default';
 $string['multipleprototypes'] = 'Multiple prototypes found for \'{$a->crtype}\'';
 $string['mustrequirefewer'] = 'You cannot require more attachments than you allow.';
@@ -1034,7 +1035,10 @@ then executed using Node.js. The test program consists of the student answer fol
 by each of the test case codes in turn, with a separator string being printed between them.
 </p><p>Compilation errors from type checking will be shown to students, helping them learn
 proper TypeScript type usage. The question type is useful for teaching type-safe programming
-with interfaces, type aliases, and explicit type annotations.</p>';
+with interfaces, type aliases, and explicit type annotations.</p>
+<p><strong>Requirements on Jobe server:</strong> the TypeScript compiler (<code>tsc</code>, from the npm
+package <code>typescript</code>) and Node.js must be installed and on the PATH. Standard Jobe has Node.js
+but not <code>tsc</code>.</p>';
 
 $string['qtype_octave_function'] = '<p>A question type that specifies an
 Octave function, which the student has to submit in its entirety. Each test
@@ -1958,8 +1962,10 @@ $string['lsp_base_url_desc'] = 'Base WebSocket URL for Monaco LSP (e.g., ws://ho
 $string['qtype_kotlin_program'] = '<p>A Kotlin write-a-program question where the student
 submits a complete Kotlin program as their answer, including a top-level <code>fun main()</code>
 entry point. The program is compiled with <code>kotlinc</code> and executed for each test case.
-There is no test code — only stdin test data. Requires <code>kotlinc</code> and a JRE to be
-installed on the Jobe server.</p>
+There is no test code — only stdin test data.</p>
+<p><strong>Requires a customised Jobe server</strong> that defines a language named <code>kotlin</code>
+(with <code>kotlinc</code> and a JRE). Standard Jobe has no Kotlin support, so on it every run fails
+with "Language \'kotlin\' is not known".</p>
 <p>This question type sends one compile-and-execute job per test case to the sandbox.
 If there are many test cases, consider writing a combinator-style question type instead.</p>';
 
@@ -1967,14 +1973,16 @@ $string['qtype_kotlin_function'] = '<p>A Kotlin write-a-function question where 
 writes one or more top-level functions or classes. Each test case calls a function from the
 student\'s code in the <i>Test code</i> field (e.g. <code>println(add(2, 3))</code>). The
 template automatically wraps all test calls in a generated <code>fun main()</code> and runs
-them in a single compile-and-execute cycle (combinator style). Requires <code>kotlinc</code>
-and a JRE on the Jobe server.</p>';
+them in a single compile-and-execute cycle (combinator style).</p>
+<p><strong>Requires a customised Jobe server</strong> that defines a language named <code>kotlin</code>
+(with <code>kotlinc</code> and a JRE). Standard Jobe has no Kotlin support.</p>';
 
 $string['qtype_kotlin_compose'] = '<p>A Kotlin Jetpack Compose question type for JVM/desktop
 Compose UI testing. The student submits Kotlin declarations such as composable functions,
 state holders, and view models; they must not submit a <code>fun main()</code>. Each test case
 is written as a <code>runComposeUiTest</code> block and can use node finders, assertions,
 text input, and click actions such as <code>onNodeWithTag(...).performClick()</code>.</p>
-<p>Requires a Jobe language named <code>kotlin_compose</code> with the Compose compiler plugin,
+<p><strong>Requires a customised Jobe server</strong> with a language named <code>kotlin_compose</code>
+(standard Jobe has none) with the Compose compiler plugin,
 Compose runtime/UI test classpath, and <code>xvfb-run</code> support for tests run with the
 <code>{"composeui":true}</code> sandbox parameter.</p>';

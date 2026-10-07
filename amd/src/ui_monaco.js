@@ -86,8 +86,8 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'core/str'], function(adap
     };
 
     const MONACO_THEME_DEFS = [
-        {name: 'one-dark', path: '/question/type/coderunner/monaco/vs/themes/OneDark.json', base: 'vs-dark'},
-        {name: 'one-light', path: '/question/type/coderunner/monaco/vs/themes/OneLight.json', base: 'vs'}
+        {name: 'one-dark', path: '/question/type/coderunner/thirdparty/onedark-theme/OneDark.json', base: 'vs-dark'},
+        {name: 'one-light', path: '/question/type/coderunner/thirdparty/onedark-theme/OneLight.json', base: 'vs'}
     ];
 
     let monacoThemePromise = null;
@@ -370,48 +370,20 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'core/str'], function(adap
             (this.textarea.value || '');
         this.textarea.value = initialValue;
 
-        const languageHint = appliedParams.lsp_language ||
-            appliedParams.lang;
-        const monacoLang = adapter.mapMonacoLanguage(languageHint);
-
         this.container = document.createElement('div');
         this.container.classList.add('coderunner-monaco-container');
         this.container.style.width = '100%';
         this.container.style.height = (height || this.textarea.clientHeight || 200) + 'px';
         this.container.setAttribute('role', 'application');
 
-        const builtinWorkerLanguages = ['css', 'javascript', 'typescript'];
-        const useBuiltinServices = builtinWorkerLanguages.indexOf(monacoLang) !== -1;
-        const lspConfig = useBuiltinServices ? { enabled: false } : buildLspConfig(appliedParams, monacoLang);
-        const useSimple = useBuiltinServices ? false : normaliseBoolean(appliedParams.use_simple_lsp, DEFAULTS.use_simple_lsp);
-        const richFeatures = normaliseBoolean(appliedParams.rich_features, DEFAULTS.rich_features);
-
-        const disableLspPrefixes = normaliseBoolean(appliedParams.disable_lsp_prefixes, DEFAULTS.disable_lsp_prefixes);
-        const prefixCode = disableLspPrefixes ? '' : (appliedParams.lsp_prefix_code || '');
         const semanticHighlighting = normaliseBoolean(appliedParams.semantic_highlighting, DEFAULTS.semantic_highlighting || false);
-        const workspaceConfig = appliedParams.lsp_workspace_config || DEFAULTS.lsp_workspace_config;
         const readOnly = !!this.textarea.readOnly;
 
+        this.textareaId = textareaId;
         this.appliedParams = appliedParams;
         this.readOnly = readOnly;
-        this.monacoLang = monacoLang;
         this.initialValue = initialValue;
-        this.modelPath = buildModelUri(textareaId, monacoLang);
-        this.adapterOptions = {
-            language: monacoLang,
-            value: initialValue,
-            prefixCode: prefixCode,
-            lspUrl: lspConfig.enabled ? lspConfig.lspUrl : null,
-            lspBaseUrl: lspConfig.enabled ? lspConfig.lspBaseUrl : null,
-            useSimpleLsp: lspConfig.enabled ? lspConfig.useSimple : useSimple,
-            lspEnabled: lspConfig.enabled,
-            richFeatures: richFeatures,
-            semanticHighlighting: semanticHighlighting,
-            workspaceConfig: workspaceConfig,
-            path: this.modelPath,
-            workspaceRootUri: buildWorkspaceRootUri(monacoLang),
-            enableInlayHints: !readOnly
-        };
+        this.configureLanguage(appliedParams.lsp_language || appliedParams.lang);
         this.editorOptions = {
             readOnly: readOnly,
             fontSize: parseNumber(appliedParams.font_size, DEFAULTS.font_size),
@@ -435,6 +407,71 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'core/str'], function(adap
             }
         };
     }
+
+    /**
+     * Set up everything that depends on the language: the Monaco language id, the model URI
+     * and the adapter (LSP) options used when the editor is created.
+     *
+     * @param {string} languageHint A CodeRunner or Monaco language name.
+     */
+    MonacoWrapper.prototype.configureLanguage = function(languageHint) {
+        const params = this.appliedParams;
+        const monacoLang = adapter.mapMonacoLanguage(languageHint);
+        const builtinWorkerLanguages = ['css', 'javascript', 'typescript'];
+        const useBuiltinServices = builtinWorkerLanguages.indexOf(monacoLang) !== -1;
+        const lspConfig = useBuiltinServices ? { enabled: false } : buildLspConfig(params, monacoLang);
+        const useSimple = useBuiltinServices ? false : normaliseBoolean(params.use_simple_lsp, DEFAULTS.use_simple_lsp);
+        const disableLspPrefixes = normaliseBoolean(params.disable_lsp_prefixes, DEFAULTS.disable_lsp_prefixes);
+
+        this.monacoLang = monacoLang;
+        this.modelPath = buildModelUri(this.textareaId, monacoLang);
+        this.adapterOptions = {
+            language: monacoLang,
+            value: this.initialValue,
+            prefixCode: disableLspPrefixes ? '' : (params.lsp_prefix_code || ''),
+            lspUrl: lspConfig.enabled ? lspConfig.lspUrl : null,
+            lspBaseUrl: lspConfig.enabled ? lspConfig.lspBaseUrl : null,
+            useSimpleLsp: lspConfig.enabled ? lspConfig.useSimple : useSimple,
+            lspEnabled: lspConfig.enabled,
+            richFeatures: normaliseBoolean(params.rich_features, DEFAULTS.rich_features),
+            semanticHighlighting: normaliseBoolean(params.semantic_highlighting, DEFAULTS.semantic_highlighting || false),
+            workspaceConfig: params.lsp_workspace_config || DEFAULTS.lsp_workspace_config,
+            path: this.modelPath,
+            workspaceRootUri: buildWorkspaceRootUri(monacoLang),
+            enableInlayHints: !this.readOnly
+        };
+    };
+
+    /**
+     * Optional UI plugin API, called by multi-language questions when the student picks a
+     * language. Rebuilds the editor (keeping its text) so that highlighting and the language
+     * server follow the new language.
+     *
+     * @param {string} language The CodeRunner language name, e.g. 'python3' or 'java'.
+     */
+    MonacoWrapper.prototype.setLanguage = function(language) {
+        if (!language || this.destroyed || adapter.mapMonacoLanguage(language) === this.monacoLang) {
+            return;
+        }
+        this.sync();
+        this.initialValue = this.textarea.value;
+        this.configureLanguage(language);
+        if (!this.monaco || !this.model) {
+            return; // Still loading: ready() creates the model for the new language.
+        }
+        const hadFocus = this.hasFocus();
+        this.disposeEditor();
+        try {
+            this.model = adapter.createMonacoModel(this.monaco, this.monacoLang, this.initialValue, this.modelPath);
+            this.postInsert();
+            if (hadFocus && this.editor) {
+                this.editor.focus();
+            }
+        } catch (error) {
+            // postInsert() has already logged it and marked the UI failed; the text is safe
+            // in the textarea.
+        }
+    };
 
     /**
      * Load Monaco (plus themes) and create the editor model. The editor itself is created in
@@ -576,6 +613,14 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'core/str'], function(adap
             }
         }
         if (this.model) {
+            try {
+                // Markers outlive their model, so clear the language server's diagnostics too.
+                const model = this.model;
+                const owners = new Set(this.monaco.editor.getModelMarkers({resource: model.uri}).map(m => m.owner));
+                owners.forEach(owner => this.monaco.editor.setModelMarkers(model, owner, []));
+            } catch (err) {
+                // Ignore marker errors.
+            }
             try {
                 this.model.dispose();
             } catch (err) {

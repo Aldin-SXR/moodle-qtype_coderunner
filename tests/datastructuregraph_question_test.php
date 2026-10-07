@@ -40,8 +40,9 @@ class datastructuregraph_question_test extends \qtype_coderunner_testcase {
     /**
      * Set up without the Jobe sandbox configuration the base class insists on.
      *
-     * These tests run the grader template with a local python3, so they need
-     * no sandbox and shouldn't be skipped when none is configured.
+     * These tests run the grader template with a local python3 when there is
+     * one, so they shouldn't be skipped just because no sandbox is configured.
+     * Without a local python3 they fall back to the configured Jobe sandbox.
      */
     protected function setUp(): void {
         \advanced_testcase::setUp();
@@ -167,7 +168,7 @@ class datastructuregraph_question_test extends \qtype_coderunner_testcase {
         // A missing python3 doesn't make proc_open fail (the shell it starts
         // runs fine and merely reports the command missing), so look first.
         if (!self::python3_available()) {
-            $this->markTestSkipped('python3 is not available to run the data_structure_graph grader template');
+            return $this->run_python_program_in_sandbox($program);
         }
         $process = proc_open('python3', $descriptors, $pipes);
         if (!is_resource($process)) {
@@ -183,6 +184,56 @@ class datastructuregraph_question_test extends \qtype_coderunner_testcase {
 
         $this->assertSame(0, $exitcode, "Python grader failed.\nSTDERR:\n$stderr\nProgram:\n$program");
         return $output;
+    }
+
+    /**
+     * Execute a Python program on the configured sandbox and return stdout.
+     *
+     * Used when there is no local python3, so the grader is still tested.
+     *
+     * @param string $program Python source.
+     * @return string stdout.
+     */
+    private function run_python_program_in_sandbox(string $program): string {
+        self::setup_test_sandbox_configuration();
+        $sandbox = \qtype_coderunner_sandbox::get_best_sandbox('python3');
+        if ($sandbox === null) {
+            $this->markTestSkipped('Neither a local python3 nor a python3 sandbox is available to run the grader template');
+        }
+        $run = $sandbox->execute($program, 'python3', '');
+        $this->assertEquals(\qtype_coderunner_sandbox::OK, $run->error, 'Sandbox error: ' . ($run->stderr ?? ''));
+        $this->assertEquals(
+            \qtype_coderunner_sandbox::RESULT_SUCCESS,
+            $run->result,
+            "Python grader failed.\nSTDERR:\n{$run->stderr}\nProgram:\n$program"
+        );
+        return $run->output;
+    }
+
+    /**
+     * Return a version 2 (current UI) tree serialisation.
+     *
+     * @param array $keys node keys, indexed by node number.
+     * @param array $edges list of [from node number, to node number, slot].
+     * @param bool $isdirected the isdirected setting the UI saved.
+     * @return string
+     */
+    private function tree_v2_json(array $keys, array $edges, bool $isdirected = false): string {
+        $nodes = [];
+        foreach ($keys as $i => $key) {
+            $nodes[] = ['id' => "n$i", 'key' => $key, 'value' => '', 'layout' => ['x' => 60 * $i, 'y' => 40]];
+        }
+        $edgelist = [];
+        foreach ($edges as $i => [$from, $to, $slot]) {
+            $edgelist[] = ['id' => "e$i", 'from' => "n$from", 'to' => "n$to", 'cost' => '', 'slot' => $slot];
+        }
+        return json_encode([
+            'type' => 'coderunner-datastructure-graph',
+            'version' => 2,
+            'settings' => ['mode' => 'tree', 'isdirected' => $isdirected, 'childslots' => ['left', 'right']],
+            'nodes' => $nodes,
+            'edges' => $edgelist,
+        ]);
     }
 
     /**
@@ -622,6 +673,45 @@ class datastructuregraph_question_test extends \qtype_coderunner_testcase {
                 ['id' => 'e2', 'from' => 'n1', 'to' => 'n3', 'cost' => '', 'slot' => 'right'],
             ],
         ]);
+    }
+
+    public function test_undirected_tree_with_parent_and_child_swapped_is_wrong(): void {
+        // Expected: 5 with left child 3. Student: 3 with left child 5.
+        $result = $this->run_data_structure_grader(
+            $this->tree_v2_json(['3', '5'], [[0, 1, 'left']]),
+            false,
+            $this->tree_v2_json(['5', '3'], [[0, 1, 'left']])
+        );
+        $this->assertLessThan(1.0, $result['fraction']);
+    }
+
+    public function test_undirected_tree_chain_does_not_match_balanced_tree(): void {
+        // Expected: 2 with children 1 (left) and 3 (right). Student: chain 1 -left-> 2 -right-> 3.
+        $result = $this->run_data_structure_grader(
+            $this->tree_v2_json(['1', '2', '3'], [[0, 1, 'left'], [1, 2, 'right']]),
+            false,
+            $this->tree_v2_json(['2', '1', '3'], [[0, 1, 'left'], [0, 2, 'right']])
+        );
+        $this->assertLessThan(1.0, $result['fraction']);
+    }
+
+    public function test_undirected_tree_exact_match_gets_full_marks(): void {
+        $answer = $this->tree_v2_json(['2', '1', '3'], [[0, 1, 'left'], [0, 2, 'right']]);
+        $result = $this->run_data_structure_grader($answer, true, $answer);
+        $this->assertEquals(1.0, $result['fraction'], $result['testresults'][1][2]);
+    }
+
+    public function test_student_settings_cannot_change_how_the_answer_is_read(): void {
+        // The student claims a directed, undirected-graph and no-slot structure;
+        // the answer must still be read as the question's undirected binary tree.
+        $student = json_decode($this->tree_v2_json(['3', '5'], [[0, 1, 'left']]), true);
+        $student['settings'] = ['mode' => 'graph', 'isdirected' => false, 'childslots' => []];
+        $result = $this->run_data_structure_grader(
+            json_encode($student),
+            false,
+            $this->tree_v2_json(['5', '3'], [[0, 1, 'left']])
+        );
+        $this->assertLessThan(1.0, $result['fraction']);
     }
 
     public function test_child_dragged_above_parent_is_graded_by_stored_direction_and_slot(): void {

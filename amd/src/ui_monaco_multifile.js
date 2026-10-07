@@ -116,8 +116,8 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
     };
 
     const MONACO_THEME_DEFS = [
-        {name: 'one-dark', path: '/question/type/coderunner/monaco/vs/themes/OneDark.json', base: 'vs-dark'},
-        {name: 'one-light', path: '/question/type/coderunner/monaco/vs/themes/OneLight.json', base: 'vs'}
+        {name: 'one-dark', path: '/question/type/coderunner/thirdparty/onedark-theme/OneDark.json', base: 'vs-dark'},
+        {name: 'one-light', path: '/question/type/coderunner/thirdparty/onedark-theme/OneLight.json', base: 'vs'}
     ];
 
     const THEME_NAME_OVERRIDES = {
@@ -297,75 +297,104 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
     const generateFileId = () => 'vf_' + Math.random().toString(36).slice(2, 11);
 
     // Shown when an answer has no files. It is not written to the answer until the user edits.
-    const DEFAULT_FILE_PATH = 'index.html';
-    const DEFAULT_FILE_CONTENT = '<h1>Hello World</h1>';
+    const DEFAULT_HTML_CONTENT = '<h1>Hello World</h1>';
+
+    /**
+     * The name of the file used for an empty or non-multi-file answer, chosen to suit the
+     * question's allowed file extensions (index.html, Main.java, main.cpp, ...).
+     *
+     * @param {Object} params The UI parameters.
+     * @returns {string} The file path.
+     */
+    function defaultFilePath(params) {
+        const allowed = Array.isArray(params && params.allowed_extensions)
+            ? params.allowed_extensions.map(ext => String(ext).replace(/^\./, '').toLowerCase()).filter(Boolean)
+            : [];
+        if (allowed.length === 0 || allowed.includes('html')) {
+            return 'index.html';
+        }
+        if (allowed.includes('java')) {
+            return 'Main.java';
+        }
+        return 'main.' + allowed[0];
+    }
 
     /**
      * Turn the stored answer text into answer data for VirtualFileSystem.fromJSON.
      * Never throws. Old answers may hold extra fields (e.g. folderName); they are ignored.
+     * Anything that is not a multi-file answer (plain code, a Scratchpad answer or any other
+     * JSON) is shown as a single file, so switching a question to this UI never hides, and
+     * then overwrites, what the student already wrote.
      *
      * @param {string} text The answer text.
+     * @param {string} defaultPath The file name to use for a non-multi-file answer.
      * @returns {Object} The answer data.
      */
-    function parseAnswerText(text) {
+    function parseAnswerText(text, defaultPath) {
         const raw = typeof text === 'string' ? text : '';
         if (raw.trim() === '') {
             return {files: []};
         }
+        let content = raw;
         try {
             const parsed = JSON.parse(raw);
             if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-                return parsed;
+                if (Array.isArray(parsed.files)) {
+                    return parsed;
+                }
+                if (Array.isArray(parsed.answer_code) && typeof parsed.answer_code[0] === 'string') {
+                    // A Scratchpad UI answer: keep its code.
+                    content = parsed.answer_code[0];
+                }
             }
         } catch (e) {
             // Not JSON; handled below.
         }
-        // Not a multi-file answer (e.g. plain code): show it as a single file.
-        return {files: [{path: DEFAULT_FILE_PATH, content: raw, locked: false}]};
+        return {files: [{path: defaultPath, content: content, locked: false}]};
     }
 
-    const DEVICON_CLASS_MAP = {
-        html: 'devicon devicon-html5-plain',
-        htm: 'devicon devicon-html5-plain',
-        css: 'devicon devicon-css3-plain',
-        js: 'devicon devicon-javascript-plain',
-        javascript: 'devicon devicon-javascript-plain',
-        ts: 'devicon devicon-typescript-plain',
-        typescript: 'devicon devicon-typescript-plain',
-        json: 'devicon devicon-json-plain',
-        py: 'devicon devicon-python-plain',
-        python: 'devicon devicon-python-plain',
-        java: 'devicon devicon-java-plain',
-        c: 'devicon devicon-c-plain',
-        cpp: 'devicon devicon-cplusplus-plain',
-        cc: 'devicon devicon-cplusplus-plain',
-        cxx: 'devicon devicon-cplusplus-plain',
-        'c++': 'devicon devicon-cplusplus-plain',
-        h: 'devicon devicon-cplusplus-plain',
-        hpp: 'devicon devicon-cplusplus-plain',
-        ipp: 'devicon devicon-cplusplus-plain',
-        tpp: 'devicon devicon-cplusplus-plain',
-        cs: 'devicon devicon-csharp-plain',
-        csharp: 'devicon devicon-csharp-plain',
-        php: 'devicon devicon-php-plain',
-        rb: 'devicon devicon-ruby-plain',
-        ruby: 'devicon devicon-ruby-plain',
-        go: 'devicon devicon-go-plain',
-        kt: 'devicon devicon-kotlin-plain',
-        kotlin: 'devicon devicon-kotlin-plain',
-        swift: 'devicon devicon-swift-plain',
-        scala: 'devicon devicon-scala-plain',
-        rs: 'devicon devicon-rust-plain',
-        rust: 'devicon devicon-rust-plain',
-        hs: 'devicon devicon-haskell-plain',
-        haskell: 'devicon devicon-haskell-plain',
-        sql: 'devicon devicon-mysql-plain',
-        mongodb: 'devicon devicon-mongodb-plain',
-        cypher: 'devicon devicon-neo4j-plain',
-        sol: 'devicon devicon-solidity-plain',
-        solidity: 'devicon devicon-solidity-plain',
-        md: 'devicon devicon-markdown-original',
-        markdown: 'devicon devicon-markdown-original'
+    const DEVICON_FILE_MAP = {
+        html: 'html5-plain.svg',
+        htm: 'html5-plain.svg',
+        css: 'css3-plain.svg',
+        js: 'javascript-plain.svg',
+        javascript: 'javascript-plain.svg',
+        ts: 'typescript-plain.svg',
+        typescript: 'typescript-plain.svg',
+        json: 'json-plain.svg',
+        py: 'python-plain.svg',
+        python: 'python-plain.svg',
+        java: 'java-plain.svg',
+        c: 'c-original.svg',
+        cpp: 'cplusplus-plain.svg',
+        cc: 'cplusplus-plain.svg',
+        cxx: 'cplusplus-plain.svg',
+        'c++': 'cplusplus-plain.svg',
+        h: 'cplusplus-plain.svg',
+        hpp: 'cplusplus-plain.svg',
+        ipp: 'cplusplus-plain.svg',
+        tpp: 'cplusplus-plain.svg',
+        cs: 'csharp-plain.svg',
+        csharp: 'csharp-plain.svg',
+        php: 'php-plain.svg',
+        rb: 'ruby-plain.svg',
+        ruby: 'ruby-plain.svg',
+        go: 'go-plain.svg',
+        kt: 'kotlin-plain.svg',
+        kotlin: 'kotlin-plain.svg',
+        swift: 'swift-plain.svg',
+        scala: 'scala-plain.svg',
+        rs: 'rust-original.svg',
+        rust: 'rust-original.svg',
+        hs: 'haskell-plain.svg',
+        haskell: 'haskell-plain.svg',
+        sql: 'mysql-original.svg',
+        mongodb: 'mongodb-plain.svg',
+        cypher: 'neo4j-plain.svg',
+        sol: 'solidity-plain.svg',
+        solidity: 'solidity-plain.svg',
+        md: 'markdown-original.svg',
+        markdown: 'markdown-original.svg'
     };
 
     const CODICON_ICON_MAP = {
@@ -485,8 +514,19 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
             return vscodeIconBasePath;
         }
         const root = (window.M && M.cfg && M.cfg.wwwroot) ? M.cfg.wwwroot : '';
-        vscodeIconBasePath = root + '/question/type/coderunner/monaco/vs/icons';
+        vscodeIconBasePath = root + '/question/type/coderunner/thirdparty/vscode-icons';
         return vscodeIconBasePath;
+    }
+
+    /**
+     * The URL of one of the bundled devicon SVGs (thirdparty/devicon).
+     *
+     * @param {string} file The SVG file name.
+     * @returns {string}
+     */
+    function getDeviconUrl(file) {
+        const root = (window.M && M.cfg && M.cfg.wwwroot) ? M.cfg.wwwroot : '';
+        return root + '/question/type/coderunner/thirdparty/devicon/' + file;
     }
 
     /**
@@ -1086,9 +1126,9 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
                     return {type: 'vscode', src: vscodeIcon, source: 'vscode'};
                 }
             }
-            const devicon = DEVICON_CLASS_MAP[ext];
+            const devicon = DEVICON_FILE_MAP[ext];
             if (devicon) {
-                return {className: `${devicon} devicon-icon`, source: 'devicon'};
+                return {type: 'vscode', src: getDeviconUrl(devicon), className: 'devicon-icon', source: 'devicon'};
             }
             const codicon = CODICON_ICON_MAP[ext] || 'codicon-file-code';
             return {className: `codicon ${codicon}`, source: 'codicon'};
@@ -1528,7 +1568,7 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
         this.debouncedRefreshOutline = debounce(this.refreshOutline.bind(this), 1000);
 
         const answerText = this.textarea.value;
-        let initialData = parseAnswerText(answerText);
+        let initialData = parseAnswerText(answerText, defaultFilePath(this.params));
         this.vfs = this.buildVfsFromData(initialData);
 
         // Remember what the stored answer contains, so that merely loading it (or showing the
@@ -1564,7 +1604,9 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
     MonacoMultifileWrapper.prototype.buildVfsFromData = function(data) {
         const vfs = VirtualFileSystem.fromJSON(data, this.params.allowed_extensions, this.maxFiles);
         if (vfs.getAllFiles().length === 0) {
-            vfs.addFile(new VirtualFile(DEFAULT_FILE_PATH, DEFAULT_FILE_CONTENT, false), {ignoreLimit: true});
+            const path = defaultFilePath(this.params);
+            const content = path.endsWith('.html') ? DEFAULT_HTML_CONTENT : '';
+            vfs.addFile(new VirtualFile(path, content, false), {ignoreLimit: true});
         }
         return vfs;
     };
@@ -1605,7 +1647,8 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
         }
         let signature = null;
         try {
-            signature = this.contentSignature(this.buildVfsFromData(parseAnswerText(text)));
+            const data = parseAnswerText(text, defaultFilePath(this.params));
+            signature = this.contentSignature(this.buildVfsFromData(data));
         } catch (e) {
             signature = null;
         }
@@ -4126,6 +4169,16 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
 
         // Enable in-editor navigation for hrefs that reference files in the virtual FS.
         this.setupInlineHrefNavigation();
+
+        // Like Ace and the single-file Monaco UI, tell the form the answer changed when the
+        // editor loses focus, so Moodle's form change checker and quiz autosave see the edit.
+        this.editor.onDidBlurEditorText(() => {
+            if (this.destroyed) {
+                return;
+            }
+            this.sync();
+            this.flushChangeEvent();
+        });
 
         // Monaco themes are page-wide. The adapter's theme manager picks the page theme (the first
         // Monaco UI on the page decides; later ones keep it unless the user picks another) and
@@ -8027,12 +8080,24 @@ define(['qtype_coderunner/monaco_coderunner_adapter', 'jquery'], function(adapte
             this.textarea.value = json;
             this.answerSignatureCache = {text: json, signature: signature};
 
-            // Trigger change event if this is a submit
-            if (isSubmit) {
-                this.textarea.dispatchEvent(new Event('change', {bubbles: true}));
+            // Tell the form now unless the user is still typing, in which case the change
+            // event is sent when the editor loses focus (see flushChangeEvent).
+            this.changeEventPending = true;
+            if (isSubmit || !this.hasFocus()) {
+                this.flushChangeEvent();
             }
         } catch (err) {
             logWarn('Monaco multifile UI: failed to sync the answer', err);
+        }
+    };
+
+    /**
+     * Fire a change event on the answer textarea if sync() has rewritten it since the last one.
+     */
+    MonacoMultifileWrapper.prototype.flushChangeEvent = function() {
+        if (this.changeEventPending && this.textarea) {
+            this.changeEventPending = false;
+            this.textarea.dispatchEvent(new Event('change', {bubbles: true}));
         }
     };
 

@@ -18,4 +18,22 @@
         <version>0.52.0</version>
         <license>MIT</license>
     </library>
+    <library>
+        <location>thirdparty/vscode-icons</location>
+        <name>vscode-icons</name>
+        <version>2025-11-14 snapshot</version>
+        <license>MIT</license>
+    </library>
+    <library>
+        <location>thirdparty/devicon</location>
+        <name>Devicon</name>
+        <version>2.17.0</version>
+        <license>MIT</license>
+    </library>
+    <library>
+        <location>thirdparty/onedark-theme</location>
+        <name>One Dark Theme (vscode-theme-onedark)</name>
+        <version>2.3.0</version>
+        <license>MIT</license>
+    </library>
 </libraries>

@@ -9,6 +9,9 @@ Source:  https://github.com/microsoft/monaco-editor
 License: MIT (see LICENSE.txt in this directory)
 
 The files under vs/ are the distributed build of that release and are not
-modified here. To upgrade, replace the vs/ directory with the contents of the
+modified here. The file icons and the One Dark/One Light themes the Monaco UIs
+also use are separate third-party libraries, kept under ../thirdparty/.
+
+To upgrade, replace the vs/ directory with the contents of the
 `min` (or `dev`) folder of a newer monaco-editor release and update the version
 recorded here and in ../thirdpartylibs.xml.
