@@ -905,10 +905,16 @@ function xmldb_qtype_coderunner_upgrade($oldversion) {
     if ($oldversion < 2026102307) {
         // Algorithm trace fixes: the fill-in service reads template parameters over several lines and
         // reports warnings; at most 500 steps; locked rows cannot be graded; stricter gaps and numbers;
-        // errors in custom algorithms reported as setup errors; the UI highlights the target;
-        // new stepmatching template parameter ("strict" or "aligned").
+        // errors in custom algorithms reported as setup errors; the UI highlights the target.
         // Note: prototypes are reloaded by update_question_types() at the end of this function.
         upgrade_plugin_savepoint(true, 2026102307, 'qtype', 'coderunner');
+    }
+
+    if ($oldversion < 2026102308) {
+        // algorithm_trace: aligned step matching (stepmatching template parameter); answer fields in the
+        // question editor start with no steps. Data-structure graph UI: F2/E or double-click edits a node.
+        // Note: prototypes are reloaded by update_question_types() at the end of this function.
+        upgrade_plugin_savepoint(true, 2026102308, 'qtype', 'coderunner');
     }
 
     require_once(__DIR__ . '/upgradelib.php');

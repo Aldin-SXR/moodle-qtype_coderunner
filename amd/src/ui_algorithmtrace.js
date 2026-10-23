@@ -776,7 +776,9 @@ define(['core/str', 'core/ajax'], function(Str, Ajax) {
             }
         }
         if (steps === null) {
-            steps = this.fixedLabels ? [] : [this.newStep(this.initialStep())];
+            // Students start with one step to fill in. The question editor's answer
+            // fields start empty, so a new question doesn't look as if it has an answer.
+            steps = this.fixedLabels || this.inEditor ? [] : [this.newStep(this.initialStep())];
         }
         if (this.fixedLabels) {
             steps = steps.slice(0, this.fixedLabels.length);

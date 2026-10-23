@@ -127,6 +127,8 @@ define(['jquery', 'core/str'], function($, Str) {
         a11yseledge: 'Selected edge {$a}',
         a11ycleared: 'Selection cleared',
         a11yselectfirst: 'Select a node first, then press C to connect it.',
+        a11yeditfirst: 'Select a node or edge first, then press F2 or E to edit it.',
+        a11ynoedit: 'The values of this node or edge cannot be changed in this question.',
         a11yconnectstart: 'Connecting from node {$a}. Move to another node and press C or Enter to connect, ' +
             'or Escape to cancel.',
         a11yconnected: 'Connected {$a}',
@@ -157,6 +159,9 @@ define(['jquery', 'core/str'], function($, Str) {
         helpkeydelete: 'Delete the selection',
         helpkeycancel: 'Cancel a connection or clear the selection',
         helpkeyundo: 'Undo or redo the last change',
+        helpkeyedit: 'Edit the selected node or edge; Enter or Esc goes back to the drawing',
+        helpmouseeditg: 'Double-click',
+        helpmouseedit: 'a node to edit it.',
         push: 'Push',
         pop: 'Pop',
         enqueue: 'Enqueue',
@@ -739,6 +744,15 @@ define(['jquery', 'core/str'], function($, Str) {
         this.toolbar = $('<div class="coderunner-datastructuregraph-toolbar"></div>');
         this.canvasWrap = $('<div class="coderunner-datastructuregraph-canvaswrap"></div>');
         this.properties = $('<div class="coderunner-datastructuregraph-properties"></div>');
+        // Enter or Escape in a field of the properties panel goes back to the
+        // drawing, keeping the selection, so keyboard users can carry on there.
+        this.properties.on('keydown', 'input[type="text"]', function(e) {
+            if (e.key === 'Enter' || e.key === 'Escape') {
+                e.preventDefault();
+                e.stopPropagation();
+                t.canvas[0].focus();
+            }
+        });
         this.canvas = $('<canvas class="coderunner-datastructuregraph-canvas" tabindex="0"></canvas>');
         this.connectionStatus = $('<span class="coderunner-datastructuregraph-status"></span>');
 
@@ -981,6 +995,7 @@ define(['jquery', 'core/str'], function($, Str) {
             [{b: 'helpmousemoveg'}, {t: 'helpmousemove'}],
             [{b: 'helpmousepang'}, {t: 'helpmousepan'}],
             [{b: 'helpmouseaddg'}, {t: 'helpmouseadd'}],
+            [{b: 'helpmouseeditg'}, {t: 'helpmouseedit'}],
             [{b: 'helpmouseconnectg'}, {t: 'helpmouseconnectmid'}, {b: 'helpmouseconnectg2'}, {t: 'helpmouseconnectend'}],
             [{b: 'helpmousezoomg'}, {t: 'helpmousezoom'}]
         ];
@@ -989,6 +1004,7 @@ define(['jquery', 'core/str'], function($, Str) {
             {keys: ['Tab', 'Shift + Tab'], desc: 'helpkeymove'},
             {keys: ['←', '↑', '→', '↓'], desc: 'helpkeynudge'},
             {keys: ['C', 'Enter'], desc: 'helpkeyconnect'},
+            {keys: ['F2', 'E'], desc: 'helpkeyedit'},
             {keys: ['Delete', 'Backspace'], desc: 'helpkeydelete'},
             {keys: ['Esc'], desc: 'helpkeycancel'},
             {keys: ['Ctrl + Z', 'Ctrl + Y'], desc: 'helpkeyundo'}
@@ -999,12 +1015,14 @@ define(['jquery', 'core/str'], function($, Str) {
                 [{b: 'helpmousereorderg'}, {t: 'helpmousereorder'}],
                 [{b: 'helpmousepang'}, {t: 'helpmousepan'}],
                 [{b: 'helpmousepushg'}, {t: 'helpmousepush'}],
+                [{b: 'helpmouseeditg'}, {t: 'helpmouseedit'}],
                 [{b: 'helpmousezoomg'}, {t: 'helpmousezoom'}]
             ];
             keys = [
                 {keys: ['N', 'Insert'], desc: 'helpkeypush'},
                 {keys: ['Tab', 'Shift + Tab'], desc: 'helpkeyelements'},
                 {keys: this.mode === 'stack' ? ['↑', '↓'] : ['←', '→'], desc: 'helpkeyreorder'},
+                {keys: ['F2', 'E'], desc: 'helpkeyedit'},
                 {keys: ['Delete', 'Backspace'], desc: 'helpkeydeleteelement'},
                 {keys: ['Esc'], desc: 'helpkeycancel'},
                 {keys: ['Ctrl + Z', 'Ctrl + Y'], desc: 'helpkeyundo'}
@@ -2558,13 +2576,40 @@ define(['jquery', 'core/str'], function($, Str) {
     };
 
     DataStructureGraph.prototype.doubleClick = function(e) {
-        if (this.readOnly || this.lockNodeSet) {
+        if (this.readOnly) {
             return;
         }
         const pos = this.mousePosition(e);
-        if (!this.findNodeAt(pos) && !this.findEdgeAt(pos)) {
+        const node = this.findNodeAt(pos);
+        if (node) {
+            // Double-clicking a node edits it (unless it was the end of a connection).
+            if (!this.connectMode && !this.linkSource) {
+                this.selected = {type: 'node', id: node.id};
+                this.editSelected();
+            }
+        } else if (!this.findEdgeAt(pos) && !this.lockNodeSet) {
             this.addNode(pos.x, pos.y);
         }
+    };
+
+    /**
+     * Move the keyboard focus to the first field of the selected node or edge in
+     * the properties panel (its key, or an edge's cost), with its text selected.
+     */
+    DataStructureGraph.prototype.editSelected = function() {
+        if (!this.selectedObject()) {
+            this.announce(this.s('a11yeditfirst'));
+            return;
+        }
+        this.updateProperties();
+        this.draw();
+        const field = this.properties.find('input[type="text"]:enabled').first();
+        if (field.length === 0) {
+            this.announce(this.s('a11ynoedit'));
+            return;
+        }
+        field[0].focus();
+        field[0].select();
     };
 
     DataStructureGraph.prototype.mouseDown = function(e) {
@@ -2781,6 +2826,14 @@ define(['jquery', 'core/str'], function($, Str) {
             case 'Insert':
                 if (!this.readOnly && !this.lockNodeSet) {
                     this.addNodeViaKeyboard();
+                    e.preventDefault();
+                }
+                return;
+            case 'F2':
+            case 'e':
+            case 'E':
+                if (!this.readOnly && !e.altKey) {
+                    this.editSelected();
                     e.preventDefault();
                 }
                 return;
