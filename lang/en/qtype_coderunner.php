@@ -385,6 +385,162 @@ $string['graphui_locknodelabels_descr'] = 'If true, prevent the user from editin
 $string['graphui_lockedgepositions_descr'] = 'If true prevents the user from dragging edges to change their curvature. Possibly useful if the answer box is preloaded with a graph that the student has to annotate by changing node or edge labels or by adding/removing edges. Also ensures that edges added by a student are straight, e.g. to draw a polygon on a set of given points. Note, though that edges can still be added and deleted. See lockedgeset.';
 $string['graphui_lockedgeset_descr'] = 'If true prevents the user from adding or deleting edges.';
 $string['graphui_lockedgelabels_descr'] = 'True to prevent the user from editing edge labels. This also prevents any new edges from having labels.';
+$string['algorithmtrace_badparams'] = 'The UI parameters are not a valid JSON object.';
+$string['algorithmtrace_badtemplateparams'] = 'The template parameters could not be read: {$a}';
+$string['algorithmtrace_nocustomfill'] = 'The correct answer cannot be filled in automatically for custom algorithms.';
+$string['algorithmtrace_nolibrary'] = 'The algorithm_trace prototype could not be found.';
+$string['algorithmtrace_notjsonobject'] = 'they must be a JSON object, or Twig that makes one';
+$string['algorithmtrace_runfailed'] = 'Running the algorithm failed: {$a}';
+$string['algorithmtrace_ui_fillall'] = 'all';
+$string['algorithmtrace_ui_filled'] = 'Filled in {$a} steps.';
+$string['algorithmtrace_ui_fillfailed'] = 'Could not fill in the answer: {$a}';
+$string['algorithmtrace_ui_fillhelp'] = 'Teachers only: works out the correct steps from the algorithm and data. Leave Steps empty for all of them, or give a number to fill in only the first steps (for example, to give students a head start in the answer preload). If the data are randomised, students get different data, so leave the sample answer empty.';
+$string['algorithmtrace_ui_filling'] = 'Working it out...';
+$string['algorithmtrace_ui_addcard'] = '+ Add {$a}';
+$string['algorithmtrace_ui_addtool'] = 'Add {$a}';
+$string['algorithmtrace_ui_algoallowed'] = 'Allowed';
+$string['algorithmtrace_ui_algocurrent'] = 'This question';
+$string['algorithmtrace_ui_algocustom'] = 'A custom algorithm\'s steps come from its algorithm.py support file, and their parts from the schema UI parameter.';
+$string['algorithmtrace_ui_algoexample'] = 'All options with their defaults, for the options UI parameter:';
+$string['algorithmtrace_ui_algogradeddefault'] = 'Graded by default: {$a}.';
+$string['algorithmtrace_ui_algogradednow'] = 'Graded in this question: {$a}. Change this with the grade UI parameter.';
+$string['algorithmtrace_ui_algonooptions'] = 'This algorithm has no options.';
+$string['algorithmtrace_ui_algooption'] = 'Option';
+$string['algorithmtrace_ui_algooptions'] = 'Options, set in the options UI parameter:';
+$string['algorithmtrace_ui_algoparts'] = 'Parts of each step:';
+$string['algorithmtrace_ui_algostep'] = 'One step:';
+$string['algorithmtrace_ui_algotitle'] = 'Algorithm settings: {$a}';
+$string['algorithmtrace_ui_algotool'] = 'Algorithm settings';
+$string['algorithmtrace_ui_algousingdefault'] = 'default';
+$string['algorithmtrace_ui_fillstepslabel'] = 'Steps to fill in (empty for all)';
+$string['algorithmtrace_ui_filltool'] = 'Fill in correct answer';
+$string['algorithmtrace_ui_helpcopy'] = 'Drag a value from the top row into a cell to copy it.';
+$string['algorithmtrace_ui_helpkeyboard'] = 'Keyboard';
+$string['algorithmtrace_ui_helpkeypointer'] = 'Move the selected pointer';
+$string['algorithmtrace_ui_helpkeyremove'] = 'Remove the selected pointer';
+$string['algorithmtrace_ui_helpkeyswap'] = 'Swap a cell with its neighbour';
+$string['algorithmtrace_ui_helpkeytab'] = 'Move between cells';
+$string['algorithmtrace_ui_helpmouse'] = 'Mouse';
+$string['algorithmtrace_ui_helpmove'] = 'Drag a value onto the edge between two cells to move it there.';
+$string['algorithmtrace_ui_helppointers'] = 'Drag a pointer under the array to place it, or onto the dashed tray to remove it.';
+$string['algorithmtrace_ui_helpswap'] = 'Drag a value onto another cell to swap them.';
+$string['algorithmtrace_ui_helpteacher'] = 'In the question editor the toolbar also fills in the correct answer, makes random data for each student, and lists the template parameters and the algorithm\'s settings.';
+$string['algorithmtrace_ui_helpteacherheading'] = 'Teacher tools';
+$string['algorithmtrace_ui_helptitle'] = 'How to answer';
+$string['algorithmtrace_ui_helptool'] = 'Help';
+$string['algorithmtrace_ui_helptype'] = 'Click a cell to type a value.';
+$string['algorithmtrace_ui_hintbase'] = 'a whole number, 2 or more';
+$string['algorithmtrace_ui_hintgaps'] = '"knuth", "shell", "hibbard", "sedgewick", "ciura", or a list such as [5, 3, 1]';
+$string['algorithmtrace_ui_hintnumber'] = 'a whole number';
+$string['algorithmtrace_ui_hintnumberorauto'] = 'a whole number, or "auto"';
+$string['algorithmtrace_ui_hintnumberordata'] = 'a whole number, or "data" for the data\'s smallest or largest value';
+$string['algorithmtrace_ui_opt_binary_search_bounds'] = 'inclusive: hi starts at n - 1 and the search runs while lo <= hi. exclusive: hi starts at n, runs while lo < hi, and hi becomes mid.';
+$string['algorithmtrace_ui_opt_binary_search_midpoint'] = 'mid = (lo + hi) / 2 rounded down or up. Exclusive bounds need floor.';
+$string['algorithmtrace_ui_opt_bubble_sort_earlyexit'] = 'Stop after a pass that makes no swaps.';
+$string['algorithmtrace_ui_opt_bubble_sort_granularity'] = 'swap: a step after every swap instead of every pass.';
+$string['algorithmtrace_ui_opt_bubble_sort_showcheckpass'] = 'With earlyexit, count that last pass (which only confirms the array is sorted) as a step.';
+$string['algorithmtrace_ui_opt_counting_sort_granularity'] = 'element: a step after each element is placed in the output.';
+$string['algorithmtrace_ui_opt_counting_sort_max'] = 'The largest key counted.';
+$string['algorithmtrace_ui_opt_counting_sort_min'] = 'The smallest key counted.';
+$string['algorithmtrace_ui_opt_counting_sort_variant'] = 'Which counting sort: clrs, simple or keyindexed (see One step).';
+$string['algorithmtrace_ui_opt_dual_pivot_quick_sort_granularity'] = 'swap: a step after every swap.';
+$string['algorithmtrace_ui_opt_insertion_sort_granularity'] = 'swap: a step after every swap of neighbours.';
+$string['algorithmtrace_ui_opt_linear_search_stopwhengreater'] = 'Stop at the first element greater than the target (for sorted data).';
+$string['algorithmtrace_ui_opt_merge_sort_bottom_up_granularity'] = 'merge: a step after every merge instead of every pass.';
+$string['algorithmtrace_ui_opt_merge_sort_split'] = 'leftlarger: mid = lo + (hi - lo) / 2, so the left half gets the extra element. rightlarger: the right half does.';
+$string['algorithmtrace_ui_opt_quick_sort_granularity'] = 'swap: a step after every swap.';
+$string['algorithmtrace_ui_opt_quick_sort_partition'] = 'sedgewick (Quick.java), hoare (CLRS Hoare partition), lomuto (CLRS) or threeway (Dijkstra, Quick3way.java).';
+$string['algorithmtrace_ui_opt_quick_sort_pivot'] = 'Which element is the pivot. It is swapped into place first. The default is first, or last for lomuto.';
+$string['algorithmtrace_ui_opt_radix_sort_base'] = 'The number base for the digits.';
+$string['algorithmtrace_ui_opt_radix_sort_digits'] = 'How many digits to sort by. "auto" uses as many as the largest value has.';
+$string['algorithmtrace_ui_opt_selection_sort_granularity'] = 'swap: a step only when a swap actually moves values.';
+$string['algorithmtrace_ui_opt_selection_sort_select'] = 'min fills positions from the left with the smallest value; max fills from the right with the largest.';
+$string['algorithmtrace_ui_opt_shell_sort_gaps'] = 'The gap sequence. knuth is 1, 4, 13, 40, ... starting below n/3, as in Sedgewick and Wayne.';
+$string['algorithmtrace_ui_opt_shell_sort_granularity'] = 'swap: a step after every swap.';
+$string['algorithmtrace_ui_opt_timsort_granularity'] = 'Simplified variant only. iteration: a step for the sorted blocks, then one per merge pass. merge: a step per block and per merge.';
+$string['algorithmtrace_ui_opt_timsort_minrun'] = 'The shortest run. "auto" uses CPython\'s rule, which for fewer than 64 values makes one run.';
+$string['algorithmtrace_ui_opt_timsort_variant'] = 'natural: natural runs, reversing descending ones, merged by Timsort\'s stack rules (no galloping). simplified: insertion sort blocks of minrun, then bottom-up merges.';
+$string['algorithmtrace_ui_partpointer'] = '{$a} (pointer)';
+$string['algorithmtrace_ui_partrow'] = '{$a} (row of cells)';
+$string['algorithmtrace_ui_partvar'] = '{$a} (value)';
+$string['algorithmtrace_ui_randomisetool'] = 'Randomise data';
+$string['algorithmtrace_ui_step_binary_search'] = 'one probe. Pointers lo, mid and hi are as they are when mid is computed.';
+$string['algorithmtrace_ui_step_bubble_sort'] = 'one pass from left to right, swapping neighbours that are out of order.';
+$string['algorithmtrace_ui_step_counting_sort'] = 'clrs: the counts, then the cumulative counts, then the output. simple: the counts, then the output. keyindexed: as clrs, with count[r + 1] counting key r.';
+$string['algorithmtrace_ui_step_dual_pivot_quick_sort'] = 'one partition around two pivots, in recursion order. No shuffle.';
+$string['algorithmtrace_ui_step_insertion_sort'] = 'one element inserted into the sorted part on its left (i = 1 to n - 1).';
+$string['algorithmtrace_ui_step_linear_search'] = 'one comparison with the target. Pointer i is the element compared.';
+$string['algorithmtrace_ui_step_merge_sort'] = 'one merge of two sorted halves, in the order the recursion does them (left first).';
+$string['algorithmtrace_ui_step_merge_sort_bottom_up'] = 'one pass merging runs of width 1, then 2, 4, and so on.';
+$string['algorithmtrace_ui_step_quick_sort'] = 'one partition, in the order the recursion does them (left part first). No shuffle.';
+$string['algorithmtrace_ui_step_radix_sort'] = 'one pass sorting by one digit (or character), least significant first.';
+$string['algorithmtrace_ui_step_selection_sort'] = 'one position filled by swapping in the smallest (or largest) remaining value: n - 1 steps.';
+$string['algorithmtrace_ui_step_shell_sort'] = 'one h-sort, for each gap h in turn.';
+$string['algorithmtrace_ui_step_timsort'] = 'natural variant: one run found (and extended to minrun), or one merge. Simplified variant: see granularity.';
+$string['algorithmtrace_ui_tptool'] = 'Template parameters';
+$string['algorithmtrace_ui_added'] = 'Added {$a}';
+$string['algorithmtrace_ui_checkfailed'] = 'Checking the question found a problem: {$a}';
+$string['algorithmtrace_ui_cell'] = '{$a->step}, {$a->row}, position {$a->index}';
+$string['algorithmtrace_ui_configerror'] = 'This question is not set up correctly: {$a}';
+$string['algorithmtrace_ui_copied'] = 'Copied {$a}';
+$string['algorithmtrace_ui_final'] = 'Final';
+$string['algorithmtrace_ui_cleared'] = 'The algorithm has changed, so the answer for {$a} was cleared.';
+$string['algorithmtrace_ui_close'] = 'Close';
+$string['algorithmtrace_ui_copy'] = 'Copy';
+$string['algorithmtrace_ui_copyprevious'] = 'Copy previous';
+$string['algorithmtrace_ui_copydone'] = 'Copied';
+$string['algorithmtrace_ui_initial'] = 'Initial';
+$string['algorithmtrace_ui_input'] = 'Input';
+$string['algorithmtrace_ui_invalidserialisation'] = 'Algorithm trace UI: invalid serialisation';
+$string['algorithmtrace_ui_moved'] = 'Moved position {$a->from} to {$a->to}';
+$string['algorithmtrace_ui_noalgorithm'] = 'no algorithm was chosen (set the algorithm UI parameter)';
+$string['algorithmtrace_ui_nosteps'] = 'No steps yet.';
+$string['algorithmtrace_ui_notplaced'] = 'not placed';
+$string['algorithmtrace_ui_pointer'] = 'Pointer {$a->name}: {$a->place}';
+$string['algorithmtrace_ui_position'] = 'position {$a}';
+$string['algorithmtrace_ui_presetcounting'] = 'Small numbers 0-9 (counting sort)';
+$string['algorithmtrace_ui_presetdistinct'] = 'Distinct numbers 1-99';
+$string['algorithmtrace_ui_presetletters'] = 'Letters A-Z';
+$string['algorithmtrace_ui_presetradix'] = 'Three-digit numbers (radix sort)';
+$string['algorithmtrace_ui_presetrepeats'] = 'Numbers 1-20 with repeats';
+$string['algorithmtrace_ui_presetsearchany'] = 'Numbers and a target from them (linear search)';
+$string['algorithmtrace_ui_presetsearchsorted'] = 'Sorted numbers and a target from them (binary search)';
+$string['algorithmtrace_ui_presettargetonly'] = 'Keep this data, random target from it';
+$string['algorithmtrace_ui_randomisenote'] = 'Template parameters may not use UI parameter names, so the random values are called randomdata and randomtarget, and the UI parameters insert them. Students see the target above their answer; you can also put it in the question text with {{ randomtarget }}. If the template parameters already hold other settings, such as feedbackdetail, merge them into the same JSON object. Leave the sample answer empty, because each student gets different data.';
+$string['algorithmtrace_ui_randomisepreset'] = 'Data';
+$string['algorithmtrace_ui_randomisesize'] = 'Values';
+$string['algorithmtrace_ui_randomisestep1'] = '1. Tick "Twig all" (next to the template parameters).';
+$string['algorithmtrace_ui_randomisestep2'] = '2. Paste this into Template parameters:';
+$string['algorithmtrace_ui_randomisestep3'] = '3. Paste this into UI parameters, replacing what is there:';
+$string['algorithmtrace_ui_randomisetitle'] = 'Give each student different data';
+$string['algorithmtrace_ui_redo'] = 'Redo';
+$string['algorithmtrace_ui_removed'] = 'Removed {$a}';
+$string['algorithmtrace_ui_remove'] = 'Remove';
+$string['algorithmtrace_ui_removestep'] = 'Remove this step';
+$string['algorithmtrace_ui_resetsteptitle'] = 'Make this step the same as the one before it';
+$string['algorithmtrace_ui_swapped'] = 'Swapped positions {$a->from} and {$a->to}';
+$string['algorithmtrace_ui_tpcellcredit'] = 'true gives a partly right row credit for its right cells. false counts a row only if every cell is right.';
+$string['algorithmtrace_ui_tpdefault'] = 'Default';
+$string['algorithmtrace_ui_tpexample'] = 'All of them with their defaults, to copy and edit:';
+$string['algorithmtrace_ui_tpfeedbackdetail'] = '"detailed" marks each step right or wrong and highlights the wrong cells, "summary" marks each step only, and "minimal" only says whether the trace is correct. None of them show the correct values.';
+$string['algorithmtrace_ui_tpintro'] = 'Put these in the Template parameters field as one JSON object. Leave out any you don\'t need: the defaults below apply. If the template parameters also make random data, put everything in the same object, for example {"randomdata": ..., "feedbackdetail": "summary"}.';
+$string['algorithmtrace_ui_tpmeaning'] = 'What it does';
+$string['algorithmtrace_ui_tpname'] = 'Name';
+$string['algorithmtrace_ui_tpomitunchanged'] = 'true leaves out of the expected trace any step that changes nothing graded.';
+$string['algorithmtrace_ui_tpshowmodelanswer'] = 'true shows students the full correct trace in the feedback. Teachers always see it.';
+$string['algorithmtrace_ui_target'] = 'Target: {$a}';
+$string['algorithmtrace_ui_tpstepmatching'] = '"strict" compares the student\'s steps with the correct ones in order, position by position, so a missing or extra step makes every later step wrong. "aligned" pairs each step with the correct step it matches best, in order, so a missing or extra step costs only that step. Only used when all the steps are asked for.';
+$string['algorithmtrace_ui_tptitle'] = 'Template parameters for grading and feedback';
+$string['algorithmtrace_ui_undo'] = 'Undo';
+$string['algorithmtrace_ui_variable'] = '{$a->step}, {$a->name}';
+$string['algorithmtraceui_algorithm_descr'] = 'The algorithm to trace: linear_search, binary_search, bubble_sort, selection_sort, insertion_sort, shell_sort, merge_sort, merge_sort_bottom_up, timsort, quick_sort, dual_pivot_quick_sort, radix_sort, counting_sort, or custom (a trace(data, options) generator in a support file called algorithm.py). See the algorithm_trace question type documentation for each algorithm\'s steps and options.';
+$string['algorithmtraceui_ask_descr'] = 'Which steps the student gives: "all" (the student adds one step at a time, and how many there are is part of the answer), "final", a step number such as 3, or a list such as [2, 4]. A step number beyond the last step means the final state.';
+$string['algorithmtraceui_data_descr'] = 'The input: a JSON list such as [5, 1, 4, 2, 8] or a string of values separated by spaces, such as "S O R T E X A M P L E". To randomise it for each student, tick Twig all and use a template parameter, as in {{ randomdata|json_encode }}.';
+$string['algorithmtraceui_grade_descr'] = 'The parts of each step to grade, such as ["array"], ["array", "pivot"] or ["mid"]. Empty means the algorithm\'s default. The student is only asked for the parts that are graded.';
+$string['algorithmtraceui_options_descr'] = 'A JSON object of algorithm options, such as {"earlyexit": false} for bubble sort, {"gaps": [5, 3, 1]} for shell sort or {"partition": "lomuto"} for quick sort. Most algorithms accept "granularity" to record a step per swap or merge instead of per iteration.';
+$string['algorithmtraceui_schema_descr'] = 'Custom algorithms only: the rows, pointers and variables each step has, such as {"rows": [{"name": "array"}], "pointers": ["i"], "vars": ["min"], "grade": ["array"]}.';
+$string['algorithmtraceui_stepname_descr'] = 'The word used to label each step, such as "Iteration", "Pass" or "Step".';
+$string['algorithmtraceui_target_descr'] = 'The value searched for, for linear_search and binary_search.';
 $string['datastructuregraph_ui_invalidserialisation'] = 'DataStructureGraph UI: invalid serialisation';
 $string['datastructuregraph_ui_addnode'] = 'Add node';
 $string['datastructuregraph_ui_connect'] = 'Connect';
@@ -828,6 +984,33 @@ $string['qb_total'] = 'total';
 $string['qb_type'] = 'Type';
 $string['qb_unknown_course'] = 'Unknown course ({$a})';
 // Question browser strings end
+
+$string['qtype_algorithm_trace'] = '<p>A question type that asks the student to trace an algorithm: to show the state of the data after every iteration, or after chosen iterations, of a search or sort. The grader works out the correct trace by running the algorithm itself, so there is no sample answer to write.</p>
+<h4>Setting up a question</h4>
+<p>Set the UI parameters <code>algorithm</code> and <code>data</code>, plus <code>target</code> for searches, for example <code>{"algorithm": "bubble_sort", "data": [5, 1, 4, 2, 8]}</code>. Set <code>ask</code> to <code>"all"</code> (the default), <code>"final"</code>, a step number or a list of step numbers. Leave the sample answer empty, or fill it in to have it checked when the question is saved. The <b>Fill in correct answer</b> button under the sample answer and answer preload works out the correct steps for you (optionally only the first few, for example to give students a head start in the answer preload). It needs the Jobe sandbox, and doesn\'t work for custom algorithms.</p>
+<p>To give each student different data, tick <b>Twig all</b>, create the random values in the template parameters under names that are not UI parameter names, and insert them into the UI parameters with Twig. For example, template parameters <code>{"randomdata": {{ range(1, 99)|shuffle|slice(0, 8)|json_encode }}}</code> and UI parameters <code>{"algorithm": "bubble_sort", "data": {{ randomdata|json_encode }}}</code>. The question text can show the same values, such as <code>{{ randomtarget }}</code>. Check that the data always give enough steps for the ones you ask for.</p>
+<p>Steps are labelled with <code>stepname</code> (default "Iteration"). The <code>grade</code> parameter chooses which parts of each step are marked and shown to the student, for example <code>["array", "pivot"]</code>. Each step scores the fraction of its graded parts that are right, and the mark is the total divided by the number of expected steps, or the number the student gave if that is larger. With All-or-nothing grading only a fully correct trace scores.</p>
+<p>Four settings that only affect grading and feedback are template parameters (the <b>Template parameters</b> button under the sample answer lists them): <code>feedbackdetail</code> ("detailed", the default, marks each step and highlights wrong cells without revealing the right values; "summary" marks each step only; "minimal" only says whether the trace is correct), <code>showmodelanswer</code> (true shows students the full correct trace; teachers always see it), <code>cellcredit</code> (true gives credit for the right cells of a partly right row) and <code>omitunchanged</code> (true leaves out steps that change nothing). For example <code>{"feedbackdetail": "summary", "showmodelanswer": true}</code>.</p>
+<h4>Algorithms</h4>
+<p>Each algorithm records one step per iteration by default. The <code>options</code> parameter selects variants. Algorithms marked * also accept <code>"granularity": "swap"</code> (or "merge" or "element", as listed) to record a step after every swap instead.</p>
+<ul>
+<li><b>linear_search</b>: a step per element compared; grades pointer <code>i</code>. Option <code>stopwhengreater</code> (false) stops at the first element greater than the target, for sorted data.</li>
+<li><b>binary_search</b>: a step per probe; grades pointers <code>lo</code>, <code>mid</code> and <code>hi</code> as they are when mid is computed. Data must be in ascending order. Options <code>bounds</code> "inclusive" (hi = n-1, the default) or "exclusive" (hi = n), and <code>midpoint</code> "floor" or "ceil" of (lo + hi) / 2.</li>
+<li><b>bubble_sort</b>*: a step per pass. Option <code>earlyexit</code> (true) stops after a pass with no swaps. That last pass only confirms the array is sorted, so it is not a step unless <code>showcheckpass</code> is true (so an already sorted array has no steps).</li>
+<li><b>selection_sort</b>*: a step per position filled, n-1 in all. Option <code>select</code> "min" (fill from the left) or "max" (fill from the right).</li>
+<li><b>insertion_sort</b>*: a step per element inserted (i = 1 to n-1).</li>
+<li><b>shell_sort</b>*: a step per h-sort. Option <code>gaps</code>: "knuth" (1, 4, 13, 40, ... starting below n/3, as in Sedgewick and Wayne), "shell" (n/2, n/4, ...), "hibbard", "sedgewick", "ciura" or an explicit list such as [5, 3, 1]. Variable <code>h</code>.</li>
+<li><b>merge_sort</b>: recursive top-down merge sort, a step per merge. Option <code>split</code> "leftlarger" (mid = lo + (hi - lo) / 2, the default) or "rightlarger". Pointers <code>lo</code>, <code>mid</code>, <code>hi</code>.</li>
+<li><b>merge_sort_bottom_up</b>: a step per pass of merges of width 1, 2, 4, ...; granularity "merge" gives a step per merge. Variable <code>size</code>.</li>
+<li><b>timsort</b>: option <code>variant</code> "natural" (the default: find natural runs, reversing descending ones, extend short runs to <code>minrun</code> by insertion sort and merge them following Timsort\'s stack rules, without galloping; a step per run and per merge) or "simplified" (insertion sort blocks of <code>minrun</code>, then bottom-up merges; a step for the blocks and per merge pass, or with granularity "merge" per block and per merge). Option <code>minrun</code> (4) or "auto" for CPython\'s rule.</li>
+<li><b>quick_sort</b>*: a step per partition. Option <code>partition</code> "sedgewick" (pivot first, i and j scan inwards, as in Sedgewick and Wayne\'s Quick.java; the default), "hoare" (CLRS Hoare partition), "lomuto" (CLRS, pivot last) or "threeway" (Dijkstra\'s 3-way partition, Quick3way.java). Option <code>pivot</code> "first", "last", "middle" or "median3"; the chosen pivot is swapped into place first. No shuffle. Variable <code>pivot</code>.</li>
+<li><b>dual_pivot_quick_sort</b>*: Yaroslavskiy\'s dual-pivot quicksort as in Sedgewick and Wayne\'s QuickDualPivot.java, a step per partition. Variables <code>p1</code>, <code>p2</code>.</li>
+<li><b>radix_sort</b>: LSD radix sort, a step per digit, least significant first. Non-negative whole numbers, or strings of equal length (a step per character from the right). Options <code>base</code> (10) and <code>digits</code> ("auto" or a count). Variable <code>digit</code>.</li>
+<li><b>counting_sort</b>: grades rows <code>count</code> and <code>output</code>. Option <code>variant</code> "clrs" (steps: counts, cumulative counts, output placed from the right), "simple" (counts, output) or "keyindexed" (Sedgewick and Wayne: count[r+1] counts key r; steps: counts, cumulative counts, output placed from the left). Granularity "element" gives a step per element placed. Options <code>min</code> (0, or "data") and <code>max</code> ("data").</li>
+</ul>
+<h4>Custom algorithms</h4>
+<p>Set <code>algorithm</code> to "custom", attach a support file <code>algorithm.py</code> defining a generator <code>trace(data, options)</code> that yields a dict per step, such as <code>{"array": [...], "i": 3}</code>, and describe the step in the <code>schema</code> UI parameter. Support files are not sent to students.</p>';
+
 
 $string['qtype_c_function'] = '<p>A question type for C write-a-function questions.
 The student answer is expected to be a complete C function, but it can optionally

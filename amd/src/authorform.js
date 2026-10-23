@@ -546,7 +546,9 @@ define(['jquery', 'qtype_coderunner/userinterfacewrapper', 'core/str'], function
             html += "<tr><th>" + hdrs[0] + "</th><th>" + hdrs[1] + "</th><th>" + hdrs[2] + "</th></tr>\n";
             for (i = 0; i < uiParamInfo.uiparamstable.length; i++) {
                 param = uiParamInfo.uiparamstable[i];
-                html += "<tr><td>" + param[0] + "</td><td>" + param[1] + "</td><td>" + param[2] + "</td></tr>\n";
+                // Show object and list defaults as JSON, not "[object Object]".
+                const defaultValue = param[2] !== null && typeof param[2] === 'object' ? JSON.stringify(param[2]) : param[2];
+                html += "<tr><td>" + param[0] + "</td><td>" + param[1] + "</td><td>" + defaultValue + "</td></tr>\n";
             }
             html += "</table>\n";
             return html;

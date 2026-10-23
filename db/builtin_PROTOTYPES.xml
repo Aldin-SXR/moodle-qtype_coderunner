@@ -2084,6 +2084,1463 @@ print(json.dumps({
     <testcases>
     </testcases>
   </question>
+  <question type="coderunner">
+    <name>
+      <text>BUILT_IN_PROTOTYPE_algorithm_trace</text>
+    </name>
+    <questiontext format="html">
+      <text><![CDATA[<p>Built-in prototypes are documented in the language strings.</p>]]></text>
+    </questiontext>
+    <generalfeedback format="html">
+      <text></text>
+    </generalfeedback>
+    <defaultgrade>1.0000000</defaultgrade>
+    <penalty>0.0000000</penalty>
+    <hidden>0</hidden>
+    <idnumber></idnumber>
+    <coderunnertype>algorithm_trace</coderunnertype>
+    <prototypetype>1</prototypetype>
+    <allornothing>0</allornothing>
+    <penaltyregime>10, 20, ...</penaltyregime>
+    <precheck>0</precheck>
+    <hidecheck>0</hidecheck>
+    <showsource>0</showsource>
+    <answerboxlines>12</answerboxlines>
+    <answerboxcolumns>100</answerboxcolumns>
+    <answerpreload></answerpreload>
+    <globalextra></globalextra>
+    <useace>1</useace>
+    <resultcolumns></resultcolumns>
+    <template><![CDATA[{% verbatim %}
+# ---------------------------------------------------------------------------
+# Algorithm trace library.
+#
+# Each built-in algorithm is a function run(a, target, opts, rec) that works
+# on the list a in place and calls rec.step(...) once for every step (by
+# default one "iteration") it is configured to record. A step is a flat dict
+# mapping component names (rows, pointers and vars from the algorithm's
+# schema) to values. The grader compares the student's steps with these.
+#
+# The schemas here must match those in amd/src/ui_algorithmtrace.js, which
+# the PHPUnit tests check.
+# ---------------------------------------------------------------------------
+import copy
+import importlib.util
+import json
+import math
+import operator
+import os
+import re
+
+# Both must match the constants in amd/src/ui_algorithmtrace.js. A trace longer
+# than MAX_STEPS is a configuration error, because students could not enter it.
+MAX_ITEMS = 200
+MAX_STEPS = 500
+
+# Plain decimal numbers only, as in toNumber() in amd/src/ui_algorithmtrace.js
+# (so not "0x10", "1_000", "inf" or non-ASCII digits).
+NUMBER_PATTERN = re.compile(r"[+-]?([0-9]+\.?[0-9]*|\.[0-9]+)([eE][+-]?[0-9]+)?")
+
+
+class TraceError(Exception):
+    """A problem with the question's configuration, shown to the author."""
+
+
+# ---------- Values ----------
+
+def to_number(value):
+    """Return value as an int or float if it is numeric (or a numeric string), else None."""
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        if math.isfinite(value):
+            return int(value) if value.is_integer() else value
+        return None
+    if isinstance(value, str):
+        text = value.strip()
+        if not NUMBER_PATTERN.fullmatch(text):
+            return None
+        number = float(text)
+        if not math.isfinite(number):
+            return None
+        return int(number) if number.is_integer() else number
+    return None
+
+
+def canon(value):
+    """Canonical form of a cell or var value, for comparison."""
+    if value is None:
+        return None
+    if isinstance(value, str) and value.strip() == "":
+        return None
+    number = to_number(value)
+    if number is not None:
+        return ("n", float(number))
+    return ("s", str(value).strip())
+
+
+def show(value):
+    """The text shown for a value."""
+    if value is None:
+        return ""
+    if isinstance(value, float) and value.is_integer():
+        return str(int(value))
+    return str(value)
+
+
+def parse_data(raw):
+    """The input data as a list of all numbers or all strings."""
+    if raw is None:
+        return []
+    if isinstance(raw, str):
+        text = raw.strip()
+        if text.startswith("["):
+            try:
+                raw = json.loads(text)
+            except ValueError:
+                raise TraceError("data is not a valid JSON list")
+        else:
+            raw = [item for item in text.replace(",", " ").split() if item != ""]
+    if not isinstance(raw, list):
+        raise TraceError("data must be a list of values")
+    if len(raw) > MAX_ITEMS:
+        raise TraceError(f"data has more than {MAX_ITEMS} items")
+    numbers = [to_number(item) for item in raw]
+    if all(number is not None for number in numbers):
+        return numbers
+    if any(isinstance(item, (list, dict)) or item is None for item in raw):
+        raise TraceError("data items must be numbers or strings")
+    return [as_text(item) for item in raw]
+
+
+def as_text(item):
+    """A data item as text, written as in JavaScript (true, not True; 2, not 2.0)."""
+    if isinstance(item, bool):
+        return "true" if item else "false"
+    if isinstance(item, (int, float)) and to_number(item) is not None:
+        return show(to_number(item))
+    return str(item).strip()
+
+
+def name_list(value):
+    """A list of component names, given as a list or as a string separated by commas or spaces."""
+    if isinstance(value, str):
+        return [item for item in value.replace(",", " ").split() if item]
+    if isinstance(value, list):
+        return [str(item) for item in value]
+    return []
+
+
+def parse_target(raw, data):
+    if raw is None or (isinstance(raw, str) and raw.strip() == ""):
+        return None
+    number = to_number(raw)
+    if data and all(isinstance(item, (int, float)) for item in data):
+        if number is None:
+            raise TraceError("target must be a number when the data are numbers")
+        return number
+    return str(raw).strip()
+
+
+# ---------- Recording ----------
+
+class Recorder:
+    def __init__(self):
+        self.frames = []
+
+    def step(self, **frame):
+        if len(self.frames) >= MAX_STEPS:
+            raise TraceError(f"the algorithm took more than {MAX_STEPS} steps")
+        self.frames.append({key: list(value) if isinstance(value, list) else value
+                            for key, value in frame.items()})
+
+
+def option(opts, name, default, allowed=None):
+    value = opts.get(name, default)
+    if value is None:
+        value = default
+    if allowed is not None and value not in allowed:
+        choices = ", ".join(json.dumps(choice) for choice in allowed)
+        raise TraceError(f"option {name} must be one of {choices}, not {json.dumps(value)}")
+    return value
+
+
+def int_option(opts, name, default, minimum=None):
+    value = opts.get(name, default)
+    number = to_number(value)
+    if not isinstance(number, int) or (minimum is not None and number < minimum):
+        raise TraceError(f"option {name} must be a whole number" +
+                         (f" of at least {minimum}" if minimum is not None else ""))
+    return number
+
+
+def bool_option(opts, name, default):
+    value = opts.get(name, default)
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str) and value.strip().lower() in ("true", "1", "yes"):
+        return True
+    if isinstance(value, str) and value.strip().lower() in ("false", "0", "no", ""):
+        return False
+    if isinstance(value, int):
+        return value != 0
+    raise TraceError(f"option {name} must be true or false")
+
+
+def granularity(opts, allowed):
+    """The step granularity; the first allowed value is the default."""
+    return option(opts, "granularity", allowed[0], allowed)
+
+
+def require_numbers(a, name, integers=False, nonnegative=False):
+    for item in a:
+        if not isinstance(item, (int, float)) or (integers and not isinstance(item, int)):
+            raise TraceError(f"{name} needs {'whole ' if integers else ''}numbers as data")
+        if nonnegative and item < 0:
+            raise TraceError(f"{name} needs non-negative numbers as data")
+
+
+# ---------- Searching ----------
+
+def linear_search(a, target, opts, rec):
+    if target is None:
+        raise TraceError("linear_search needs a target")
+    stopgreater = bool_option(opts, "stopwhengreater", False)
+    for i in range(len(a)):
+        rec.step(array=a, i=i)
+        if a[i] == target:
+            return
+        if stopgreater and a[i] > target:
+            return
+
+
+def binary_search(a, target, opts, rec):
+    if target is None:
+        raise TraceError("binary_search needs a target")
+    if any(a[k] > a[k + 1] for k in range(len(a) - 1)):
+        raise TraceError("binary_search needs data in ascending order")
+    bounds = option(opts, "bounds", "inclusive", ["inclusive", "exclusive"])
+    midpoint = option(opts, "midpoint", "floor", ["floor", "ceil"])
+    if bounds == "exclusive" and midpoint == "ceil":
+        raise TraceError('binary_search with exclusive bounds needs midpoint "floor"')
+    lo = 0
+    hi = len(a) - 1 if bounds == "inclusive" else len(a)
+    while (lo <= hi) if bounds == "inclusive" else (lo < hi):
+        mid = (lo + hi) // 2 if midpoint == "floor" else (lo + hi + 1) // 2
+        rec.step(array=a, lo=lo, mid=mid, hi=hi)
+        if a[mid] == target:
+            return
+        if a[mid] < target:
+            lo = mid + 1
+        elif bounds == "inclusive":
+            hi = mid - 1
+        else:
+            hi = mid
+
+
+# ---------- Simple sorts ----------
+
+def bubble_sort(a, target, opts, rec):
+    gran = granularity(opts, ["iteration", "swap"])
+    earlyexit = bool_option(opts, "earlyexit", True)
+    # With early exit, the last pass only confirms that the array is sorted.
+    # It is not a step unless showcheckpass is set.
+    showcheckpass = bool_option(opts, "showcheckpass", False)
+    n = len(a)
+    for i in range(n - 1):
+        swapped = False
+        for j in range(n - 1 - i):
+            if a[j] > a[j + 1]:
+                a[j], a[j + 1] = a[j + 1], a[j]
+                swapped = True
+                if gran == "swap":
+                    rec.step(array=a)
+        if earlyexit and not swapped:
+            if gran == "iteration" and showcheckpass:
+                rec.step(array=a)
+            return
+        if gran == "iteration":
+            rec.step(array=a)
+
+
+def selection_sort(a, target, opts, rec):
+    gran = granularity(opts, ["iteration", "swap"])
+    select = option(opts, "select", "min", ["min", "max"])
+    n = len(a)
+    for i in range(n - 1):
+        if select == "min":
+            best = i
+            for j in range(i + 1, n):
+                if a[j] < a[best]:
+                    best = j
+            dest = i
+        else:
+            dest = n - 1 - i
+            best = 0
+            for j in range(1, dest + 1):
+                if a[j] > a[best]:
+                    best = j
+        a[dest], a[best] = a[best], a[dest]
+        if gran == "iteration" or best != dest:
+            rec.step(array=a)
+
+
+def insertion_sort(a, target, opts, rec):
+    gran = granularity(opts, ["iteration", "swap"])
+    for i in range(1, len(a)):
+        j = i
+        while j > 0 and a[j] < a[j - 1]:
+            a[j], a[j - 1] = a[j - 1], a[j]
+            j -= 1
+            if gran == "swap":
+                rec.step(array=a)
+        if gran == "iteration":
+            rec.step(array=a)
+
+
+CIURA = [1, 4, 10, 23, 57, 132, 301, 701, 1750]
+SEDGEWICK = [1, 5, 19, 41, 109, 209, 505, 929, 2161, 3905]
+
+
+def shell_gaps(n, gaps):
+    """The gap sequence to use, largest first."""
+    if isinstance(gaps, list):
+        values = [to_number(gap) for gap in gaps]
+        if not values or any(not isinstance(gap, int) or gap < 1 for gap in values) \
+                or any(values[k] <= values[k + 1] for k in range(len(values) - 1)) or values[-1] != 1:
+            raise TraceError("option gaps must be a list of whole numbers, largest first, ending with 1")
+        return values
+    if gaps == "knuth":
+        # As in Sedgewick & Wayne's Shell.java: 1, 4, 13, 40, ... below n/3.
+        h = 1
+        while h < n // 3:
+            h = 3 * h + 1
+        result = []
+        while h >= 1:
+            result.append(h)
+            h //= 3
+        return result
+    if gaps == "shell":
+        result = []
+        h = n // 2
+        while h >= 1:
+            result.append(h)
+            h //= 2
+        return result or [1]
+    if gaps == "hibbard":
+        sequence = []
+        k = 1
+        while 2 ** k - 1 < n:
+            sequence.append(2 ** k - 1)
+            k += 1
+    elif gaps == "ciura":
+        sequence = [gap for gap in CIURA if gap < n]
+    elif gaps == "sedgewick":
+        sequence = [gap for gap in SEDGEWICK if gap < n]
+    else:
+        raise TraceError('option gaps must be "knuth", "shell", "hibbard", "sedgewick", "ciura" or a list')
+    return list(reversed(sequence)) or [1]
+
+
+def shell_sort(a, target, opts, rec):
+    gran = granularity(opts, ["iteration", "swap"])
+    n = len(a)
+    for h in shell_gaps(n, opts.get("gaps", "knuth")):
+        for i in range(h, n):
+            j = i
+            while j >= h and a[j] < a[j - h]:
+                a[j], a[j - h] = a[j - h], a[j]
+                j -= h
+                if gran == "swap":
+                    rec.step(array=a, h=h)
+        if gran == "iteration":
+            rec.step(array=a, h=h)
+
+
+# ---------- Merge sorts ----------
+
+def merge(a, lo, mid, hi):
+    """Stable merge of a[lo..mid] and a[mid+1..hi]."""
+    left = a[lo:mid + 1]
+    right = a[mid + 1:hi + 1]
+    i = j = 0
+    k = lo
+    while i < len(left) and j < len(right):
+        if right[j] < left[i]:
+            a[k] = right[j]
+            j += 1
+        else:
+            a[k] = left[i]
+            i += 1
+        k += 1
+    while i < len(left):
+        a[k] = left[i]
+        i += 1
+        k += 1
+    while j < len(right):
+        a[k] = right[j]
+        j += 1
+        k += 1
+
+
+def merge_sort(a, target, opts, rec):
+    split = option(opts, "split", "leftlarger", ["leftlarger", "rightlarger"])
+
+    def sort(lo, hi):
+        if hi <= lo:
+            return
+        if split == "leftlarger":
+            mid = lo + (hi - lo) // 2
+        else:
+            mid = lo + (hi - lo - 1) // 2
+        sort(lo, mid)
+        sort(mid + 1, hi)
+        merge(a, lo, mid, hi)
+        rec.step(array=a, lo=lo, mid=mid, hi=hi)
+
+    sort(0, len(a) - 1)
+
+
+def merge_sort_bottom_up(a, target, opts, rec):
+    gran = granularity(opts, ["iteration", "merge"])
+    n = len(a)
+    size = 1
+    while size < n:
+        for lo in range(0, n - size, 2 * size):
+            mid = lo + size - 1
+            hi = min(lo + 2 * size - 1, n - 1)
+            merge(a, lo, mid, hi)
+            if gran == "merge":
+                rec.step(array=a, lo=lo, mid=mid, hi=hi, size=size)
+        if gran == "iteration":
+            rec.step(array=a, size=size)
+        size *= 2
+
+
+def insertion_sort_range(a, lo, hi, presorted=1):
+    """Insertion sort a[lo..hi], of which the first presorted items are already in order."""
+    for i in range(lo + presorted, hi + 1):
+        j = i
+        while j > lo and a[j] < a[j - 1]:
+            a[j], a[j - 1] = a[j - 1], a[j]
+            j -= 1
+
+
+def timsort_minrun(n, opts):
+    value = opts.get("minrun", 4)
+    if value == "auto":
+        # CPython's rule: n itself below 64, otherwise between 32 and 64.
+        r = 0
+        while n >= 64:
+            r |= n & 1
+            n >>= 1
+        return n + r
+    number = to_number(value)
+    if not isinstance(number, int) or number < 1:
+        raise TraceError('option minrun must be a positive whole number or "auto"')
+    return number
+
+
+def timsort(a, target, opts, rec):
+    variant = option(opts, "variant", "natural", ["natural", "simplified"])
+    n = len(a)
+    minrun = timsort_minrun(n, opts)
+    if variant == "simplified":
+        timsort_simplified(a, n, minrun, granularity(opts, ["iteration", "merge"]), rec)
+        return
+    granularity(opts, ["iteration", "merge"])  # Validate only: natural Timsort records each run and merge.
+    runs = []  # Stack of [start, length].
+
+    def merge_at(k):
+        start, length = runs[k]
+        length2 = runs[k + 1][1]
+        merge(a, start, start + length - 1, start + length + length2 - 1)
+        runs[k] = [start, length + length2]
+        del runs[k + 1]
+        rec.step(array=a, lo=start, hi=start + length + length2 - 1)
+
+    def merge_collapse():
+        while len(runs) > 1:
+            k = len(runs) - 2
+            if (k > 0 and runs[k - 1][1] <= runs[k][1] + runs[k + 1][1]) or \
+                    (k > 1 and runs[k - 2][1] <= runs[k - 1][1] + runs[k][1]):
+                if runs[k - 1][1] < runs[k + 1][1]:
+                    k -= 1
+                merge_at(k)
+            elif runs[k][1] <= runs[k + 1][1]:
+                merge_at(k)
+            else:
+                break
+
+    i = 0
+    while i < n:
+        j = i + 1
+        if j < n and a[j] < a[i]:
+            while j + 1 < n and a[j + 1] < a[j]:
+                j += 1
+            a[i:j + 1] = reversed(a[i:j + 1])
+        elif j < n:
+            while j + 1 < n and a[j + 1] >= a[j]:
+                j += 1
+        else:
+            j = i
+        length = j - i + 1
+        if length < minrun:
+            forced = min(minrun, n - i)
+            insertion_sort_range(a, i, i + forced - 1, length)
+            length = forced
+        runs.append([i, length])
+        rec.step(array=a, lo=i, hi=i + length - 1)
+        merge_collapse()
+        i += length
+    while len(runs) > 1:
+        k = len(runs) - 2
+        if k > 0 and runs[k - 1][1] < runs[k + 1][1]:
+            k -= 1
+        merge_at(k)
+
+
+def timsort_simplified(a, n, minrun, gran, rec):
+    for lo in range(0, n, minrun):
+        hi = min(lo + minrun, n) - 1
+        insertion_sort_range(a, lo, hi)
+        if gran == "merge":
+            rec.step(array=a, lo=lo, hi=hi)
+    if gran == "iteration":
+        rec.step(array=a)
+    size = minrun
+    while size < n:
+        for lo in range(0, n, 2 * size):
+            mid = min(n - 1, lo + size - 1)
+            hi = min(lo + 2 * size - 1, n - 1)
+            if mid < hi:
+                merge(a, lo, mid, hi)
+                if gran == "merge":
+                    rec.step(array=a, lo=lo, hi=hi)
+        if gran == "iteration":
+            rec.step(array=a)
+        size *= 2
+
+
+# ---------- Quicksorts ----------
+
+def choose_pivot(a, lo, hi, rule):
+    if rule == "first":
+        return lo
+    if rule == "last":
+        return hi
+    if rule == "middle":
+        return lo + (hi - lo) // 2
+    mid = lo + (hi - lo) // 2
+    trio = sorted([(a[lo], 0, lo), (a[mid], 1, mid), (a[hi], 2, hi)])
+    return trio[1][2]
+
+
+def quick_sort(a, target, opts, rec):
+    scheme = option(opts, "partition", "sedgewick", ["sedgewick", "hoare", "lomuto", "threeway"])
+    gran = granularity(opts, ["iteration", "swap"])
+    native = "last" if scheme == "lomuto" else "first"
+    rule = option(opts, "pivot", native, ["first", "last", "middle", "median3"])
+    state = {}
+
+    def swap(i, j):
+        a[i], a[j] = a[j], a[i]
+        if gran == "swap" and i != j:
+            rec.step(array=a, pivot=state["pivot"], lo=state["lo"], hi=state["hi"])
+
+    def sort(lo, hi):
+        if hi <= lo:
+            return
+        state.update(lo=lo, hi=hi, pivot=None)
+        p = choose_pivot(a, lo, hi, rule)
+        home = hi if scheme == "lomuto" else lo
+        state["pivot"] = a[p]
+        swap(p, home)
+        if scheme == "sedgewick":
+            v = a[lo]
+            i, j = lo, hi + 1
+            while True:
+                i += 1
+                while a[i] < v:
+                    if i == hi:
+                        break
+                    i += 1
+                j -= 1
+                while v < a[j]:
+                    if j == lo:
+                        break
+                    j -= 1
+                if i >= j:
+                    break
+                swap(i, j)
+            swap(lo, j)
+            parts = [(lo, j - 1), (j + 1, hi)]
+        elif scheme == "hoare":
+            v = a[lo]
+            i, j = lo - 1, hi + 1
+            while True:
+                j -= 1
+                while a[j] > v:
+                    j -= 1
+                i += 1
+                while a[i] < v:
+                    i += 1
+                if i < j:
+                    swap(i, j)
+                else:
+                    break
+            parts = [(lo, j), (j + 1, hi)]
+        elif scheme == "lomuto":
+            v = a[hi]
+            i = lo - 1
+            for j in range(lo, hi):
+                if a[j] <= v:
+                    i += 1
+                    swap(i, j)
+            swap(i + 1, hi)
+            parts = [(lo, i), (i + 2, hi)]
+        else:  # Dijkstra 3-way partitioning, as in Sedgewick & Wayne's Quick3way.java.
+            v = a[lo]
+            lt, i, gt = lo, lo + 1, hi
+            while i <= gt:
+                if a[i] < v:
+                    swap(lt, i)
+                    lt += 1
+                    i += 1
+                elif a[i] > v:
+                    swap(i, gt)
+                    gt -= 1
+                else:
+                    i += 1
+            parts = [(lo, lt - 1), (gt + 1, hi)]
+        if gran == "iteration":
+            rec.step(array=a, pivot=state["pivot"], lo=lo, hi=hi)
+        for part in parts:
+            sort(*part)
+
+    sort(0, len(a) - 1)
+
+
+def dual_pivot_quick_sort(a, target, opts, rec):
+    # As in Sedgewick & Wayne's QuickDualPivot.java (Yaroslavskiy's scheme).
+    gran = granularity(opts, ["iteration", "swap"])
+    state = {}
+
+    def swap(i, j):
+        a[i], a[j] = a[j], a[i]
+        if gran == "swap" and i != j:
+            rec.step(array=a, **state)
+
+    def sort(lo, hi):
+        if hi <= lo:
+            return
+        state.update(lo=lo, hi=hi, p1=None, p2=None, lt=None, gt=None)
+        if a[hi] < a[lo]:
+            swap(lo, hi)
+        state.update(p1=a[lo], p2=a[hi])
+        lt, gt, i = lo + 1, hi - 1, lo + 1
+        while i <= gt:
+            if a[i] < a[lo]:
+                swap(lt, i)
+                lt += 1
+                i += 1
+            elif a[hi] < a[i]:
+                swap(i, gt)
+                gt -= 1
+            else:
+                i += 1
+        lt -= 1
+        gt += 1
+        swap(lo, lt)
+        swap(hi, gt)
+        state.update(lt=lt, gt=gt)
+        if gran == "iteration":
+            rec.step(array=a, **state)
+        sort(lo, lt - 1)
+        if a[lt] < a[gt]:
+            sort(lt + 1, gt - 1)
+        sort(gt + 1, hi)
+
+    sort(0, len(a) - 1)
+
+
+# ---------- Distribution sorts ----------
+
+def radix_sort(a, target, opts, rec):
+    base = int_option(opts, "base", 10, 2)
+    if a and all(isinstance(item, str) for item in a):
+        width = len(a[0])
+        if any(len(item) != width for item in a):
+            raise TraceError("radix_sort needs numbers, or strings that all have the same length")
+        for position in range(width - 1, -1, -1):
+            a[:] = sorted(a, key=lambda item: item[position])  # sorted() is stable.
+            rec.step(array=a, digit=position)
+        return
+    require_numbers(a, "radix_sort", integers=True, nonnegative=True)
+    biggest = max(a) if a else 0
+    digits = 1
+    while base ** digits <= biggest:
+        digits += 1
+    if opts.get("digits") not in (None, "", "auto"):
+        digits = int_option(opts, "digits", digits, 1)
+    place = 1
+    for _ in range(digits):
+        a[:] = sorted(a, key=lambda item: (item // place) % base)
+        rec.step(array=a, digit=place)
+        place *= base
+
+
+def counting_range(a, opts):
+    """The smallest key and the number of keys counted."""
+    require_numbers(a, "counting_sort", integers=True)
+    low = opts.get("min", 0)
+    if low == "data":
+        low = min(a) if a else 0
+    low = to_number(low)
+    if not isinstance(low, int):
+        raise TraceError('option min must be a whole number or "data"')
+    high = opts.get("max", "data")
+    high = (max(a) if a else low) if high == "data" else to_number(high)
+    if not isinstance(high, int):
+        raise TraceError('option max must be a whole number or "data"')
+    if any(item < low or item > high for item in a):
+        raise TraceError(f"counting_sort data must lie between {low} and {high}")
+    if high - low + 1 > MAX_ITEMS:
+        raise TraceError(f"counting_sort counts more than {MAX_ITEMS} keys")
+    return low, high - low + 1
+
+
+def counting_sort(a, target, opts, rec):
+    variant = option(opts, "variant", "clrs", ["clrs", "simple", "keyindexed"])
+    gran = granularity(opts, ["iteration", "element"])
+    low, keys = counting_range(a, opts)
+    n = len(a)
+    output = [None] * n
+    if variant == "keyindexed":
+        # Sedgewick & Wayne's key-indexed counting: count[r + 1] counts key r.
+        count = [0] * (keys + 1)
+        for item in a:
+            count[item - low + 1] += 1
+        rec.step(count=count, output=output)
+        for r in range(keys):
+            count[r + 1] += count[r]
+        rec.step(count=count, output=output)
+        for item in a:
+            output[count[item - low]] = item
+            count[item - low] += 1
+            if gran == "element":
+                rec.step(count=count, output=output)
+        if gran == "iteration":
+            rec.step(count=count, output=output)
+        return
+    count = [0] * keys
+    for item in a:
+        count[item - low] += 1
+    rec.step(count=count, output=output)
+    if variant == "simple":
+        k = 0
+        for r in range(keys):
+            for _ in range(count[r]):
+                output[k] = r + low
+                k += 1
+                if gran == "element":
+                    rec.step(count=count, output=output)
+        if gran == "iteration":
+            rec.step(count=count, output=output)
+        return
+    for r in range(1, keys):
+        count[r] += count[r - 1]
+    rec.step(count=count, output=output)
+    for item in reversed(a):
+        count[item - low] -= 1
+        output[count[item - low]] = item
+        if gran == "element":
+            rec.step(count=count, output=output)
+    if gran == "iteration":
+        rec.step(count=count, output=output)
+
+
+# ---------- Registry and schemas ----------
+
+ALGORITHMS = {
+    "linear_search": linear_search,
+    "binary_search": binary_search,
+    "bubble_sort": bubble_sort,
+    "selection_sort": selection_sort,
+    "insertion_sort": insertion_sort,
+    "shell_sort": shell_sort,
+    "merge_sort": merge_sort,
+    "merge_sort_bottom_up": merge_sort_bottom_up,
+    "timsort": timsort,
+    "quick_sort": quick_sort,
+    "dual_pivot_quick_sort": dual_pivot_quick_sort,
+    "radix_sort": radix_sort,
+    "counting_sort": counting_sort,
+}
+
+
+def row(name, length, init="data", editable=True, labels="index", base=0):
+    return {"name": name, "length": length, "init": init, "editable": editable,
+            "labels": labels, "labelbase": base}
+
+
+def pointer(name, slots):
+    return {"name": name, "row": "array", "slots": slots}
+
+
+def builtin_schema(algorithm, opts, data):
+    """The rows, pointers, vars and default graded components of a built-in algorithm."""
+    n = len(data)
+    array = row("array", n)
+    if algorithm == "linear_search":
+        return {"rows": [row("array", n, editable=False)], "pointers": [pointer("i", n)],
+                "vars": [], "grade": ["i"]}
+    if algorithm == "binary_search":
+        slots = n + 1 if opts.get("bounds") == "exclusive" else n
+        return {"rows": [row("array", n, editable=False)],
+                "pointers": [pointer(name, slots) for name in ("lo", "mid", "hi")],
+                "vars": [], "grade": ["lo", "mid", "hi"]}
+    if algorithm in ("bubble_sort", "selection_sort", "insertion_sort"):
+        return {"rows": [array], "pointers": [], "vars": [], "grade": ["array"]}
+    if algorithm == "shell_sort":
+        return {"rows": [array], "pointers": [], "vars": ["h"], "grade": ["array"]}
+    if algorithm in ("merge_sort", "merge_sort_bottom_up"):
+        return {"rows": [array], "pointers": [pointer(name, n) for name in ("lo", "mid", "hi")],
+                "vars": ["size"] if algorithm == "merge_sort_bottom_up" else [], "grade": ["array"]}
+    if algorithm == "timsort":
+        return {"rows": [array], "pointers": [pointer(name, n) for name in ("lo", "hi")],
+                "vars": [], "grade": ["array"]}
+    if algorithm == "quick_sort":
+        return {"rows": [array], "pointers": [pointer(name, n) for name in ("lo", "hi")],
+                "vars": ["pivot"], "grade": ["array"]}
+    if algorithm == "dual_pivot_quick_sort":
+        return {"rows": [array], "pointers": [pointer(name, n) for name in ("lo", "hi", "lt", "gt")],
+                "vars": ["p1", "p2"], "grade": ["array"]}
+    if algorithm == "radix_sort":
+        return {"rows": [array], "pointers": [], "vars": ["digit"], "grade": ["array"]}
+    if algorithm == "counting_sort":
+        low, keys = counting_range(data, opts)
+        keyindexed = opts.get("variant") == "keyindexed"
+        count = row("count", keys + 1 if keyindexed else keys, init="zeros",
+                    labels="index" if keyindexed else "key", base=low)
+        return {"rows": [count, row("output", n, init="blank")], "pointers": [], "vars": [],
+                "grade": ["count", "output"]}
+    raise TraceError(f'unknown algorithm "{algorithm}"')
+
+
+def custom_schema(raw, data):
+    """The schema the author gave in the schema UI parameter, for a custom algorithm."""
+    n = len(data)
+    raw = raw if isinstance(raw, dict) else {}
+
+    def items(key):
+        value = raw.get(key)
+        return value if isinstance(value, list) else []
+
+    rows = []
+    for item in items("rows") or [{"name": "array"}]:
+        item = item if isinstance(item, dict) else {"name": str(item)}
+        length = item.get("length", "n")
+        length = n if length == "n" else to_number(length)
+        if not isinstance(length, int) or length < 0 or length > MAX_ITEMS:
+            raise TraceError("each schema row length must be \"n\" or a whole number")
+        rows.append(row(str(item.get("name", "array")), length, item.get("init") or "data",
+                        item.get("editable") is not False, "index", 0))
+    pointers = [pointer(str(item.get("name") if isinstance(item, dict) else item), n) for item in items("pointers")]
+    vars_ = [str(item.get("name") if isinstance(item, dict) else item) for item in items("vars")]
+    grade = name_list(raw.get("grade")) or [r["name"] for r in rows if r["editable"]] + \
+        [p["name"] for p in pointers] + vars_
+    return {"rows": rows, "pointers": pointers, "vars": vars_, "grade": grade}
+
+
+def initial_frame(schema, data):
+    frame = {}
+    for r in schema["rows"]:
+        if r["init"] == "data":
+            frame[r["name"]] = list(data)[:r["length"]] + [None] * max(0, r["length"] - len(data))
+        elif r["init"] == "zeros":
+            frame[r["name"]] = [0] * r["length"]
+        else:
+            frame[r["name"]] = [None] * r["length"]
+    for p in schema["pointers"]:
+        frame[p["name"]] = None
+    for v in schema["vars"]:
+        frame[v] = None
+    return frame
+
+
+def run_custom(data, target, opts, schema, rec, filename="algorithm.py"):
+    if not os.path.exists(filename):
+        raise TraceError(f"a custom algorithm needs a support file called {filename}")
+    # Errors in the author's code are configuration errors: report them as such
+    # rather than letting a traceback reach the student.
+    try:
+        spec = importlib.util.spec_from_file_location("custom_algorithm", filename)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+    except Exception as error:
+        raise TraceError(f"{filename} could not be loaded ({type(error).__name__}: {error})")
+    if not callable(getattr(module, "trace", None)):
+        raise TraceError(f"{filename} must define a function trace(data, options)")
+    options = dict(opts)
+    options["target"] = target
+    names = {r["name"] for r in schema["rows"]} | {p["name"] for p in schema["pointers"]} | set(schema["vars"])
+    try:
+        result = module.trace(list(data), options)
+        for frame in result if result is not None else []:
+            if not isinstance(frame, dict):
+                raise TraceError("trace() must yield a dict for each step")
+            unknown = set(frame) - names
+            if unknown:
+                raise TraceError(f"trace() yielded unknown component(s) {', '.join(sorted(map(str, unknown)))}; "
+                                 "add them to the schema UI parameter")
+            rec.step(**copy.deepcopy(frame))
+    except TraceError:
+        raise
+    except Exception as error:
+        raise TraceError(f"trace() in {filename} failed ({type(error).__name__}: {error})")
+
+
+def compute_trace(config):
+    """Run the configured algorithm. Return (schema, initial frame, list of frames)."""
+    algorithm = str(config.get("algorithm") or "").strip()
+    if not algorithm:
+        raise TraceError("no algorithm was chosen (set the algorithm UI parameter)")
+    opts = config.get("options") or {}
+    if not isinstance(opts, dict):
+        raise TraceError("the options UI parameter must be a JSON object")
+    data = parse_data(config.get("data"))
+    target = parse_target(config.get("target"), data)
+    rec = Recorder()
+    if algorithm == "custom":
+        schema = custom_schema(config.get("schema"), data)
+        run_custom(data, target, opts, schema, rec)
+    else:
+        if algorithm not in ALGORITHMS:
+            raise TraceError(f'unknown algorithm "{algorithm}"')
+        if not data:
+            raise TraceError("data must not be empty")
+        schema = builtin_schema(algorithm, opts, data)
+        ALGORITHMS[algorithm](list(data), target, opts, rec)
+    initial = initial_frame(schema, data)
+    frames = []
+    for frame in rec.frames:
+        full = dict.fromkeys(initial)
+        full.update(frame)
+        frames.append(full)
+    return schema, initial, frames
+
+
+# ---------------------------------------------------------------------------
+# Grader: compare the student's steps with the computed trace.
+# ---------------------------------------------------------------------------
+import html
+
+SERIALISATION_TYPE = "coderunner-algorithm-trace"
+
+# Must match the defaults in amd/src/ui_algorithmtrace.json.
+DEFAULTS = {
+    "algorithm": "",
+    "data": [],
+    "target": None,
+    "options": {},
+    "schema": {},
+    "ask": "all",
+    "grade": [],
+    "stepname": "Iteration",
+}
+
+# Settings that only affect grading and feedback. These are template parameters,
+# with these defaults set in the prototype's template parameters.
+TEMPLATE_DEFAULTS = {
+    "feedbackdetail": "detailed",
+    "showmodelanswer": False,
+    "cellcredit": False,
+    "omitunchanged": False,
+    "stepmatching": "strict",
+}
+
+
+def json_object(raw, what):
+    """Decode a JSON object given as text (or as JSON text inside a JSON string)."""
+    try:
+        value = json.loads(raw) if raw.strip() else {}
+        if isinstance(value, str):  # Unmerged parameters arrive as a JSON string.
+            value = json.loads(value) if value.strip() else {}
+    except ValueError:
+        raise TraceError(f"the {what} are not valid JSON")
+    if value is None:
+        raise TraceError(f"the grader did not receive the {what}")
+    if isinstance(value, list) and not value:
+        value = {}
+    if not isinstance(value, dict):
+        raise TraceError(f"the {what} must be a JSON object")
+    return value
+
+
+def load_config(raw, template_raw=""):
+    """The question configuration: the merged UI parameters, plus the grading
+    settings from the template parameters."""
+    config = dict(DEFAULTS)
+    config.update(TEMPLATE_DEFAULTS)
+    value = json_object(raw, "UI parameters")
+    config.update({key: val for key, val in value.items() if key in DEFAULTS and (val is not None or key == "target")})
+    template = json_object(template_raw or "", "template parameters")
+    config.update({key: val for key, val in template.items() if key in TEMPLATE_DEFAULTS and val is not None})
+    return config
+
+
+def parse_ask(ask):
+    """"all", "final" or a list of 1-based step numbers."""
+    if ask is None or (isinstance(ask, str) and ask.strip().lower() in ("", "all")):
+        return "all"
+    if isinstance(ask, str) and ask.strip().lower() in ("final", "last"):
+        return "final"
+    items = ask if isinstance(ask, list) else str(ask).replace(",", " ").split() if isinstance(ask, str) else [ask]
+    steps = [to_number(item) for item in items]
+    if not steps or any(not isinstance(step, int) or step < 1 for step in steps):
+        raise TraceError('ask must be "all", "final", a step number or a list of step numbers')
+    return steps
+
+
+def graded_components(schema, grade):
+    names = {r["name"]: "row" for r in schema["rows"]}
+    names.update({p["name"]: "pointer" for p in schema["pointers"]})
+    names.update({v: "var" for v in schema["vars"]})
+    locked = {r["name"] for r in schema["rows"] if not r["editable"]}
+    chosen = name_list(grade) or list(schema["grade"])
+    for name in chosen:
+        if name not in names:
+            raise TraceError(f'cannot grade "{name}"; this algorithm has {", ".join(names)}')
+        # The UI never sends a locked row, so grading one would make full marks impossible.
+        if name in locked:
+            raise TraceError(f'cannot grade "{name}", because students cannot change it')
+    return [(name, names[name]) for name in chosen]
+
+
+def same_component(kind, expected, got):
+    if kind == "row":
+        return all(canon(e) == canon(g) for e, g in zip(expected, got))
+    if kind == "pointer":
+        return expected == got
+    return canon(expected) == canon(got)
+
+
+def omit_unchanged(initial, frames, components):
+    kept = []
+    previous = initial
+    for frame in frames:
+        if not all(same_component(kind, previous[name], frame[name]) for name, kind in components):
+            kept.append(frame)
+        previous = frame
+    return kept
+
+
+def expected_steps(ask, initial, frames, stepname):
+    """List of (label, frame) pairs the student must give."""
+    if ask == "all":
+        return [(f"{stepname} {k + 1}", frame) for k, frame in enumerate(frames)]
+    if ask == "final":
+        return [("Final", frames[-1] if frames else initial)]
+    result = []
+    for number in ask:
+        frame = frames[min(number, len(frames)) - 1] if frames else initial
+        result.append((f"{stepname} {number}", frame))
+    return result
+
+
+def trace_warnings(ask, frames, stepname):
+    """Things about this trace that the question author should know, but that
+    are not errors. Randomised data can give traces of different lengths, so
+    the grader copes with these: a step past the end means the final state, and
+    no steps at all means the correct answer is an empty trace."""
+    warnings = []
+    if not frames:
+        warnings.append("The algorithm makes no steps for this data" +
+                        (", so the correct answer is an empty trace" if ask == "all" else
+                         ", so every step asked for is the initial state"))
+    elif ask not in ("all", "final"):
+        past = sorted({number for number in ask if number > len(frames)})
+        if past:
+            count = f"{len(frames)} step{'s' if len(frames) != 1 else ''}"
+            warnings.append(f"The algorithm makes only {count} for this data, so asking for "
+                            f"{stepname} {', '.join(map(str, past))} gives the final state")
+    return warnings
+
+
+def parse_student(raw, schema, components):
+    """The student's steps, each a dict of the graded components."""
+    if raw.strip() == "":
+        return []
+    try:
+        answer = json.loads(raw)
+    except ValueError:
+        raise ValueError("your answer could not be read")
+    if not isinstance(answer, dict) or answer.get("type") != SERIALISATION_TYPE \
+            or not isinstance(answer.get("steps"), list):
+        raise ValueError("your answer is not an algorithm trace")
+    lengths = {r["name"]: r["length"] for r in schema["rows"]}
+    steps = []
+    for item in answer["steps"][:MAX_STEPS]:
+        item = item if isinstance(item, dict) else {}
+        step = {}
+        for name, kind in components:
+            value = item.get(name)
+            if kind == "row":
+                cells = value if isinstance(value, list) else []
+                cells = [None if isinstance(cell, (list, dict)) else cell for cell in cells[:lengths[name]]]
+                step[name] = cells + [None] * (lengths[name] - len(cells))
+            elif kind == "pointer":
+                number = to_number(value)
+                step[name] = number if isinstance(number, int) else None
+            else:
+                step[name] = None if isinstance(value, (list, dict)) else value
+        steps.append(step)
+    return steps
+
+
+def score_step(expected, got, components, cellcredit):
+    """Return (score in 0..1, dict of name -> wrong cell indices or True)."""
+    total = 0.0
+    wrong = {}
+    for name, kind in components:
+        if kind == "row":
+            bad = [k for k, (e, g) in enumerate(zip(expected[name], got[name])) if canon(e) != canon(g)]
+            if bad:
+                wrong[name] = bad
+                if cellcredit and expected[name]:
+                    total += 1 - len(bad) / len(expected[name])
+            else:
+                total += 1
+        elif same_component(kind, expected[name], got[name]):
+            total += 1
+        else:
+            wrong[name] = True
+    return (total / len(components) if components else 1.0), wrong
+
+
+def canonical_step(step, components):
+    """A step's graded components in canonical form, so steps compare quickly."""
+    out = {}
+    for name, kind in components:
+        if kind == "row":
+            out[name] = tuple(canon(value) for value in step[name])
+        elif kind == "pointer":
+            out[name] = step[name]
+        else:
+            out[name] = canon(step[name])
+    return out
+
+
+def row_match_counts(want, got):
+    """counts[i][j]: how many cells of row want[i] equal those of row got[j]."""
+    length = len(want[0])
+    codes = [{} for _ in range(length)]
+    for row in want:
+        for k, value in enumerate(row):
+            codes[k].setdefault(value, len(codes[k]))
+    if all(len(table) < 256 for table in codes):
+        # One byte per cell (255 for a value no expected row has there). XOR two
+        # rows packed as integers: the zero bytes are the matching cells. This is
+        # much faster than comparing cells one by one, which matters for long traces.
+        def pack(row):
+            return int.from_bytes(bytes(codes[k].get(value, 255) for k, value in enumerate(row)), "big")
+        packedwant = [pack(row) for row in want]
+        packedgot = [pack(row) for row in got]
+        return [[(x ^ y).to_bytes(length, "big").count(0) for y in packedgot] for x in packedwant]
+    return [[sum(map(operator.eq, x, y)) for y in got] for x in want]
+
+
+def score_matrix(want, got, components, cellcredit):
+    """score[i][j]: the score of score_step for expected step i and given step j,
+    both in canonical form."""
+    score = [[0.0] * len(got) for _ in want]
+    for name, kind in components:
+        length = len(want[0][name]) if want and kind == "row" else 0
+        if cellcredit and length and got:
+            counts = row_match_counts([w[name] for w in want], [g[name] for g in got])
+            for line, row in zip(score, counts):
+                for j, count in enumerate(row):
+                    line[j] += count / length
+        else:
+            for line, w in zip(score, want):
+                value = w[name]
+                for j, g in enumerate(got):
+                    if g[name] == value:
+                        line[j] += 1
+    if components:
+        score = [[value / len(components) for value in line] for line in score]
+    else:
+        score = [[1.0] * len(got) for _ in want]
+    return score
+
+
+def match_steps(expected, student, components, cellcredit, aligned):
+    """Pair the student's steps with the expected ones.
+
+    Strict matching pairs them by position. Aligned matching pairs them in
+    order but allows gaps, choosing the pairing with the highest total score,
+    so a missing or extra step costs only that step rather than every step
+    after it. Return a list of (expected index or None, student index or None)
+    pairs in order, and the total score of the paired steps."""
+    if not aligned:
+        pairs = [(k if k < len(expected) else None, k if k < len(student) else None)
+                 for k in range(max(len(expected), len(student)))]
+        total = sum(score_step(expected[e][1], student[g], components, cellcredit)[0]
+                    for e, g in pairs if e is not None and g is not None)
+        return pairs, total
+    want = [canonical_step(frame, components) for _, frame in expected]
+    got = [canonical_step(step, components) for step in student]
+    rows, cols = len(want), len(got)
+    score = score_matrix(want, got, components, cellcredit)
+    # best[i][j] is the highest total score pairing the first i expected steps with the first j given.
+    best = [[0.0] * (cols + 1) for _ in range(rows + 1)]
+    for i in range(1, rows + 1):
+        for j in range(1, cols + 1):
+            best[i][j] = max(best[i - 1][j], best[i][j - 1], best[i - 1][j - 1] + score[i - 1][j - 1])
+    # Trace the pairing back. On a tie, pair the steps (so a wrong step shows as
+    # wrong, not as one missing and one extra).
+    pairs = []
+    i, j = rows, cols
+    while i > 0 or j > 0:
+        if i > 0 and j > 0 and math.isclose(best[i][j], best[i - 1][j - 1] + score[i - 1][j - 1], abs_tol=1e-9):
+            pairs.append((i - 1, j - 1))
+            i, j = i - 1, j - 1
+        elif i > 0 and math.isclose(best[i][j], best[i - 1][j], abs_tol=1e-9):
+            pairs.append((i - 1, None))
+            i -= 1
+        else:
+            pairs.append((None, j - 1))
+            j -= 1
+    pairs.reverse()
+    return pairs, best[rows][cols]
+
+
+# ---------- HTML ----------
+
+def esc(value):
+    return html.escape(show(value), quote=True)
+
+
+def cells_html(values, wrong=(), labels=None):
+    parts = []
+    for k, value in enumerate(values):
+        cls = "algotrace-fbcell" + (" algotrace-fbwrong" if k in wrong else "")
+        text = esc(value) if show(value) != "" else "&nbsp;"
+        parts.append(f'<span class="{cls}">{text}</span>')
+    return '<span class="algotrace-fbrow">' + "".join(parts) + "</span>"
+
+
+def frame_html(frame, schema, names, wrong=None, mark_wrong=True):
+    """The components in names of one frame, as HTML."""
+    wrong = wrong or {}
+    parts = []
+    kinds = {r["name"]: "row" for r in schema["rows"]}
+    kinds.update({p["name"]: "pointer" for p in schema["pointers"]})
+    multirow = sum(1 for name in names if kinds.get(name) == "row") > 1
+    scalars = []
+    for name in names:
+        bad = wrong.get(name) if mark_wrong else None
+        if kinds.get(name) == "row":
+            label = f'<span class="algotrace-fblabel">{esc(name)}</span>' if multirow else ""
+            parts.append(label + cells_html(frame[name], bad if isinstance(bad, list) else ()))
+        else:
+            cls = "algotrace-fbvar" + (" algotrace-fbwrong" if bad else "")
+            value = esc(frame[name]) if show(frame[name]) != "" else "&ndash;"
+            scalars.append(f'<span class="{cls}">{esc(name)} = {value}</span>')
+    if scalars:
+        parts.append('<span class="algotrace-fbvars">' + " ".join(scalars) + "</span>")
+    return "<br>".join(parts)
+
+
+def all_names(schema):
+    return [r["name"] for r in schema["rows"]] + [p["name"] for p in schema["pointers"]] + list(schema["vars"])
+
+
+def model_table(schema, initial, frames, ask, stepname, components):
+    """The full computed trace, with the steps the question asks for marked."""
+    asked = set()
+    if ask == "final":
+        asked = {len(frames) - 1}
+    elif ask != "all":
+        asked = {min(number, len(frames)) - 1 for number in ask}
+    names = all_names(schema)
+    rows = []
+    initial_names = [r["name"] for r in schema["rows"] if r["init"] == "data"]
+    if initial_names:
+        rows.append(f'<tr><th>Initial</th><td>{frame_html(initial, schema, initial_names)}</td></tr>')
+    for k, frame in enumerate(frames):
+        cls = ' class="algotrace-fbasked"' if k in asked else ""
+        shown = [name for name in names if frame.get(name) is not None or name in dict(components)]
+        rows.append(f'<tr{cls}><th>{esc(stepname)} {k + 1}</th><td>{frame_html(frame, schema, shown)}</td></tr>')
+    if not frames:
+        rows.append('<tr><td colspan="2">(The algorithm makes no steps for this input.)</td></tr>')
+    return '<table class="algotrace-fbtable">' + "".join(rows) + "</table>"
+
+
+def feedback_table(pairs, details, expected, student, schema, components, detail):
+    """One row per pair from match_steps: the student's step, or "missing"."""
+    names = [name for name, _ in components]
+    rows = []
+    extra = 0
+    for e, g in pairs:
+        if e is None:
+            extra += 1
+            label = f"Extra step {extra}"
+        else:
+            label = expected[e][0]
+        if g is None:
+            body = "<em>missing</em>"
+            ok = False
+        else:
+            score, wrong = details.get((e, g), (0.0, {}))
+            ok = e is not None and score == 1.0
+            body = frame_html(student[g], schema, names, wrong, mark_wrong=(detail == "detailed"))
+        mark = '<span class="algotrace-fbok">&#10004;</span>' if ok else '<span class="algotrace-fbbad">&#10008;</span>'
+        rows.append(f"<tr><th>{esc(label)}</th><td>{body}</td><td>{mark}</td></tr>")
+    return '<table class="algotrace-fbtable">' + "".join(rows) + "</table>"
+
+
+def prepare(config_raw, template_raw):
+    """Read the configuration and compute the trace the student must give.
+    Return (config, schema, initial frame, frames, graded components, ask, step name)."""
+    config = load_config(config_raw, template_raw)
+    schema, initial, frames = compute_trace(config)
+    components = graded_components(schema, config.get("grade"))
+    ask = parse_ask(config.get("ask"))
+    stepname = str(config.get("stepname") or "Iteration").strip() or "Iteration"
+    if bool_option(config, "omitunchanged", False):
+        frames = omit_unchanged(initial, frames, components)
+    return config, schema, initial, frames, components, ask, stepname
+
+
+def grade_answer(student_raw, config_raw, template_raw, allornothing):
+    """Return the combinator grader result dict."""
+    try:
+        config, schema, initial, frames, components, ask, stepname = prepare(config_raw, template_raw)
+        detail = str(config.get("feedbackdetail") or "detailed").strip().lower()
+        if detail not in ("detailed", "summary", "minimal"):
+            detail = "detailed"
+        cellcredit = bool_option(config, "cellcredit", False)
+        showmodel = bool_option(config, "showmodelanswer", False)
+        matching = str(config.get("stepmatching") or "strict").strip().lower()
+        if matching not in ("strict", "aligned"):
+            raise TraceError('the template parameter stepmatching must be "strict" or "aligned"')
+    except TraceError as error:
+        message = esc(f"This question is not set up correctly: {error}.")
+        return {"fraction": 0.0, "prologuehtml": f'<p class="algotrace-fberror">{message}</p>'}
+
+    expected = expected_steps(ask, initial, frames, stepname)
+    model = model_table(schema, initial, frames, ask, stepname, components)
+    notes = "".join(f'<p class="algotrace-fbnote">{esc(warning)}.</p>'
+                    for warning in trace_warnings(ask, frames, stepname))
+    instructor = "<h5>Model trace (shown to teachers only)</h5>" + notes + model
+    try:
+        student = parse_student(student_raw, schema, components)
+    except ValueError as error:
+        return {"fraction": 0.0, "prologuehtml": f"<p>{esc(str(error).capitalize())}.</p>",
+                "instructorhtml": instructor}
+
+    # Aligning only makes sense when the student gives the whole trace; otherwise
+    # each answer box is for one particular step.
+    pairs, total = match_steps(expected, student, components, cellcredit, ask == "all" and matching == "aligned")
+    details = {(e, g): score_step(expected[e][1], student[g], components, cellcredit)
+               for e, g in pairs if e is not None and g is not None}
+    denominator = max(len(expected), len(student))
+    fraction = total / denominator if denominator else 1.0
+    fraction = max(0.0, min(1.0, fraction))
+    if allornothing and fraction < 1.0:
+        fraction = 0.0
+
+    messages = []
+    if fraction == 1.0:
+        messages.append("All steps are correct." if len(expected) != 1 else "Correct.")
+    elif detail != "minimal":
+        right = sum(1 for score, _ in details.values() if score == 1.0)
+        messages.append(f"{right} of {len(expected)} step{'s' if len(expected) != 1 else ''} correct.")
+        if ask == "all" and len(student) != len(expected):
+            word = "many" if len(student) > len(expected) else "few"
+            messages.append(f"You gave {len(student)} step{'s' if len(student) != 1 else ''}, "
+                            f"which is too {word}.")
+    else:
+        messages.append("Your trace is not correct.")
+    prologue = "<p>" + " ".join(esc(message) for message in messages) + "</p>"
+    if detail != "minimal" and fraction < 1.0:
+        prologue += feedback_table(pairs, details, expected, student, schema, components, detail)
+    result = {"fraction": fraction, "prologuehtml": prologue, "instructorhtml": instructor}
+    if showmodel:
+        result["epiloguehtml"] = "<h5>Model answer</h5>" + model
+        result["instructorhtml"] = notes  # Students see the model trace, so teachers only need the notes.
+    return result
+
+
+def model_answer(config_raw, template_raw="", limit=0):
+    """The correct answer as the UI serialises it, for prefilling the answer
+    fields in the question editor. Only the first limit steps if limit > 0.
+    The warnings are for the author (see trace_warnings)."""
+    try:
+        config, schema, initial, frames, components, ask, stepname = prepare(config_raw, template_raw)
+    except TraceError as error:
+        return {"error": str(error)}
+    steps = expected_steps(ask, initial, frames, stepname)
+    warnings = trace_warnings(ask, frames, stepname)
+    if limit and limit > 0:
+        steps = steps[:limit]
+    out = []
+    for _, frame in steps:
+        step = {}
+        for name, kind in components:
+            if kind == "row":
+                step[name] = [show(value) for value in frame[name]]
+            elif kind == "pointer":
+                step[name] = frame[name]
+            else:
+                step[name] = show(frame[name])
+        out.append(step)
+    return {"answer": json.dumps({"type": SERIALISATION_TYPE, "version": 1, "steps": out}), "steps": len(out),
+            "warnings": [warning + "." for warning in warnings]}
+{% endverbatim %}
+
+STUDENT_RAW = """{{ STUDENT_ANSWER | e('py') }}"""
+CONFIG_RAW = """{{ QUESTION.uiparameters | json_encode | e('py') }}"""
+TEMPLATE_RAW = """{{ QUESTION.parameters | json_encode | e('py') }}"""
+ALL_OR_NOTHING = """{{ QUESTION.allornothing | e('py') }}""".strip().lower() not in ("", "0", "false", "none")
+print(json.dumps(grade_answer(STUDENT_RAW, CONFIG_RAW, TEMPLATE_RAW, ALL_OR_NOTHING)))
+]]></template>
+    <iscombinatortemplate>1</iscombinatortemplate>
+    <allowmultiplestdins>0</allowmultiplestdins>
+    <answer></answer>
+    <validateonsave>1</validateonsave>
+    <testsplitterre><![CDATA[|#<ab@17943918#@>#\n|ms]]></testsplitterre>
+    <language>python3</language>
+    <acelang></acelang>
+    <sandbox></sandbox>
+    <grader>TemplateGrader</grader>
+    <cputimelimitsecs></cputimelimitsecs>
+    <memlimitmb></memlimitmb>
+    <sandboxparams></sandboxparams>
+    <templateparams><![CDATA[{"feedbackdetail": "detailed", "showmodelanswer": false, "cellcredit": false, "omitunchanged": false, "stepmatching": "strict"}]]></templateparams>
+    <hoisttemplateparams>1</hoisttemplateparams>
+    <extractcodefromjson>0</extractcodefromjson>
+    <templateparamslang>twig</templateparamslang>
+    <templateparamsevalpertry>0</templateparamsevalpertry>
+    <templateparamsevald><![CDATA[{"feedbackdetail": "detailed", "showmodelanswer": false, "cellcredit": false, "omitunchanged": false, "stepmatching": "strict"}]]></templateparamsevald>
+    <twigall>0</twigall>
+    <uiplugin>algorithmtrace</uiplugin>
+    <uiparameters><![CDATA[{"algorithm":"bubble_sort","data":[5,1,4,2,8],"ask":"all"}]]></uiparameters>
+    <attachments>0</attachments>
+    <attachmentsrequired>0</attachmentsrequired>
+    <maxfilesize>0</maxfilesize>
+    <filenamesregex></filenamesregex>
+    <filenamesexplain></filenamesexplain>
+    <displayfeedback>0</displayfeedback>
+    <giveupallowed>0</giveupallowed>
+    <prototypeextra></prototypeextra>
+    <testcases>
+    </testcases>
+  </question>
 
 <!-- question: 32449  -->
   <question type="coderunner">

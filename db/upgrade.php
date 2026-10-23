@@ -862,6 +862,55 @@ function xmldb_qtype_coderunner_upgrade($oldversion) {
         upgrade_plugin_savepoint(true, 2026100700, 'qtype', 'coderunner');
     }
 
+    if ($oldversion < 2026102300) {
+        // Add the algorithm_trace prototype and AlgorithmTrace UI plugin.
+        // Note: prototypes are reloaded by update_question_types() at the end of this function.
+        upgrade_plugin_savepoint(true, 2026102300, 'qtype', 'coderunner');
+    }
+
+    if ($oldversion < 2026102301) {
+        // Algorithm trace UI loads without waiting for its strings; clearer grader message.
+        // Note: prototypes are reloaded by update_question_types() at the end of this function.
+        upgrade_plugin_savepoint(true, 2026102301, 'qtype', 'coderunner');
+    }
+
+    if ($oldversion < 2026102302) {
+        // Add the algorithm_trace_answer web service, used to fill in correct answers in the question editor.
+        upgrade_plugin_savepoint(true, 2026102302, 'qtype', 'coderunner');
+    }
+
+    if ($oldversion < 2026102303) {
+        // Algorithm trace UI: "Randomise data" panel with copiable template and UI parameter snippets.
+        upgrade_plugin_savepoint(true, 2026102303, 'qtype', 'coderunner');
+    }
+
+    if ($oldversion < 2026102304) {
+        // algorithm_trace: grading settings (feedbackdetail, showmodelanswer, cellcredit, omitunchanged)
+        // are now template parameters; "Template parameters" help panel in the UI.
+        // Note: prototypes are reloaded by update_question_types() at the end of this function.
+        upgrade_plugin_savepoint(true, 2026102304, 'qtype', 'coderunner');
+    }
+
+    if ($oldversion < 2026102305) {
+        // Algorithm trace UI: toolbar and help dialog like the data-structure graph UI, algorithm
+        // settings panel, and editor answers are cleared when the algorithm changes.
+        upgrade_plugin_savepoint(true, 2026102305, 'qtype', 'coderunner');
+    }
+
+    if ($oldversion < 2026102306) {
+        // Algorithm trace UI: text labels on the step cards' Copy previous and Remove buttons.
+        upgrade_plugin_savepoint(true, 2026102306, 'qtype', 'coderunner');
+    }
+
+    if ($oldversion < 2026102307) {
+        // Algorithm trace fixes: the fill-in service reads template parameters over several lines and
+        // reports warnings; at most 500 steps; locked rows cannot be graded; stricter gaps and numbers;
+        // errors in custom algorithms reported as setup errors; the UI highlights the target;
+        // new stepmatching template parameter ("strict" or "aligned").
+        // Note: prototypes are reloaded by update_question_types() at the end of this function.
+        upgrade_plugin_savepoint(true, 2026102307, 'qtype', 'coderunner');
+    }
+
     require_once(__DIR__ . '/upgradelib.php');
     update_question_types();
 

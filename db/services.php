@@ -44,4 +44,12 @@ $functions = [
         'capabilities' => 'qtype/coderunner:sandboxwsaccess',
         'services'    => [MOODLE_OFFICIAL_MOBILE_SERVICE],
     ],
+    'qtype_coderunner_algorithm_trace_answer' => [
+        'classname'   => 'qtype_coderunner\external\algorithm_trace_answer',
+        'methodname'  => 'execute',
+        'description' => 'Works out the correct answer to an algorithm trace question, for the question editor',
+        'type'        => 'read',
+        'ajax'        => true,
+        'capabilities' => 'moodle/question:add, moodle/question:editall, moodle/question:editmine',
+    ],
 ];

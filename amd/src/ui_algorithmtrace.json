@@ -1,0 +1,37 @@
+{
+    "name": "ui_algorithmtrace",
+    "parameters": {
+        "algorithm": {
+            "type": "string",
+            "default": ""
+        },
+        "data": {
+            "type": "list",
+            "default": []
+        },
+        "target": {
+            "type": "string",
+            "default": null
+        },
+        "options": {
+            "type": "object",
+            "default": {}
+        },
+        "ask": {
+            "type": "string",
+            "default": "all"
+        },
+        "grade": {
+            "type": "list",
+            "default": []
+        },
+        "stepname": {
+            "type": "string",
+            "default": "Iteration"
+        },
+        "schema": {
+            "type": "object",
+            "default": {}
+        }
+    }
+}

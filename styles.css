@@ -2862,3 +2862,656 @@ body#page-question-type-coderunner div[id^=fitem_id_extra_] {
 .monaco-problem-hint .monaco-problem-icon {
     color: #16a34a;
 }
+
+/* Algorithm trace UI (ui_algorithmtrace.js), styled to match the data-structure graph UI,
+   whose toolbar and help dialog classes it reuses, and its grader feedback. */
+.qtype-coderunner-algorithmtrace {
+    position: relative;
+    box-sizing: border-box;
+    width: 100%;
+    overflow: auto;
+    background: #f7f8fa;
+    color: #101828;
+    font-size: 0.95rem;
+}
+
+.qtype-coderunner-algorithmtrace.algotrace-dragging,
+.qtype-coderunner-algorithmtrace.algotrace-dragging * {
+    cursor: grabbing;
+    user-select: none;
+}
+
+.qtype-coderunner-algorithmtrace .algotrace-configerror {
+    padding: 12px;
+    color: #b42318;
+}
+
+/* The search target: highlighted where it is in the data, or written out when it isn't there. */
+.qtype-coderunner-algorithmtrace .algotrace-cells .algotrace-cell.algotrace-targetcell {
+    background: #fef0c7;
+    box-shadow: inset 0 0 0 2px #f79009;
+    font-weight: 700;
+}
+
+.qtype-coderunner-algorithmtrace .algotrace-target {
+    margin-top: 6px;
+    font-weight: 600;
+}
+
+/* Toolbar: the data-structure graph toolbar, kept in view while the steps scroll. */
+.qtype-coderunner-algorithmtrace .algotrace-toolbar {
+    position: sticky;
+    top: 0;
+    flex-wrap: wrap;
+}
+
+.qtype-coderunner-algorithmtrace .algotrace-toolbar .algotrace-helpgroup {
+    margin-left: auto;
+    border-left: 0;
+}
+
+.qtype-coderunner-algorithmtrace .algotrace-toolbar .algotrace-fillsteps {
+    width: 3.6em;
+    min-width: 0;
+    height: 26px;
+    margin: 0 4px 0 1px;
+    padding: 0 4px;
+    border: 1px solid #d0d5dd;
+    border-radius: 6px;
+    background: #fff;
+    font-size: 12px;
+}
+
+.qtype-coderunner-algorithmtrace .algotrace-teachertools {
+    background: #fffaeb;
+    border-radius: 6px;
+}
+
+.qtype-coderunner-algorithmtrace .algotrace-statusbar {
+    padding: 4px 10px;
+    border-bottom: 1px solid #e4e7ec;
+    background: #eff4ff;
+    color: #344054;
+    font-size: 0.85em;
+}
+
+.qtype-coderunner-algorithmtrace .algotrace-statusbar:empty {
+    display: none;
+}
+
+.qtype-coderunner-algorithmtrace .algotrace-statusbar.algotrace-fillerror {
+    background: #fef3f2;
+    color: #b42318;
+}
+
+.qtype-coderunner-algorithmtrace .algotrace-content {
+    padding: 8px;
+}
+
+/* Step cards. */
+.qtype-coderunner-algorithmtrace .algotrace-step {
+    margin-bottom: 8px;
+    padding: 6px 10px 10px;
+    border: 1px solid #e4e7ec;
+    border-radius: 8px;
+    background: #fff;
+    box-shadow: 0 1px 2px rgba(16, 24, 40, 0.05);
+}
+
+.qtype-coderunner-algorithmtrace .algotrace-initial {
+    background: #f2f4f7;
+    box-shadow: none;
+}
+
+.qtype-coderunner-algorithmtrace .algotrace-stephead {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    min-height: 26px;
+    margin-bottom: 4px;
+}
+
+.qtype-coderunner-algorithmtrace .algotrace-steplabel {
+    display: inline-block;
+    padding: 1px 10px;
+    border-radius: 999px;
+    background: #eef4ff;
+    color: #2454c6;
+    font-size: 0.8em;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+}
+
+.qtype-coderunner-algorithmtrace .algotrace-initial .algotrace-steplabel {
+    background: #e4e7ec;
+    color: #344054;
+}
+
+.qtype-coderunner-algorithmtrace .algotrace-stepactions {
+    display: flex;
+    gap: 2px;
+}
+
+.qtype-coderunner-algorithmtrace .algotrace-iconbtn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    height: 26px;
+    padding: 0 8px;
+    font-size: 0.8em;
+    font-weight: 500;
+    white-space: nowrap;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    background: transparent;
+    color: #667085;
+    cursor: pointer;
+}
+
+.qtype-coderunner-algorithmtrace .algotrace-iconbtn svg {
+    flex: 0 0 auto;
+    width: 14px;
+    height: 14px;
+    pointer-events: none;
+}
+
+/* On narrow screens the step actions show their icons only. */
+@media (max-width: 480px) {
+    .qtype-coderunner-algorithmtrace .algotrace-iconbtn-text {
+        display: none;
+    }
+}
+
+.qtype-coderunner-algorithmtrace .algotrace-iconbtn:hover {
+    background: #f2f4f7;
+    color: #101828;
+}
+
+.qtype-coderunner-algorithmtrace .algotrace-iconbtn.algotrace-remove:hover {
+    background: #fee4e2;
+    color: #b42318;
+}
+
+.qtype-coderunner-algorithmtrace .algotrace-iconbtn:focus-visible {
+    outline: none;
+    border-color: #2454c6;
+    box-shadow: 0 0 0 2px rgba(36, 84, 198, 0.25);
+}
+
+.qtype-coderunner-algorithmtrace .algotrace-addcard {
+    display: block;
+    width: 100%;
+    padding: 8px;
+    border: 1px dashed #98a2b3;
+    border-radius: 8px;
+    background: transparent;
+    color: #475467;
+    font-weight: 500;
+    cursor: pointer;
+}
+
+.qtype-coderunner-algorithmtrace .algotrace-addcard:hover {
+    border-color: #2454c6;
+    background: #eef4ff;
+    color: #2454c6;
+}
+
+.qtype-coderunner-algorithmtrace .algotrace-addcard:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 2px rgba(36, 84, 198, 0.25);
+}
+
+.qtype-coderunner-algorithmtrace .algotrace-stepbody {
+    min-width: 0;
+}
+
+.qtype-coderunner-algorithmtrace .algotrace-rowwrap + .algotrace-rowwrap {
+    margin-top: 8px;
+}
+
+.qtype-coderunner-algorithmtrace .algotrace-rowname {
+    margin-bottom: 2px;
+    font-size: 0.78em;
+    font-weight: 600;
+    color: #475467;
+}
+
+/* Cells. */
+.qtype-coderunner-algorithmtrace .algotrace-cells {
+    display: flex;
+    flex-wrap: nowrap;
+}
+
+.qtype-coderunner-algorithmtrace .algotrace-cell,
+.qtype-coderunner-algorithmtrace .algotrace-index,
+.qtype-coderunner-algorithmtrace .algotrace-slot {
+    box-sizing: border-box;
+    flex: 0 0 2.75rem;
+    width: 2.75rem;
+    margin: 0;
+    text-align: center;
+}
+
+/* Specific enough to beat Boost's ".formulation input[type=text] {width: auto}". */
+.qtype-coderunner-algorithmtrace .algotrace-cells .algotrace-cell {
+    min-width: 0;
+    max-width: none;
+    width: 2.75rem;
+}
+
+.qtype-coderunner-algorithmtrace .algotrace-cell {
+    display: block;
+    height: 2.2rem;
+    padding: 0 2px;
+    border: 1px solid #d0d5dd;
+    border-left-width: 0;
+    border-radius: 0;
+    background: #fff;
+    color: #101828;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 0.95rem;
+    line-height: 2.1rem;
+    touch-action: none;
+    cursor: grab;
+    transition: background-color 0.12s ease;
+}
+
+.qtype-coderunner-algorithmtrace .algotrace-cell:first-child {
+    border-left-width: 1px;
+    border-radius: 6px 0 0 6px;
+}
+
+.qtype-coderunner-algorithmtrace .algotrace-cell:last-child {
+    border-radius: 0 6px 6px 0;
+}
+
+.qtype-coderunner-algorithmtrace .algotrace-cell:only-child {
+    border-radius: 6px;
+}
+
+.qtype-coderunner-algorithmtrace input.algotrace-cell:hover {
+    background: #f9fafb;
+}
+
+.qtype-coderunner-algorithmtrace .algotrace-cell:focus {
+    position: relative;
+    z-index: 1;
+    outline: none;
+    box-shadow: 0 0 0 2px #2454c6;
+    cursor: text;
+}
+
+.qtype-coderunner-algorithmtrace .algotrace-locked {
+    background: #f9fafb;
+    color: #344054;
+    cursor: default;
+}
+
+.qtype-coderunner-algorithmtrace .algotrace-initial .algotrace-locked {
+    background: #fff;
+    cursor: grab;
+}
+
+.qtype-coderunner-algorithmtrace .algotrace-cell.algotrace-changed {
+    background: #eef4ff;
+    color: #1d3f9a;
+    font-weight: 600;
+}
+
+.qtype-coderunner-algorithmtrace .algotrace-dragsource {
+    opacity: 0.4;
+}
+
+.qtype-coderunner-algorithmtrace .algotrace-droptarget {
+    background: #fef0c7;
+    box-shadow: inset 0 0 0 2px #b54708;
+}
+
+.qtype-coderunner-algorithmtrace .algotrace-dropbefore {
+    box-shadow: inset 4px 0 0 #b54708;
+}
+
+.qtype-coderunner-algorithmtrace .algotrace-dropafter {
+    box-shadow: inset -4px 0 0 #b54708;
+}
+
+.qtype-coderunner-algorithmtrace .algotrace-index {
+    font-size: 0.7rem;
+    color: #98a2b3;
+}
+
+/* Pointer lanes. */
+.qtype-coderunner-algorithmtrace .algotrace-lanewrap {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    gap: 4px 12px;
+    margin-top: 3px;
+}
+
+.qtype-coderunner-algorithmtrace .algotrace-lane {
+    display: flex;
+}
+
+.qtype-coderunner-algorithmtrace .algotrace-slot {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    min-height: 1.9em;
+    padding-top: 2px;
+    border-top: 2px solid transparent;
+    border-radius: 4px;
+}
+
+.qtype-coderunner-algorithmtrace .algotrace-slot.algotrace-droptarget,
+.qtype-coderunner-algorithmtrace .algotrace-tray.algotrace-droptarget {
+    border-top-color: #b54708;
+    box-shadow: none;
+    background: #fef0c7;
+}
+
+.qtype-coderunner-algorithmtrace .algotrace-endslot {
+    border-left: 1px dashed #d0d5dd;
+}
+
+.qtype-coderunner-algorithmtrace .algotrace-tray {
+    display: flex;
+    gap: 4px;
+    min-width: 2.75rem;
+    min-height: 1.9em;
+    padding: 2px 4px;
+    border: 1px dashed #d0d5dd;
+    border-radius: 6px;
+}
+
+.qtype-coderunner-algorithmtrace .algotrace-chip {
+    padding: 0 7px;
+    border: 1px solid #1b7f4c;
+    border-radius: 999px;
+    background: #ecfdf3;
+    color: #05603a;
+    font-size: 0.78em;
+    font-weight: 600;
+    line-height: 1.6em;
+    touch-action: none;
+    cursor: grab;
+}
+
+.qtype-coderunner-algorithmtrace .algotrace-chip::before {
+    content: "\2191 ";
+}
+
+.qtype-coderunner-algorithmtrace .algotrace-chip.algotrace-selected,
+.qtype-coderunner-algorithmtrace .algotrace-chip:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 2px #2454c6;
+}
+
+/* Variables such as pivot or h. */
+.qtype-coderunner-algorithmtrace .algotrace-vars {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 14px;
+    margin-top: 8px;
+}
+
+.qtype-coderunner-algorithmtrace .algotrace-var {
+    margin: 0;
+}
+
+.qtype-coderunner-algorithmtrace .algotrace-varname {
+    margin-right: 4px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    color: #475467;
+}
+
+.qtype-coderunner-algorithmtrace .algotrace-vars .algotrace-varinput {
+    min-width: 0;
+    width: 5em;
+    height: 2rem;
+    padding: 0 6px;
+    border: 1px solid #d0d5dd;
+    border-radius: 6px;
+    font: inherit;
+}
+
+.qtype-coderunner-algorithmtrace .algotrace-vars .algotrace-varinput:focus {
+    outline: none;
+    border-color: #2454c6;
+    box-shadow: 0 0 0 2px rgba(36, 84, 198, 0.25);
+}
+
+.qtype-coderunner-algorithmtrace .algotrace-empty {
+    padding: 8px 4px;
+    font-size: 0.85em;
+    color: #667085;
+}
+
+/* Teacher panels. */
+.qtype-coderunner-algorithmtrace .algotrace-panels:empty {
+    display: none;
+}
+
+.qtype-coderunner-algorithmtrace .algotrace-panel {
+    margin: 8px 8px 0;
+    padding: 10px 12px 12px;
+    border: 1px solid #e4e7ec;
+    border-radius: 10px;
+    background: #fff;
+    box-shadow: 0 4px 12px rgba(16, 24, 40, 0.08);
+    font-size: 0.85em;
+}
+
+.qtype-coderunner-algorithmtrace .algotrace-panel:focus {
+    outline: none;
+}
+
+.qtype-coderunner-algorithmtrace .algotrace-panel-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 4px;
+    font-size: 1.1em;
+}
+
+.qtype-coderunner-algorithmtrace .algotrace-panel-close {
+    padding: 0 8px;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    color: #475467;
+    font-size: 20px;
+    line-height: 1.2;
+    cursor: pointer;
+}
+
+.qtype-coderunner-algorithmtrace .algotrace-panel-close:hover {
+    background: #f2f4f7;
+    color: #101828;
+}
+
+.qtype-coderunner-algorithmtrace .algotrace-panel-text {
+    margin-top: 6px;
+    color: #344054;
+}
+
+.qtype-coderunner-algorithmtrace .algotrace-panel-note {
+    color: #667085;
+}
+
+.qtype-coderunner-algorithmtrace .algotrace-randomise-controls {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 16px;
+    margin: 6px 0;
+}
+
+.qtype-coderunner-algorithmtrace .algotrace-randomise-controls label {
+    margin: 0;
+}
+
+.qtype-coderunner-algorithmtrace .algotrace-randomise-controls .algotrace-randomise-preset {
+    width: auto;
+    max-width: 100%;
+    font-size: inherit;
+}
+
+.qtype-coderunner-algorithmtrace .algotrace-randomise-controls .algotrace-randomise-size {
+    width: 4.5em;
+    min-width: 0;
+}
+
+.qtype-coderunner-algorithmtrace .algotrace-randomise-snippet {
+    display: flex;
+    gap: 6px;
+    align-items: flex-start;
+    margin-top: 2px;
+}
+
+.qtype-coderunner-algorithmtrace .algotrace-randomise-snippet .algotrace-randomise-code {
+    flex: 1 1 auto;
+    width: auto;
+    min-width: 0;
+    padding: 4px 6px;
+    border: 1px solid #d0d5dd;
+    border-radius: 6px;
+    background: #f9fafb;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 0.95em;
+    resize: vertical;
+}
+
+.qtype-coderunner-algorithmtrace .algotrace-tptable {
+    margin-top: 6px;
+    border-collapse: collapse;
+}
+
+.qtype-coderunner-algorithmtrace .algotrace-tptable th,
+.qtype-coderunner-algorithmtrace .algotrace-tptable td {
+    padding: 4px 8px;
+    border-bottom: 1px solid #eaecf0;
+    text-align: left;
+    vertical-align: top;
+}
+
+.qtype-coderunner-algorithmtrace .algotrace-tptable th {
+    color: #667085;
+    font-size: 0.9em;
+    font-weight: 600;
+}
+
+.qtype-coderunner-algorithmtrace .algotrace-tptable .algotrace-tpname {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    white-space: nowrap;
+}
+
+/* The help dialog covers the window, not just the UI, so it has room on short answer boxes. */
+.coderunner-datastructuregraph-help-overlay.algotrace-help-overlay {
+    position: fixed;
+    z-index: 1060;
+}
+
+.algotrace-help-overlay .dsg-help {
+    max-height: calc(100vh - 32px);
+}
+
+.algotrace-help-overlay .algotrace-help-teacher {
+    margin: 0;
+    color: #344054;
+    font-size: 13px;
+}
+
+.algotrace-ghost {
+    position: fixed;
+    z-index: 10000;
+    min-width: 2.4em;
+    padding: 0 8px;
+    border: 1px solid #2454c6;
+    border-radius: 6px;
+    background: #fff;
+    box-shadow: 0 6px 16px rgba(16, 24, 40, 0.2);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    line-height: 2em;
+    text-align: center;
+    pointer-events: none;
+}
+
+.algotrace-ghost.algotrace-chipghost {
+    border-color: #1b7f4c;
+    border-radius: 999px;
+    background: #ecfdf3;
+    line-height: 1.5em;
+}
+
+.algotrace-fbtable {
+    margin: 6px 0;
+    border-collapse: collapse;
+}
+
+.algotrace-fbtable th,
+.algotrace-fbtable td {
+    padding: 4px 8px;
+    border-bottom: 1px solid #eaecf0;
+    vertical-align: middle;
+    text-align: left;
+}
+
+.algotrace-fbtable tr.algotrace-fbasked {
+    background: #fffaeb;
+}
+
+.algotrace-fbrow {
+    display: inline-flex;
+}
+
+.algotrace-fbcell {
+    display: inline-block;
+    min-width: 2.4em;
+    margin-right: -1px;
+    padding: 0 4px;
+    border: 1px solid #98a2b3;
+    background: #fff;
+    font-family: SFMono-Regular, Menlo, Consolas, monospace;
+    text-align: center;
+}
+
+.algotrace-fbcell.algotrace-fbwrong,
+.algotrace-fbvar.algotrace-fbwrong {
+    background: #fee4e2;
+    border-color: #d92d20;
+}
+
+.algotrace-fblabel {
+    margin-right: 6px;
+    font-size: 0.85em;
+    color: #475467;
+}
+
+.algotrace-fbvars {
+    display: inline-flex;
+    gap: 10px;
+    margin-left: 8px;
+    font-family: SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+.algotrace-fbvar {
+    padding: 0 4px;
+    border: 1px solid transparent;
+}
+
+.algotrace-fbok {
+    color: #067647;
+}
+
+.algotrace-fbbad,
+.algotrace-fberror {
+    color: #b42318;
+}
+
+/* Notes for teachers above the model trace, such as a step asked for past the end. */
+.algotrace-fbnote {
+    color: #93370d;
+    font-style: italic;
+}
